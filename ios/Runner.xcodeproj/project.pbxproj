@@ -8,9 +8,9 @@
 
 /* Begin PBXBuildFile section */
 		1498D2341E8E89220040F4C2 /* GeneratedPluginRegistrant.m in Sources */ = {isa = PBXBuildFile; fileRef = 1498D2331E8E89220040F4C2 /* GeneratedPluginRegistrant.m */; };
+		1C2429AFA1FF4832BD317300 /* TokenStorageChannel.swift in Sources */ = {isa = PBXBuildFile; fileRef = E8893DCA54D941609C542800 /* TokenStorageChannel.swift */; };
 		250470652F4FC03600AAEB6C /* CarbShared in Frameworks */ = {isa = PBXBuildFile; productRef = 250470642F4FC03600AAEB6C /* CarbShared */; };
 		2599376A2F5F655F008B6262 /* CloudSyncChannel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 259937672F5F655F008B6262 /* CloudSyncChannel.swift */; };
-		1C2429AFA1FF4832BD317300 /* TokenStorageChannel.swift in Sources */ = {isa = PBXBuildFile; fileRef = E8893DCA54D941609C542800 /* TokenStorageChannel.swift */; };
 		259939122F625341008B6262 /* CloudSyncChannel-ErrorHandling.md in Resources */ = {isa = PBXBuildFile; fileRef = 259939112F625341008B6262 /* CloudSyncChannel-ErrorHandling.md */; };
 		259939162F62546A008B6262 /* CloudSyncStore-ThreadSafety.md in Resources */ = {isa = PBXBuildFile; fileRef = 259939152F62546A008B6262 /* CloudSyncStore-ThreadSafety.md */; };
 		259939182F62557A008B6262 /* Logging-Guide.md in Resources */ = {isa = PBXBuildFile; fileRef = 259939172F62557A008B6262 /* Logging-Guide.md */; };
@@ -90,7 +90,6 @@
 		1A90A81E5B5163EA05014FAB /* Pods-RunnerTests.release.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-RunnerTests.release.xcconfig"; path = "Target Support Files/Pods-RunnerTests/Pods-RunnerTests.release.xcconfig"; sourceTree = "<group>"; };
 		2541C13E2F4B84DC00E6F8C6 /* CarpeCarbWatchApp Watch App.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "CarpeCarbWatchApp Watch App.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 		259937672F5F655F008B6262 /* CloudSyncChannel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Runner/CloudSyncChannel.swift; sourceTree = "<group>"; };
-		E8893DCA54D941609C542800 /* TokenStorageChannel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Runner/TokenStorageChannel.swift; sourceTree = "<group>"; };
 		259939112F625341008B6262 /* CloudSyncChannel-ErrorHandling.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = "CloudSyncChannel-ErrorHandling.md"; sourceTree = "<group>"; };
 		259939152F62546A008B6262 /* CloudSyncStore-ThreadSafety.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = "CloudSyncStore-ThreadSafety.md"; sourceTree = "<group>"; };
 		259939172F62557A008B6262 /* Logging-Guide.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = "Logging-Guide.md"; sourceTree = "<group>"; };
@@ -125,6 +124,7 @@
 		CW0001A5 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		CW0001A6 /* CarbWiseWidgetExtension.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = CarbWiseWidgetExtension.entitlements; sourceTree = "<group>"; };
 		CW0001A7 /* Runner.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; name = Runner.entitlements; path = Runner/Runner.entitlements; sourceTree = "<group>"; };
+		E8893DCA54D941609C542800 /* TokenStorageChannel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Runner/TokenStorageChannel.swift; sourceTree = "<group>"; };
 		EF72A99D136AC194EB9BF323 /* Pods-Runner.alpha.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-Runner.alpha.xcconfig"; path = "Target Support Files/Pods-Runner/Pods-Runner.alpha.xcconfig"; sourceTree = "<group>"; };
 		F452E01737226AA29BB4C808 /* Pods-RunnerTests.profile.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-RunnerTests.profile.xcconfig"; path = "Target Support Files/Pods-RunnerTests/Pods-RunnerTests.profile.xcconfig"; sourceTree = "<group>"; };
 		SI0001A1 /* CarbIntents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CarbIntents.swift; sourceTree = "<group>"; };
@@ -341,9 +341,9 @@
 				9705A1C41CF9048500538489 /* Embed Frameworks */,
 				CW0001D1 /* Embed Foundation Extensions */,
 				3B06AD1E1E4923F5004D2608 /* Thin Binary */,
-				BF290BA85CFB9CFC32374540 /* [CP] Copy Pods Resources */,
 				2541C1142F4B831F00E6F8C6 /* Embed Watch Content */,
 				F6F1868A4CA5174A454CE32C /* FlutterFire: "flutterfire bundle-service-file" */,
+				82E81B896ED4AE5AA339BB22 /* [CP] Copy Pods Resources */,
 			);
 			buildRules = (
 			);
@@ -527,22 +527,7 @@
 			shellScript = "diff \"${PODS_PODFILE_DIR_PATH}/Podfile.lock\" \"${PODS_ROOT}/Manifest.lock\" > /dev/null\nif [ $? != 0 ] ; then\n    # print error to STDERR\n    echo \"error: The sandbox is not in sync with the Podfile.lock. Run 'pod install' or update your CocoaPods installation.\" >&2\n    exit 1\nfi\n# This output is used by Xcode 'outputs' to avoid re-running this script phase.\necho \"SUCCESS\" > \"${SCRIPT_OUTPUT_FILE_0}\"\n";
 			showEnvVarsInLog = 0;
 		};
-		9740EEB61CF901F6004384FC /* Run Script */ = {
-			isa = PBXShellScriptBuildPhase;
-			alwaysOutOfDate = 1;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			inputPaths = (
-			);
-			name = "Run Script";
-			outputPaths = (
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-			shellPath = /bin/sh;
-			shellScript = "/bin/sh \"$FLUTTER_ROOT/packages/flutter_tools/bin/xcode_backend.sh\" build\n";
-		};
-		BF290BA85CFB9CFC32374540 /* [CP] Copy Pods Resources */ = {
+		82E81B896ED4AE5AA339BB22 /* [CP] Copy Pods Resources */ = {
 			isa = PBXShellScriptBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -558,6 +543,21 @@
 			shellPath = /bin/sh;
 			shellScript = "\"${PODS_ROOT}/Target Support Files/Pods-Runner/Pods-Runner-resources.sh\"\n";
 			showEnvVarsInLog = 0;
+		};
+		9740EEB61CF901F6004384FC /* Run Script */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputPaths = (
+			);
+			name = "Run Script";
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "/bin/sh \"$FLUTTER_ROOT/packages/flutter_tools/bin/xcode_backend.sh\" build\n";
 		};
 		F6F1868A4CA5174A454CE32C /* FlutterFire: "flutterfire bundle-service-file" */ = {
 			isa = PBXShellScriptBuildPhase;
@@ -766,7 +766,7 @@
 					"@executable_path/Frameworks",
 				);
 				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
-				MARKETING_VERSION = 1.0;
+				MARKETING_VERSION = 1.0.1;
 				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
 				MTL_FAST_MATH = YES;
 				PRODUCT_BUNDLE_IDENTIFIER = jamesaguero.CarpeCarbWatchApp.watchkitapp;
@@ -818,7 +818,7 @@
 					"@executable_path/Frameworks",
 				);
 				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
-				MARKETING_VERSION = 1.0;
+				MARKETING_VERSION = 1.0.1;
 				MTL_FAST_MATH = YES;
 				PRODUCT_BUNDLE_IDENTIFIER = jamesaguero.CarpeCarbWatchApp.watchkitapp;
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -867,7 +867,7 @@
 					"@executable_path/Frameworks",
 				);
 				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
-				MARKETING_VERSION = 1.0;
+				MARKETING_VERSION = 1.0.1;
 				MTL_FAST_MATH = YES;
 				PRODUCT_BUNDLE_IDENTIFIER = jamesaguero.CarpeCarbWatchApp.watchkitapp;
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -916,7 +916,7 @@
 					"@executable_path/Frameworks",
 				);
 				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
-				MARKETING_VERSION = 1.0;
+				MARKETING_VERSION = 1.0.1;
 				MTL_FAST_MATH = YES;
 				PRODUCT_BUNDLE_IDENTIFIER = jamesaguero.CarpeCarbWatchApp.watchkitapp;
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -1031,7 +1031,7 @@
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = 4NWCR79S38;
 				GENERATE_INFOPLIST_FILE = YES;
-				MARKETING_VERSION = 1.0;
+				MARKETING_VERSION = 1.0.1;
 				PRODUCT_BUNDLE_IDENTIFIER = com.example.carbTracker.RunnerTests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_VERSION = 5.0;
@@ -1049,7 +1049,7 @@
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = 4NWCR79S38;
 				GENERATE_INFOPLIST_FILE = YES;
-				MARKETING_VERSION = 1.0;
+				MARKETING_VERSION = 1.0.1;
 				PRODUCT_BUNDLE_IDENTIFIER = com.example.carbTracker.RunnerTests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
@@ -1069,7 +1069,7 @@
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = 4NWCR79S38;
 				GENERATE_INFOPLIST_FILE = YES;
-				MARKETING_VERSION = 1.0;
+				MARKETING_VERSION = 1.0.1;
 				PRODUCT_BUNDLE_IDENTIFIER = com.example.carbTracker.RunnerTests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_VERSION = 5.0;
@@ -1087,7 +1087,7 @@
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = 4NWCR79S38;
 				GENERATE_INFOPLIST_FILE = YES;
-				MARKETING_VERSION = 1.0;
+				MARKETING_VERSION = 1.0.1;
 				PRODUCT_BUNDLE_IDENTIFIER = com.example.carbTracker.RunnerTests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_VERSION = 5.0;
