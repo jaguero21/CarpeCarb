@@ -9,8 +9,8 @@ import 'package:in_app_purchase/in_app_purchase.dart';
 import 'premium_service.dart';
 
 class PurchaseService {
-  static const String monthlyProductId = 'premium_monthlysub';
-  static const String yearlyProductId = 'premium_yearly';
+  static const String monthlyProductId = 'carpecarb_premium_monthlysub';
+  static const String yearlyProductId = 'carpecarb_premium_yearly';
 
   static const String _validateUrl =
       'https://us-central1-carpecarb.cloudfunctions.net/validateAppStoreReceipt';
@@ -134,11 +134,17 @@ class PurchaseService {
     _purchaseInProgress = true;
 
     final productId = productIdForPlan(plan);
-    final products = await queryPremiumProducts();
-    final product = products[productId];
-    if (product == null) {
+    late final ProductDetails product;
+    try {
+      final products = await queryPremiumProducts();
+      final found = products[productId];
+      if (found == null) {
+        throw Exception('Product not found in App Store Connect: $productId');
+      }
+      product = found;
+    } catch (e) {
       _purchaseInProgress = false;
-      throw Exception('Product not found in App Store Connect: $productId');
+      rethrow;
     }
 
     final completer = Completer<bool>();
