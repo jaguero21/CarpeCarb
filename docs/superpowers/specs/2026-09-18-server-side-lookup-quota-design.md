@@ -59,8 +59,10 @@ and #9 (client daily-count reset) as a side effect.
 | `perplexity.js` | `lookupFoods(input, apiKey)` — the existing prompt, retry loop, and response mapping from `index.js:392-562`, moved unchanged. |
 | `rateLimit.js` | Existing `checkRateLimit`, moved unchanged. |
 
-Handlers are built by a factory taking their dependencies
-(`{ db, appStore, lookupFoods, now }`) so tests can inject fakes.
+Handlers are built by `createHandlers(deps)` in `src/handlers.js`, taking the
+store functions as dependencies (`checkRateLimit`, `getPremiumStatus`,
+`reserveLookup`, `releaseLookup`, `lookupFoods`, `verifyTransaction`,
+`recordTransaction`, `now`) so tests can inject fakes.
 
 ### Data (Firestore, Admin SDK only)
 
@@ -131,7 +133,8 @@ Missing secret → `internal` error with a clear log line.
 
 ### Flutter
 
-- New `lib/services/lookup_api.dart` (pure, no I/O): `ServerQuota`,
+- New `lib/models/server_quota.dart`: `ServerQuota` + `fromJson`.
+- New `lib/services/lookup_api.dart` (pure, no I/O):
   `LookupResult { items, quota }`, `parseLookupResponse(body)`,
   `parseCallableError(statusCode, body)`. The callable error body is
   `{ "error": { "message", "status", "details" } }`.
