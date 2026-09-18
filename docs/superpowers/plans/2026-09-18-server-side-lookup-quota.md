@@ -2974,17 +2974,17 @@ git commit -m "feat(siri): send UTC offset and speak the daily lookup limit" -m 
 
 ### Task 9: Deploy and verify (needs James — App Store Connect and Firebase access)
 
-No code. Steps 1-2 and 7 need App Store Connect access; steps 4-5 and 8 change production. Confirm with James before running each deploy command.
+No code. Steps 1-2, 6 and 8 need App Store Connect access; steps 3, 4 and 7 change production. Confirm with James before running each deploy command.
 
-- [ ] **Step 1: Confirm there are no production subscribers**
+**Why this order.** The receipt function goes first so App Review's purchase works; the quota function goes last and right before release, so 1.0.1 users see the server limit for as short a time as possible and 1.0.2 never runs without a server limit. `main`'s `validateAppStoreReceipt` only accepts `carpecarb_premium_*` product IDs (`functions/index.js@0b9e17e:58-61`) and rejects the app's `expectedProductId: 'premium_monthlysub'` with `invalid-argument` (`:266`), so if the deployed function matches `main`, App Review's purchase of 1.0.2 fails. While in review, 1.0.2 works against the old lookup function (a missing `quota` is ignored).
 
-Confirm in App Store Connect → Sales/Subscriptions that there are no active production subscriptions. (The rollout has no migration path for existing subscribers.)
+- [ ] **Step 1: Check what's deployed and whether anyone is subscribed**
 
-- [ ] **Step 2: Create the In-App Purchase API key**
+Cloud console → Cloud Functions → `validateAppStoreReceipt` → Source (or `firebase functions:list` plus the console): note whether it accepts `premium_monthlysub`/`premium_yearly`. Also confirm in App Store Connect → Sales/Subscriptions whether there are any active production subscriptions. If any 1.0.1 buyer was charged without getting premium, they'll need to tap Restore after Step 4.
+
+- [ ] **Step 2: Create the In-App Purchase API key and set the four secrets**
 
 App Store Connect → Users and Access → Integrations → In-App Purchase → Generate. Download the `.p8` (only downloadable once). Note the **Key ID** and the **Issuer ID** shown on that page. Find the app's numeric **Apple ID** under App Store Connect → the app → App Information → General Information → Apple ID.
-
-- [ ] **Step 3: Set the four secrets**
 
 ```bash
 firebase functions:secrets:set APP_STORE_IAP_KEY --data-file path/to/SubscriptionKey_XXXXXXXXXX.p8
@@ -2993,37 +2993,43 @@ firebase functions:secrets:set APP_STORE_ISSUER_ID   # paste Issuer ID
 firebase functions:secrets:set APP_APPLE_ID          # paste numeric Apple ID
 ```
 
-- [ ] **Step 4: Deploy Firestore rules**
+- [ ] **Step 3: Deploy Firestore rules, enable TTL, set up both spend alerts**
 
 Run: `firebase deploy --only firestore:rules`
 Expected: `✔ firestore: released rules firestore.rules to cloud.firestore`
 
-- [ ] **Step 5: Enable TTL cleanup**
+TTL: Google Cloud console → Firestore → Time-to-live → Create policy: collection group `lookupQuota`, field `expiresAt`. Repeat for `rateLimits` / `expiresAt` if no policy exists yet.
 
-Google Cloud console → Firestore → Time-to-live → Create policy: collection group `lookupQuota`, field `expiresAt`. Repeat for `rateLimits` / `expiresAt` if no policy exists yet.
-
-- [ ] **Step 6: Set a spend alert**
-
-Perplexity bills separately from Google Cloud, so set both:
+Spend alerts. Perplexity bills separately from Google Cloud, so set both:
 - Perplexity: in the Perplexity API console (Settings → Billing), set a monthly usage limit or low-balance alert.
 - Google Cloud: Billing → Budgets & alerts → create a budget for project `carpecarb` covering Cloud Functions and Firestore.
 
-- [ ] **Step 7: Submit app 1.0.2 for review with "Manually release"**
+- [ ] **Step 4: Deploy the receipt function**
+
+Run: `firebase deploy --only functions:validateAppStoreReceipt`
+Expected: `validateAppStoreReceipt` reports `Successful update operation`. This is safe for both 1.0.1 and 1.0.2 and doesn't change lookups.
+
+- [ ] **Step 5: Verify a sandbox purchase on a TestFlight build of 1.0.2**
+
+Sandbox purchase (or Restore for existing TestFlight subscribers) succeeds; Firestore has `entitlements/{uid}` with `environment: "Sandbox"`.
+
+- [ ] **Step 6: Submit 1.0.2 for review with "Manually release this version"**
 
 Archive and submit the build containing Tasks 6-8 as usual. In App Store Connect → the 1.0.2 version → App Store Version Release, choose **Manually release this version**.
 
-- [ ] **Step 8: Once 1.0.2 is approved, deploy the functions and immediately release 1.0.2**
+- [ ] **Step 7: Once approved, deploy the quota function and run the TestFlight quota checks**
 
-Run: `firebase deploy --only functions`
-Expected: both `validateAppStoreReceipt` and `getMultipleCarbCounts` report `Successful update operation`. Then release 1.0.2 in App Store Connect right away. Optionally remove the now-unused secret afterwards: `firebase functions:secrets:destroy APP_STORE_SHARED_SECRET`.
+Run: `firebase deploy --only functions:getMultipleCarbCounts`
+Expected: `getMultipleCarbCounts` reports `Successful update operation`. Optionally remove the now-unused secret afterwards: `firebase functions:secrets:destroy APP_STORE_SHARED_SECRET`.
 
-> **Order matters.** Don't release 1.0.2 before the functions deploy: 1.0.2 has no limit against the old server (its limit comes from the server's `quota`). 1.0.2 works against the old server during review (a missing `quota` is ignored), so review can happen before the deploy.
-
-- [ ] **Step 9: Verify on a TestFlight device**
-
+Then immediately, on a TestFlight device (about 15 minutes):
 1. Fresh install (free): four lookups succeed; Settings shows `AI lookups today: 4 / 4`; the fifth shows the Daily Limit Reached dialog.
 2. Siri: "Log food in CarpeCarb" after the limit → speaks "You've used today's 4 free lookups. Open CarpeCarb to go unlimited."
-3. Sandbox purchase (or Restore for existing TestFlight subscribers) → lookups unlimited; Firestore has `entitlements/{uid}` with `environment: "Sandbox"`.
-4. Wait more than 5 minutes (one sandbox renewal) and confirm lookups are still unlimited.
-5. After sandbox renewals stop (monthly renews every 5 min, up to 12 times), the next lookup reverts the app to the free plan.
-6. Cloud Logging for `getMultipleCarbCounts` shows no `[config] Missing or invalid secrets` lines.
+3. Sandbox purchase (or Restore for existing TestFlight subscribers) → lookups unlimited. Wait more than 5 minutes (one sandbox renewal) and confirm lookups are still unlimited.
+4. Cloud Logging for `getMultipleCarbCounts` shows no `[config] Missing or invalid secrets` lines.
+
+- [ ] **Step 8: Release 1.0.2**
+
+App Store Connect → the 1.0.2 version → Release This Version.
+
+Afterwards (doesn't block the release): once the Step 7 sandbox renewals stop (monthly renews every 5 min, up to 12 times), the next lookup on that device reverts the app to the free plan.

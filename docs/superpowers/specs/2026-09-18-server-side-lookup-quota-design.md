@@ -225,18 +225,35 @@ Missing secret → `internal` error with a clear log line.
 
 ## Rollout
 
-No paying subscribers exist, so no migration path.
+No active production subscriptions are expected (step 1 confirms), so there is
+no migration path beyond Restore. The detailed checklist is plan Task 9.
 
-1. Create an In-App Purchase key in App Store Connect (Users and Access →
+1. Check what's deployed: whether the live `validateAppStoreReceipt` accepts
+   `premium_monthlysub`/`premium_yearly` (`main`'s only accepts
+   `carpecarb_premium_*`), and whether App Store Connect shows any active
+   production subscriptions. A 1.0.1 buyer charged without premium taps
+   Restore after step 4.
+2. Create an In-App Purchase key in App Store Connect (Users and Access →
    Integrations); note key ID and issuer ID; find the app's numeric Apple ID.
-2. `firebase functions:secrets:set` for the four new secrets.
-3. Deploy `firestore.rules`.
-4. Enable TTL in the console on `lookupQuota.expiresAt` (and on
-   `rateLimits.expiresAt` if not already on).
-5. Deploy functions. Live 1.0.1 free users are capped server-side at 4 (their
-   client already stops at 4). TestFlight sandbox subscribers tap Restore once
-   to create their entitlement doc.
-6. Release app 1.0.2 with the client changes.
+   `firebase functions:secrets:set` for the four new secrets.
+3. Deploy `firestore.rules`; enable TTL on `lookupQuota.expiresAt` (and on
+   `rateLimits.expiresAt` if not already on); set up both spend alerts
+   (Perplexity console and a GCP budget).
+4. Deploy `validateAppStoreReceipt` only. Safe for 1.0.1 and 1.0.2; lookups
+   are unchanged. TestFlight sandbox subscribers tap Restore once to create
+   their entitlement doc.
+5. Verify a sandbox purchase on a TestFlight build of 1.0.2 (entitlement doc
+   created).
+6. Submit 1.0.2 for review with "Manually release this version".
+7. Once approved, deploy `getMultipleCarbCounts` and immediately run the
+   TestFlight quota checks (about 15 minutes). From here, live 1.0.1 free
+   users are capped server-side at 4 (their client already stops at 4).
+8. Release 1.0.2.
+
+The receipt function goes first so App Review's purchase works; the quota
+function goes last and right before release, so 1.0.1 users see the server
+limit for as short a time as possible and 1.0.2 never runs without a server
+limit.
 
 ## Testing
 
