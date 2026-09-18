@@ -21,8 +21,8 @@ function sanitizeFoodInput(input) {
 
   return trimmed
     // Normalize Unicode confusables before allow-list enforcement
-    .replace(/[''ʼ`´]/g, "'") // apostrophe lookalikes
-    .replace(/[–—−]/g, "-")              // dash lookalikes
+    .replace(/[\u2019\u2018\u02BC\u0060\u00B4]/g, "'") // apostrophe lookalikes
+    .replace(/[\u2013\u2014\u2212]/g, "-")              // dash lookalikes
     .replace(/[\n\r\t]/g, " ")
     .replace(/\0/g, "")
     .replace(/\s+/g, " ")

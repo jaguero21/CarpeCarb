@@ -9,7 +9,7 @@ test("sanitizeFoodInput trims and collapses whitespace", () => {
 });
 
 test("sanitizeFoodInput normalizes apostrophe and dash lookalikes", () => {
-  assert.equal(sanitizeFoodInput("Wendy's chili — large"), "Wendy's chili - large");
+  assert.equal(sanitizeFoodInput("Wendy\u2019s chili \u2014 large"), "Wendy's chili - large");
 });
 
 test("sanitizeFoodInput rejects non-strings, too-short and too-long input", () => {
