@@ -12,3 +12,16 @@ class UserFacingException implements Exception {
   @override
   String toString() => message;
 }
+
+/// The server refused a lookup because this free user has used today's
+/// quota. [used] and [limit] come from the error details and may be null if
+/// the server omitted them.
+class DailyLimitReachedException extends UserFacingException {
+  DailyLimitReachedException({this.used, this.limit})
+      : super(limit == null
+            ? "You've used today's free AI lookups."
+            : "You've used all $limit free AI lookups for today.");
+
+  final int? used;
+  final int? limit;
+}
