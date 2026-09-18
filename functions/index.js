@@ -56,8 +56,8 @@ async function checkRateLimit(uid, action, limit, windowSec) {
 const APPLE_PRODUCTION_VERIFY_URL = "https://buy.itunes.apple.com/verifyReceipt";
 const APPLE_SANDBOX_VERIFY_URL = "https://sandbox.itunes.apple.com/verifyReceipt";
 const PREMIUM_PRODUCT_IDS = new Set([
-  "carpecarb_premium_monthlysub",
-  "carpecarb_premium_yearly",
+  "premium_monthlysub",
+  "premium_yearly",
 ]);
 
 function parseMillis(value) {
