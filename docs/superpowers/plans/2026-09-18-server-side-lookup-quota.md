@@ -21,7 +21,7 @@
 - Entitlement refresh: at most every 6 h after a successful check, 15 min after a failed attempt; fail open for 72 h past stored expiry.
 - Quota/premium check failure fails closed (no Perplexity call).
 - No new Node test dependencies (`node:test` only). No force unwraps / `try!` in shipped Swift.
-- Every commit ends with the line `Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>`.
+- Commits carry NO `Co-Authored-By` (or other) trailer — James, 2026-09-18. Drop the `-m "Co-Authored-By: …"` part of any commit command in this plan.
 - Work on branch `feature/server-side-lookup-quota` (already created; the spec is committed there).
 
 ## File Map
