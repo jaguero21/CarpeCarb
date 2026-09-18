@@ -3004,7 +3004,9 @@ Google Cloud console → Firestore → Time-to-live → Create policy: collectio
 
 - [ ] **Step 6: Set a spend alert**
 
-Set a GCP budget alert on Perplexity/Cloud Functions spend.
+Perplexity bills separately from Google Cloud, so set both:
+- Perplexity: in the Perplexity API console (Settings → Billing), set a monthly usage limit or low-balance alert.
+- Google Cloud: Billing → Budgets & alerts → create a budget for project `carpecarb` covering Cloud Functions and Firestore.
 
 - [ ] **Step 7: Submit app 1.0.2 for review with "Manually release"**
 
