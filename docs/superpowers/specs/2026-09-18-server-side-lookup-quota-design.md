@@ -91,7 +91,7 @@ As implemented in `evaluateEntitlement` and `recordTransaction`
   nothing about renewal: sandbox monthly subscriptions renew every 5 min, and
   waiting 6 h after the purchase-time check dropped a new buyer (App Review
   included) to free about 5 min after buying.
-- No refresh within 15 min of the last attempt (`lastRefreshAttemptMs`).
+- No refresh within 15 min of the last failed attempt (`lastRefreshAttemptMs`).
 - Refresh maps Apple subscription status: `ACTIVE (1)` and
   `BILLING_GRACE_PERIOD (4)` → premium, with `expiresDateMs` taken from the
   verified `signedTransactionInfo`; `EXPIRED (2)`, `BILLING_RETRY (3)` → not

@@ -64,6 +64,12 @@ test("refresh waits 15 min after a failed attempt", () => {
   assert.equal(evaluateEntitlement({ ...doc, lastRefreshAttemptMs: NOW - 15 * 60 * 1000 }, NOW).needsRefresh, true);
 });
 
+test("a successful check does not start the 15 min backoff", () => {
+  // Checked successfully 2 min ago (1 min before the expiry), no failure since.
+  const doc = { ...expiredDoc, expiresDateMs: NOW - 60_000, lastCheckedMs: NOW - 2 * 60_000, lastRefreshAttemptMs: NOW - 2 * 60_000 };
+  assert.equal(evaluateEntitlement(doc, NOW).needsRefresh, true);
+});
+
 test("revoked doc is free and never refreshed", () => {
   assert.deepEqual(
     evaluateEntitlement({ ...expiredDoc, revoked: true, expiresDateMs: NOW + HOUR }, NOW),
@@ -332,4 +338,26 @@ test("a refunded receipt replayed on a fresh UID is caught on the first lookup",
 
   assert.equal(granted, true);
   assert.equal(await store.getPremiumStatus("fresh"), false);
+});
+
+test("a sandbox renewal is picked up minutes after the previous successful check", async () => {
+  const db = createFakeFirestore();
+  let clock = NOW;
+  let appleCalls = 0;
+  const appStore = {
+    async fetchSubscriptionStatus() {
+      appleCalls += 1;
+      // Sandbox monthly: each renewal runs 5 min from now.
+      return { status: 1, transaction: { expiresDate: clock + 5 * 60_000, productId: "premium_monthlysub" } };
+    },
+  };
+  const store = createEntitlementStore({ db, appStore, now: () => clock });
+
+  await store.recordTransaction("u1", { ...replayPayload, expiresDate: NOW + 5 * 60_000, purchaseDate: NOW });
+  assert.equal(await store.getPremiumStatus("u1"), true);
+  assert.equal(appleCalls, 1);
+
+  clock = NOW + 6 * 60_000;
+  assert.equal(await store.getPremiumStatus("u1"), true);
+  assert.equal(appleCalls, 2);
 });

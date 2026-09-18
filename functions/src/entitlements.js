@@ -18,7 +18,12 @@ function evaluateEntitlement(doc, nowMs) {
 
   const lastChecked = doc.lastCheckedMs ?? 0;
   const lastAttempt = doc.lastRefreshAttemptMs ?? 0;
-  const canRefresh = Boolean(doc.originalTransactionId) && nowMs - lastAttempt >= RETRY_BACKOFF_MS;
+  // A refresh attempt newer than the last good check means Apple was unreachable.
+  // Only a failed attempt starts the 15 min backoff: successful checks stamp
+  // lastRefreshAttemptMs too, and a sandbox monthly renews every 5 min.
+  const lastAttemptFailed = lastAttempt > lastChecked;
+  const canRefresh =
+    Boolean(doc.originalTransactionId) && (!lastAttemptFailed || nowMs - lastAttempt >= RETRY_BACKOFF_MS);
 
   if (typeof doc.expiresDateMs === "number" && doc.expiresDateMs > nowMs) {
     // Active: re-check daily so a refund is noticed without waiting for expiry.
@@ -29,9 +34,8 @@ function evaluateEntitlement(doc, nowMs) {
   // a check from before it (e.g. at purchase) says nothing about renewal.
   const confirmedLapsedRecently =
     lastChecked > doc.expiresDateMs && nowMs - lastChecked < REFRESH_INTERVAL_MS;
-  // A refresh attempt newer than the last good check means Apple was unreachable:
-  // keep the 72 h fail-open for every request in the backoff window, not just one.
-  const lastAttemptFailed = lastAttempt > lastChecked;
+  // After a failed attempt, keep the 72 h fail-open for every request in the
+  // backoff window, not just the one that attempted.
   return {
     premium: lastAttemptFailed && failOpenPremium(doc, nowMs),
     needsRefresh: canRefresh && !confirmedLapsedRecently,
