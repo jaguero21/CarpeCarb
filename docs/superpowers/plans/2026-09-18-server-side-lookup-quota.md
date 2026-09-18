@@ -2976,11 +2976,11 @@ git commit -m "feat(siri): send UTC offset and speak the daily lookup limit" -m 
 
 No code. Steps 1-2, 6 and 8 need App Store Connect access; steps 3, 4 and 7 change production. Confirm with James before running each deploy command.
 
-**Why this order.** The receipt function goes first so App Review's purchase works; the quota function goes last and right before release, so 1.0.1 users see the server limit for as short a time as possible and 1.0.2 never runs without a server limit. `main`'s `validateAppStoreReceipt` only accepts `carpecarb_premium_*` product IDs (`functions/index.js@0b9e17e:58-61`) and rejects the app's `expectedProductId: 'premium_monthlysub'` with `invalid-argument` (`:266`), so if the deployed function matches `main`, App Review's purchase of 1.0.2 fails. While in review, 1.0.2 works against the old lookup function (a missing `quota` is ignored).
+**Why this order.** The receipt function goes first so App Review's purchase works; the quota function goes last and right before release, so 1.0.1 users see the server limit for as short a time as possible and public 1.0.2 never runs without a server limit (TestFlight and review builds before Step 7 are unlimited). `main`'s `validateAppStoreReceipt` only accepts `carpecarb_premium_*` product IDs (`functions/index.js@0b9e17e:58-61`) and rejects the app's `expectedProductId: 'premium_monthlysub'` with `invalid-argument` (`:266`), so if the deployed function matches `main`, App Review's purchase of 1.0.2 fails. While in review, 1.0.2 works against the old lookup function (a missing `quota` is ignored).
 
 - [ ] **Step 1: Check what's deployed and whether anyone is subscribed**
 
-Cloud console → Cloud Functions → `validateAppStoreReceipt` → Source (or `firebase functions:list` plus the console): note whether it accepts `premium_monthlysub`/`premium_yearly`. Also confirm in App Store Connect → Sales/Subscriptions whether there are any active production subscriptions. If any 1.0.1 buyer was charged without getting premium, they'll need to tap Restore after Step 4.
+Cloud console → Cloud Functions → `validateAppStoreReceipt` → Source (or `firebase functions:list` plus the console): note whether it accepts `premium_monthlysub`/`premium_yearly`. Also confirm in App Store Connect → Sales/Subscriptions whether there are any active production subscriptions. If any 1.0.1 buyer was charged without getting premium, they'll need to tap Restore after Step 4. These users are anonymous and can't be contacted directly, so if this step finds any, reach them through App Store review replies and a support note in the 1.0.2 release notes.
 
 - [ ] **Step 2: Create the In-App Purchase API key and set the four secrets**
 

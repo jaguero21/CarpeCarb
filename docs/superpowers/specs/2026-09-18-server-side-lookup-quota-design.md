@@ -232,7 +232,9 @@ no migration path beyond Restore. The detailed checklist is plan Task 9.
    `premium_monthlysub`/`premium_yearly` (`main`'s only accepts
    `carpecarb_premium_*`), and whether App Store Connect shows any active
    production subscriptions. A 1.0.1 buyer charged without premium taps
-   Restore after step 4.
+   Restore after step 4. These users are anonymous and can't be contacted
+   directly, so if this check finds any, reach them through App Store review
+   replies and a support note in the 1.0.2 release notes.
 2. Create an In-App Purchase key in App Store Connect (Users and Access →
    Integrations); note key ID and issuer ID; find the app's numeric Apple ID.
    `firebase functions:secrets:set` for the four new secrets.
@@ -252,8 +254,8 @@ no migration path beyond Restore. The detailed checklist is plan Task 9.
 
 The receipt function goes first so App Review's purchase works; the quota
 function goes last and right before release, so 1.0.1 users see the server
-limit for as short a time as possible and 1.0.2 never runs without a server
-limit.
+limit for as short a time as possible and public 1.0.2 never runs without a
+server limit (TestFlight and review builds before step 7 are unlimited).
 
 ## Testing
 
