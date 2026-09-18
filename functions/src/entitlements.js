@@ -4,6 +4,7 @@ const HOUR_MS = 60 * 60 * 1000;
 const REFRESH_INTERVAL_MS = 6 * HOUR_MS;
 const RETRY_BACKOFF_MS = 15 * 60 * 1000;
 const FAIL_OPEN_WINDOW_MS = 72 * HOUR_MS;
+const ACTIVE_RECHECK_MS = 24 * HOUR_MS;
 
 /**
  * Decides premium status from a stored entitlement doc.
@@ -13,16 +14,28 @@ const FAIL_OPEN_WINDOW_MS = 72 * HOUR_MS;
  * @returns {{premium: boolean, needsRefresh: boolean}}
  */
 function evaluateEntitlement(doc, nowMs) {
-  if (!doc) return { premium: false, needsRefresh: false };
-  if (!doc.revoked && typeof doc.expiresDateMs === "number" && doc.expiresDateMs > nowMs) {
-    return { premium: true, needsRefresh: false };
+  if (!doc || doc.revoked) return { premium: false, needsRefresh: false };
+
+  const lastChecked = doc.lastCheckedMs ?? 0;
+  const lastAttempt = doc.lastRefreshAttemptMs ?? 0;
+  const canRefresh = Boolean(doc.originalTransactionId) && nowMs - lastAttempt >= RETRY_BACKOFF_MS;
+
+  if (typeof doc.expiresDateMs === "number" && doc.expiresDateMs > nowMs) {
+    // Active: re-check daily so a refund is noticed without waiting for expiry.
+    return { premium: true, needsRefresh: canRefresh && nowMs - lastChecked >= ACTIVE_RECHECK_MS };
   }
-  if (doc.revoked || !doc.originalTransactionId) {
-    return { premium: false, needsRefresh: false };
-  }
-  const checkedRecently = nowMs - (doc.lastCheckedMs ?? 0) < REFRESH_INTERVAL_MS;
-  const attemptedRecently = nowMs - (doc.lastRefreshAttemptMs ?? 0) < RETRY_BACKOFF_MS;
-  return { premium: false, needsRefresh: !checkedRecently && !attemptedRecently };
+
+  // Expired. Only a check made after the stored expiry can confirm the lapse;
+  // a check from before it (e.g. at purchase) says nothing about renewal.
+  const confirmedLapsedRecently =
+    lastChecked > doc.expiresDateMs && nowMs - lastChecked < REFRESH_INTERVAL_MS;
+  // A refresh attempt newer than the last good check means Apple was unreachable:
+  // keep the 72 h fail-open for every request in the backoff window, not just one.
+  const lastAttemptFailed = lastAttempt > lastChecked;
+  return {
+    premium: lastAttemptFailed && failOpenPremium(doc, nowMs),
+    needsRefresh: canRefresh && !confirmedLapsedRecently,
+  };
 }
 
 /**
@@ -41,13 +54,14 @@ function failOpenPremium(doc, nowMs) {
 /**
  * Maps an App Store Server API status lookup to fields to merge into the doc.
  *
- * @param {{status: number | null, transaction: {expiresDate?: number, productId?: string} | null}} result
+ * @param {{status: number | null, transaction: {expiresDate?: number, productId?: string, revocationDate?: number} | null}} result
  * @param {number} nowMs
  */
 function entitlementUpdateFromStatus(result, nowMs) {
   const update = { lastCheckedMs: nowMs, lastRefreshAttemptMs: nowMs };
   if (result.status === Status.REVOKED) {
     update.revoked = true;
+    update.revokedAtMs = result.transaction?.revocationDate ?? nowMs;
   } else if (result.status === Status.ACTIVE || result.status === Status.BILLING_GRACE_PERIOD) {
     const txnExpiry = result.transaction?.expiresDate ?? 0;
     // In billing grace the transaction's own expiry is already past; grant
@@ -96,9 +110,32 @@ function createEntitlementStore({ db, appStore, now }) {
     }
   }
 
-  /** Stores a verified, active transaction as this user's entitlement. */
+  /**
+   * Stores a verified, active transaction as this user's entitlement.
+   *
+   * Refuses a transaction purchased before this entitlement was revoked
+   * (a replay of the pre-refund JWS). A later purchase with the same
+   * originalTransactionId is a resubscription and is accepted.
+   *
+   * @returns {Promise<boolean>} true if the entitlement was written
+   */
   async function recordTransaction(uid, payload) {
-    await refFor(uid).set({
+    const ref = refFor(uid);
+    const snap = await ref.get();
+    const existing = snap.exists ? snap.data() : null;
+    if (
+      existing &&
+      existing.revoked &&
+      existing.originalTransactionId === payload.originalTransactionId &&
+      payload.purchaseDate <= (existing.revokedAtMs ?? Infinity)
+    ) {
+      console.warn(
+        `[entitlements] Ignoring revoked transaction ${payload.originalTransactionId} replayed by ${uid}`
+      );
+      return false;
+    }
+
+    await ref.set({
       productId: payload.productId,
       originalTransactionId: payload.originalTransactionId,
       expiresDateMs: payload.expiresDate,
@@ -107,6 +144,7 @@ function createEntitlementStore({ db, appStore, now }) {
       lastCheckedMs: now(),
       lastRefreshAttemptMs: 0,
     });
+    return true;
   }
 
   return { getPremiumStatus, recordTransaction };

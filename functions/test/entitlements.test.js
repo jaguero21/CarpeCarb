@@ -26,8 +26,15 @@ test("no doc means free, nothing to refresh", () => {
 
 test("unexpired, unrevoked doc is premium", () => {
   assert.deepEqual(
-    evaluateEntitlement({ ...expiredDoc, expiresDateMs: NOW + HOUR }, NOW),
+    evaluateEntitlement({ ...expiredDoc, expiresDateMs: NOW + HOUR, lastCheckedMs: NOW - HOUR }, NOW),
     { premium: true, needsRefresh: false }
+  );
+});
+
+test("active doc is re-checked daily so refunds are noticed", () => {
+  assert.deepEqual(
+    evaluateEntitlement({ ...expiredDoc, expiresDateMs: NOW + HOUR, lastCheckedMs: NOW - 24 * HOUR }, NOW),
+    { premium: true, needsRefresh: true }
   );
 });
 
@@ -36,9 +43,19 @@ test("expired doc needs a refresh", () => {
 });
 
 test("refresh waits 6h after the last successful check", () => {
-  const doc = { ...expiredDoc, lastCheckedMs: NOW - 5 * HOUR };
+  const doc = { ...expiredDoc, expiresDateMs: NOW - 24 * HOUR, lastCheckedMs: NOW - 5 * HOUR };
   assert.equal(evaluateEntitlement(doc, NOW).needsRefresh, false);
   assert.equal(evaluateEntitlement({ ...doc, lastCheckedMs: NOW - 6 * HOUR }, NOW).needsRefresh, true);
+});
+
+test("a check made before the expiry does not delay the refresh", () => {
+  const doc = { ...expiredDoc, expiresDateMs: NOW - 60_000, lastCheckedMs: NOW - HOUR };
+  assert.equal(evaluateEntitlement(doc, NOW).needsRefresh, true);
+});
+
+test("fail-open covers every request in the backoff after a failed refresh", () => {
+  const doc = { ...expiredDoc, lastCheckedMs: NOW - 30 * 24 * HOUR, lastRefreshAttemptMs: NOW - 60_000 };
+  assert.deepEqual(evaluateEntitlement(doc, NOW), { premium: true, needsRefresh: false });
 });
 
 test("refresh waits 15 min after a failed attempt", () => {
@@ -93,6 +110,12 @@ test("REVOKED marks the doc revoked", () => {
   assert.equal(entitlementUpdateFromStatus({ status: 5, transaction: null }, NOW).revoked, true);
 });
 
+test("REVOKED records when the refund happened", () => {
+  const withDate = entitlementUpdateFromStatus({ status: 5, transaction: { revocationDate: NOW - HOUR } }, NOW);
+  assert.equal(withDate.revokedAtMs, NOW - HOUR);
+  assert.equal(entitlementUpdateFromStatus({ status: 5, transaction: null }, NOW).revokedAtMs, NOW);
+});
+
 test("getPremiumStatus refreshes an expired entitlement from Apple", async () => {
   const db = createFakeFirestore({ "entitlements/u1": expiredDoc });
   const calls = [];
@@ -118,6 +141,84 @@ test("getPremiumStatus falls back to the 72h window when Apple fails", async () 
   assert.equal(db.docs.get("entitlements/u1").lastRefreshAttemptMs, NOW);
 });
 
+test("getPremiumStatus refreshes after a sandbox renewal passes the recorded expiry", async () => {
+  const db = createFakeFirestore();
+  let clock = NOW;
+  const calls = [];
+  const appStore = {
+    async fetchSubscriptionStatus(id, env) {
+      calls.push([id, env]);
+      return { status: 1, transaction: { expiresDate: NOW + 10 * 60_000, productId: "premium_monthlysub" } };
+    },
+  };
+  const store = createEntitlementStore({ db, appStore, now: () => clock });
+
+  await store.recordTransaction("u1", {
+    productId: "premium_monthlysub",
+    originalTransactionId: "2000000111",
+    expiresDate: NOW + 5 * 60_000,
+    purchaseDate: NOW,
+    environment: "Sandbox",
+  });
+  clock = NOW + 6 * 60_000;
+
+  assert.equal(await store.getPremiumStatus("u1"), true);
+  assert.deepEqual(calls, [["2000000111", "Sandbox"]]);
+});
+
+test("getPremiumStatus keeps failing open through the retry backoff", async () => {
+  const db = createFakeFirestore({ "entitlements/u1": expiredDoc });
+  let clock = NOW;
+  let appleCalls = 0;
+  const appStore = {
+    async fetchSubscriptionStatus() {
+      appleCalls += 1;
+      throw new Error("503");
+    },
+  };
+  const store = createEntitlementStore({ db, appStore, now: () => clock });
+
+  assert.equal(await store.getPremiumStatus("u1"), true);
+  clock = NOW + 60_000;
+  assert.equal(await store.getPremiumStatus("u1"), true);
+  assert.equal(appleCalls, 1);
+});
+
+test("getPremiumStatus trusts a recently checked active doc without calling Apple", async () => {
+  const db = createFakeFirestore({
+    "entitlements/u1": { ...expiredDoc, expiresDateMs: NOW + 24 * HOUR, lastCheckedMs: NOW - HOUR },
+  });
+  const appStore = { fetchSubscriptionStatus: async () => assert.fail("should not be called") };
+  const store = createEntitlementStore({ db, appStore, now: () => NOW });
+
+  assert.equal(await store.getPremiumStatus("u1"), true);
+});
+
+test("getPremiumStatus does not call Apple for a revoked doc", async () => {
+  const db = createFakeFirestore({
+    "entitlements/u1": { ...expiredDoc, expiresDateMs: NOW + 24 * HOUR, revoked: true, revokedAtMs: NOW - HOUR },
+  });
+  const appStore = { fetchSubscriptionStatus: async () => assert.fail("should not be called") };
+  const store = createEntitlementStore({ db, appStore, now: () => NOW });
+
+  assert.equal(await store.getPremiumStatus("u1"), false);
+});
+
+test("getPremiumStatus notices a refund on the daily re-check", async () => {
+  const db = createFakeFirestore({
+    "entitlements/u1": { ...expiredDoc, expiresDateMs: NOW + 300 * 24 * HOUR, lastCheckedMs: NOW - 25 * HOUR },
+  });
+  const appStore = {
+    fetchSubscriptionStatus: async () => ({ status: 5, transaction: { revocationDate: NOW - HOUR } }),
+  };
+  const store = createEntitlementStore({ db, appStore, now: () => NOW });
+
+  assert.equal(await store.getPremiumStatus("u1"), false);
+  const doc = db.docs.get("entitlements/u1");
+  assert.equal(doc.revoked, true);
+  assert.equal(doc.revokedAtMs, NOW - HOUR);
+});
+
 test("getPremiumStatus does not call Apple for a user with no entitlement", async () => {
   const db = createFakeFirestore();
   const appStore = { fetchSubscriptionStatus: async () => assert.fail("should not be called") };
@@ -130,17 +231,59 @@ test("recordTransaction writes a fresh entitlement doc", async () => {
   const db = createFakeFirestore();
   const store = createEntitlementStore({ db, appStore: {}, now: () => NOW });
 
-  await store.recordTransaction("u1", {
+  const granted = await store.recordTransaction("u1", {
     productId: "premium_yearly",
     originalTransactionId: "2000000222",
     expiresDate: NOW + 365 * 24 * HOUR,
     environment: "Sandbox",
   });
+  assert.equal(granted, true);
   assert.deepEqual(db.docs.get("entitlements/u1"), {
     productId: "premium_yearly",
     originalTransactionId: "2000000222",
     expiresDateMs: NOW + 365 * 24 * HOUR,
     environment: "Sandbox",
+    revoked: false,
+    lastCheckedMs: NOW,
+    lastRefreshAttemptMs: 0,
+  });
+});
+
+const revokedDoc = {
+  ...expiredDoc,
+  expiresDateMs: NOW + 300 * 24 * HOUR,
+  revoked: true,
+  revokedAtMs: NOW - HOUR,
+};
+const replayPayload = {
+  productId: "premium_monthlysub",
+  originalTransactionId: "2000000111",
+  expiresDate: NOW + 24 * HOUR,
+  environment: "Production",
+};
+
+test("recordTransaction refuses to replay a transaction bought before its refund", async () => {
+  const db = createFakeFirestore({ "entitlements/u1": revokedDoc });
+  const store = createEntitlementStore({ db, appStore: {}, now: () => NOW });
+
+  const granted = await store.recordTransaction("u1", { ...replayPayload, purchaseDate: NOW - 30 * 24 * HOUR });
+
+  assert.equal(granted, false);
+  assert.deepEqual(db.docs.get("entitlements/u1"), revokedDoc);
+});
+
+test("recordTransaction accepts a resubscription after a refund", async () => {
+  const db = createFakeFirestore({ "entitlements/u1": revokedDoc });
+  const store = createEntitlementStore({ db, appStore: {}, now: () => NOW });
+
+  const granted = await store.recordTransaction("u1", { ...replayPayload, purchaseDate: NOW });
+
+  assert.equal(granted, true);
+  assert.deepEqual(db.docs.get("entitlements/u1"), {
+    productId: "premium_monthlysub",
+    originalTransactionId: "2000000111",
+    expiresDateMs: NOW + 24 * HOUR,
+    environment: "Production",
     revoked: false,
     lastCheckedMs: NOW,
     lastRefreshAttemptMs: 0,

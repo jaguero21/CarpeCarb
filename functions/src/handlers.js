@@ -14,7 +14,7 @@ const { PREMIUM_PRODUCT_IDS, isActiveTransaction } = require("./appStore");
  *   releaseLookup: (uid: string, dayKey: string) => Promise<void>,
  *   lookupFoods: (sanitized: string) => Promise<{items: object[], citations: string[]}>,
  *   verifyTransaction: (jws: string) => Promise<object>,
- *   recordTransaction: (uid: string, payload: object) => Promise<void>,
+ *   recordTransaction: (uid: string, payload: object) => Promise<boolean>,
  *   now: () => number,
  * }} deps
  */
@@ -109,7 +109,11 @@ function createHandlers(deps) {
 
     // Any verified, active premium transaction grants premium, even if it is
     // not the product the client expected (e.g. a plan change).
-    await deps.recordTransaction(uid, payload);
+    const granted = await deps.recordTransaction(uid, payload);
+    if (!granted) {
+      // Purchased before this entitlement was refunded: a replayed JWS.
+      return { isValid: false, reason: "revoked", environment, bundleId };
+    }
 
     if (expectedProductId && payload.productId !== expectedProductId) {
       return {

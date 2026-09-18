@@ -26,6 +26,7 @@ function makeDeps(overrides = {}) {
     verifyTransaction: async () => ({}),
     recordTransaction: async (uid, payload) => {
       calls.push(["record", uid, payload.productId]);
+      return true;
     },
     now: () => NOW,
     ...overrides,
@@ -156,6 +157,24 @@ test("product mismatch still records the entitlement", async () => {
 
   assert.equal(res.reason, "product-mismatch");
   assert.deepEqual(calls, [["record", "u1", "premium_yearly"]]);
+});
+
+test("a transaction refunded before it was replayed is reported revoked", async () => {
+  const { deps } = makeDeps({
+    verifyTransaction: async () => activePayload,
+    recordTransaction: async () => false,
+  });
+
+  const res = await createHandlers(deps).validateAppStoreReceipt({
+    auth, data: { receiptData: "a.b.c", expectedProductId: "premium_monthlysub" },
+  });
+
+  assert.deepEqual(res, {
+    isValid: false,
+    reason: "revoked",
+    environment: "Sandbox",
+    bundleId: "com.jamesaguero.mycarbtracker",
+  });
 });
 
 test("verification failure maps to failed-precondition", async () => {
