@@ -32,8 +32,10 @@ public struct PerplexityClient {
 
         let body: [String: Any] = [
             "data": [
-                "input": foodItem
-            ]
+                "input": foodItem,
+                // Lets the server count the free quota per local calendar day.
+                "tzOffsetMinutes": TimeZone.current.secondsFromGMT() / 60,
+            ] as [String: Any]
         ]
 
         request.httpBody = try JSONSerialization.data(withJSONObject: body)
@@ -45,10 +47,7 @@ public struct PerplexityClient {
         }
 
         guard httpResponse.statusCode == 200 else {
-            if httpResponse.statusCode == 429 {
-                throw IntentError.message("Rate limit exceeded. Try again shortly.")
-            }
-            throw IntentError.message("Server error (\(httpResponse.statusCode)).")
+            throw IntentError.message(errorMessage(status: httpResponse.statusCode, body: data))
         }
 
         // Firebase callable functions wrap the response in {"result": ...}
@@ -78,5 +77,23 @@ public struct PerplexityClient {
         }
 
         return (name: name, carbs: carbs, details: details, citations: citations)
+    }
+
+    /// Maps a non-200 response from the callable function to a message Siri
+    /// can speak. Callable errors have the body
+    /// `{"error": {"message", "status", "details"}}`.
+    static func errorMessage(status: Int, body: Data) -> String {
+        let json = (try? JSONSerialization.jsonObject(with: body)) as? [String: Any]
+        let details = (json?["error"] as? [String: Any])?["details"] as? [String: Any]
+
+        if status == 429, details?["reason"] as? String == "daily-quota" {
+            let limit = (details?["limit"] as? NSNumber)?.intValue
+            let count = limit.map { "\($0) " } ?? ""
+            return "You've used today's \(count)free lookups. Open CarpeCarb to go unlimited."
+        }
+        if status == 429 {
+            return "Rate limit exceeded. Try again shortly."
+        }
+        return "Server error (\(status))."
     }
 }
