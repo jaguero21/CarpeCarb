@@ -21,11 +21,11 @@ test("sanitizeFoodInput rejects non-strings, too-short and too-long input", () =
 
 const noSleep = async () => {};
 
-/** A fetch stand-in that returns the same response every call and counts calls. */
-function stubFetch(response) {
+/** A fetch stand-in that returns the given responses in order (repeating the last) and counts calls. */
+function stubFetch(...responses) {
   const stub = async () => {
     stub.calls += 1;
-    return response;
+    return responses[Math.min(stub.calls, responses.length) - 1];
   };
   stub.calls = 0;
   return stub;
@@ -41,7 +41,7 @@ function httpError(status) {
 }
 
 test("lookupFoods does not retry output truncated at max_tokens", async () => {
-  const fetchImpl = stubFetch(completion('[{"name":"Apple","carbs":25', "length"));
+  const fetchImpl = stubFetch(completion('[{"name":"Egg","carbs":1},{"name":"Ha', "length"));
 
   await assert.rejects(lookupFoods("an apple", "key", { fetchImpl, sleep: noSleep }), (err) => {
     assert.equal(err.code, "invalid-argument");
@@ -49,6 +49,57 @@ test("lookupFoods does not retry output truncated at max_tokens", async () => {
     return true;
   });
   assert.equal(fetchImpl.calls, 1);
+});
+
+test("lookupFoods does not retry truncated output that fails to parse", async () => {
+  // Greedy array match ends at the citation's "]", so this reaches the JSON-parse branch.
+  const fetchImpl = stubFetch(completion('[{"name":"Egg","carbs":1,"details":"USDA [1]"},{"name":"Ha', "length"));
+
+  await assert.rejects(lookupFoods("eggs and ham", "key", { fetchImpl, sleep: noSleep }), (err) => {
+    assert.equal(err.code, "invalid-argument");
+    assert.equal(isNotBilled(err), false);
+    return true;
+  });
+  assert.equal(fetchImpl.calls, 1);
+});
+
+test("lookupFoods keeps a complete array that is followed by truncated prose", async () => {
+  const fetchImpl = stubFetch(completion('[{"name":"Egg","carbs":1}] and then some trunc', "length"));
+
+  const res = await lookupFoods("an egg", "key", { fetchImpl, sleep: noSleep });
+
+  assert.equal(res.items.length, 1);
+  assert.equal(res.items[0].name, "Egg");
+  assert.equal(fetchImpl.calls, 1);
+});
+
+test("lookupFoods treats null array elements as no items, and they stay billed", async () => {
+  const fetchImpl = stubFetch(completion("[null]"));
+
+  await assert.rejects(lookupFoods("an apple", "key", { fetchImpl, sleep: noSleep }), (err) => {
+    assert.equal(isNotBilled(err), false);
+    return true;
+  });
+  assert.equal(fetchImpl.calls, 3);
+});
+
+test("lookupFoods treats null message content as billed", async () => {
+  const fetchImpl = stubFetch(completion(null));
+
+  await assert.rejects(lookupFoods("an apple", "key", { fetchImpl, sleep: noSleep }), (err) => {
+    assert.equal(isNotBilled(err), false);
+    return true;
+  });
+});
+
+test("lookupFoods keeps a billed attempt billed when later attempts hit 5xx", async () => {
+  const fetchImpl = stubFetch(completion("Sorry, I can't find that food."), httpError(503));
+
+  await assert.rejects(lookupFoods("an apple", "key", { fetchImpl, sleep: noSleep }), (err) => {
+    assert.equal(isNotBilled(err), false);
+    return true;
+  });
+  assert.equal(fetchImpl.calls, 3);
 });
 
 test("lookupFoods gives up after three unparseable responses, all billed", async () => {
