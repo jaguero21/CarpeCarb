@@ -55,8 +55,8 @@ and #9 (client daily-count reset) as a side effect.
 |---|---|
 | `appStore.js` | Wraps `@apple/app-store-server-library`. `verifyTransaction(jws)` → decoded payload via `SignedDataVerifier`, using Apple root certs bundled in `functions/certs/` (from apple.com/certificateauthority; `AppleRootCA-G3.cer` at minimum), bundle ID `com.jamesaguero.mycarbtracker`, and the numeric app Apple ID (required for Production). `fetchSubscriptionStatus(originalTransactionId, environment)` → current status and decoded transaction via `AppStoreServerAPIClient.getAllSubscriptionStatuses`. |
 | `entitlements.js` | Pure `evaluateEntitlement(doc, nowMs)` → `{ premium, needsRefresh }`. `getPremiumStatus(uid)` reads the doc, refreshes from Apple when needed, writes back. `recordTransaction(uid, payload)` writes the doc after a verified purchase/restore. |
-| `quota.js` | Pure `dayKey(nowMs, tzOffsetMin)` and `applyReservation(doc, dayKey, limit)` → `{ allowed, next }`. `reserveLookup(uid, tzOffsetMin)` runs `applyReservation` in a Firestore transaction. `releaseLookup(uid, dayKey)` decrements best-effort. |
-| `perplexity.js` | `lookupFoods(input, apiKey)` — the existing prompt, retry loop, and response mapping from `index.js:392-562`, moved unchanged. |
+| `quota.js` | Pure `dayKey(nowMs, tzOffsetMin)` and `applyReservation(doc, dayKey, limit)` → `{ allowed, dayKey, used, next }`. `reserveLookup(uid, tzOffsetMin)` runs `applyReservation` in a Firestore transaction. `releaseLookup(uid, dayKey)` decrements best-effort. |
+| `perplexity.js` | `lookupFoods(input, apiKey)` — the existing prompt, retry loop, and response mapping from `index.js:392-562`. Errors thrown before Perplexity produced a completion are marked `notBilled` (`isNotBilled(err)`); output truncated at `max_tokens` is not retried. |
 | `rateLimit.js` | Existing `checkRateLimit`, moved unchanged. |
 
 Handlers are built by `createHandlers(deps)` in `src/handlers.js`, taking the
@@ -67,8 +67,8 @@ store functions as dependencies (`checkRateLimit`, `getPremiumStatus`,
 ### Data (Firestore, Admin SDK only)
 
 - `entitlements/{uid}`: `productId`, `originalTransactionId`, `expiresDateMs`,
-  `environment` (`Production` | `Sandbox`), `revoked` (bool), `lastCheckedMs`,
-  `lastRefreshAttemptMs`.
+  `environment` (`Production` | `Sandbox`), `revoked` (bool), `revokedAtMs`
+  (set with `revoked`), `lastCheckedMs`, `lastRefreshAttemptMs`.
 - `lookupQuota/{uid}`: `dayKey` (`YYYY-MM-DD`), `count`, `expiresAt`
   (TTL field, set to 2 days out). The limit is a single constant,
   `FREE_DAILY_LOOKUP_LIMIT = 4`, in `quota.js`.
@@ -78,16 +78,39 @@ store functions as dependencies (`checkRateLimit`, `getPremiumStatus`,
 
 ### Entitlement evaluation
 
-- Premium if `!revoked && expiresDateMs > now`.
-- If expired and `originalTransactionId` is set: `needsRefresh` when
-  `lastCheckedMs` is older than 6 h and `lastRefreshAttemptMs` is older than
-  15 min.
+As implemented in `evaluateEntitlement` and `recordTransaction`
+(`functions/src/entitlements.js`):
+
+- No doc, or `revoked` → free, never refreshed.
+- Active (`expiresDateMs > now`) → premium. Re-checked with Apple once
+  `lastCheckedMs` is 24 h old, so a refund is noticed without waiting for the
+  stored expiry (up to a year for `premium_yearly`).
+- Expired, with `originalTransactionId` set → refresh, unless a check made
+  *after* the stored expiry confirmed the lapse less than 6 h ago. A check from
+  before the expiry (e.g. the one `recordTransaction` stamps at purchase) says
+  nothing about renewal: sandbox monthly subscriptions renew every 5 min, and
+  waiting 6 h after the purchase-time check dropped a new buyer (App Review
+  included) to free about 5 min after buying.
+- No refresh within 15 min of the last attempt (`lastRefreshAttemptMs`).
 - Refresh maps Apple subscription status: `ACTIVE (1)` and
   `BILLING_GRACE_PERIOD (4)` → premium, with `expiresDateMs` taken from the
-  verified `signedTransactionInfo`; `EXPIRED (2)`, `BILLING_RETRY (3)`,
-  `REVOKED (5)` → not premium (`revoked = true` for 5).
-- If the refresh call fails: premium while `now - expiresDateMs < 72 h`, else
-  free. Record `lastRefreshAttemptMs`, log the error.
+  verified `signedTransactionInfo`; `EXPIRED (2)`, `BILLING_RETRY (3)` → not
+  premium; `REVOKED (5)` → `revoked = true` and `revokedAtMs` = the
+  transaction's `revocationDate` (now, if absent).
+- If the refresh call fails: record `lastRefreshAttemptMs`, log the error, and
+  stay premium while `now - expiresDateMs < 72 h` (an unexpired doc stays
+  premium). The fail-open covers every request in the 15-min backoff, not just
+  the one that attempted: a `lastRefreshAttemptMs` newer than `lastCheckedMs`
+  means Apple was unreachable, so evaluation keeps the 72 h window.
+- Replay after a refund: `recordTransaction` refuses a transaction with the
+  revoked doc's `originalTransactionId` whose `purchaseDate` is at or before
+  `revokedAtMs` (any purchase date, if `revokedAtMs` is missing), so the
+  pre-refund JWS can't un-revoke the doc; `validateAppStoreReceipt` answers
+  `{ isValid: false, reason: "revoked" }`.
+- Resubscribe exception: Apple keeps the same `originalTransactionId` when a
+  user resubscribes in the same group, so the rule compares purchase time with
+  revocation time rather than blocking the ID. A purchase after the revocation
+  is accepted and rewrites the doc with `revoked: false`.
 
 ### `getMultipleCarbCounts` flow
 
@@ -97,15 +120,29 @@ store functions as dependencies (`checkRateLimit`, `getPremiumStatus`,
 4. `premium = getPremiumStatus(uid)`.
 5. If not premium: `reserveLookup(uid, tzOffsetMinutes)`. Over limit →
    `HttpsError('resource-exhausted', "You've used today's 4 free lookups.",
-   { reason: 'daily-quota', used, limit })`. Reserving before the Perplexity
-   call keeps concurrent requests from exceeding the limit.
-6. `lookupFoods(...)`. On failure, `releaseLookup` then rethrow.
-7. Return `{ items, citations, quota: { premium, used, limit } }`
-   (`used`/`limit` are `null` when premium).
+   { reason: 'daily-quota', used, limit, dayKey })`. Reserving before the
+   Perplexity call keeps concurrent requests from exceeding the limit.
+6. `lookupFoods(...)`. On failure, `releaseLookup` only when Perplexity didn't
+   bill the call (`isNotBilled(err)`: 401, 429, 5xx after retries, any other
+   non-OK status, network failure), then rethrow. A billed completion that
+   fails afterwards (e.g. no parseable JSON after 3 attempts) keeps the
+   reservation; refunding it would let one input cost 3 billed calls and no
+   quota.
+   Output truncated at `max_tokens` (`finish_reason: "length"`) isn't retried:
+   `invalid-argument`, "Too many foods in one lookup. Try fewer items."
+7. Return `{ items, citations, quota: { premium, used, limit, dayKey } }`
+   (`used`/`limit`/`dayKey` are `null` when premium).
 
 `tzOffsetMinutes` is taken from request data, must be an integer, and is
 clamped to [-840, 840]. Missing or invalid → 0 (UTC); old app builds send
 nothing and get UTC days.
+
+The stored day key never moves backwards: a request whose `dayKey` is earlier
+than the stored one counts against the stored (later) day (`applyReservation`
+in `quota.js`). Otherwise alternating `tzOffsetMinutes` between +840 and −840
+reset the count on every call. `reserveLookup` returns that effective day key,
+so `releaseLookup` decrements the same day, and both the lookup response's
+`quota` and the daily-quota error details carry it as `dayKey`.
 
 ### `validateAppStoreReceipt` flow
 
@@ -147,9 +184,11 @@ Missing secret → `internal` error with a clear log line.
   A response without `quota` is tolerated (deploy gap).
 - `PremiumService`:
   - `incrementLookupCount` removed; `applyServerQuota(ServerQuota)` caches
-    `used`, `limit` (new `StorageKeys.dailyLookupLimit`), and the device's
-    local calendar date (not the app's daily reset hour, matching the server's
-    `dayKey`), and sets `is_premium` from `quota.premium`.
+    `used`, `limit` (new `StorageKeys.dailyLookupLimit`), and the server's
+    `dayKey` (the device's local calendar date if the server sent none), and
+    sets `is_premium` from `quota.premium`. Caching under the server's day
+    matters at midnight: a lookup counted against yesterday that completes
+    just after local midnight must not block today.
   - `hasReachedDailyLimit` = not premium, cached date is today, and cached
     `used >= limit`. The date comparison fixes the stale counter when the app
     stays alive past midnight (review #9). It stays a fast path only; the
@@ -174,6 +213,7 @@ Missing secret → `internal` error with a clear log line.
 | Apple status API unreachable | Premium up to 72 h past stored expiry, retry ≥ 15 min apart, then free |
 | Quota transaction fails | Fail closed: no Perplexity call, generic error to client |
 | `releaseLookup` fails | Log only; user loses one lookup |
+| Perplexity billed but failed | No refund; the lookup counts |
 | JWS verification fails | `failed-precondition` (400); app shows existing "Could not verify…" message |
 | Missing secret | `internal` + log |
 | Response lacks `quota` | Client ignores, keeps cached values |
@@ -202,7 +242,8 @@ No paying subscribers exist, so no migration path.
     72 h fail-open window, revoked.
   - `applyReservation`: new day resets, under limit, at limit.
   - Handler tests with injected fakes: reserve happens before `lookupFoods`;
-    release on failure; premium skips the quota; daily-quota error details.
+    release only on an unbilled failure; premium skips the quota;
+    daily-quota error details.
   - #3 regression: a committed fixture JWS signed by a self-made chain whose
     root subject is `CN=Apple Root CA` (generated once with openssl; script
     committed alongside) must be rejected by `verifyTransaction`.
@@ -220,8 +261,10 @@ No paying subscribers exist, so no migration path.
 
 ## Accepted risks (until App Check)
 
-- A modified client can spoof `tzOffsetMinutes` for a few extra lookups
-  around day boundaries.
+- A modified client can shift its day key forward once for up to ~3× the
+  limit on one day; afterwards 4/day.
 - A leaked JWS grants premium to other UIDs while that subscription is active.
 - Sandbox transactions are accepted in production (TestFlight testers).
 - Reinstalling can produce a new anonymous UID with a fresh daily quota.
+- Scripted anonymous-account minting still gets 4 free lookups per new account
+  until App Check; add a Perplexity spend alert.

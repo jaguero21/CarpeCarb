@@ -2974,13 +2974,17 @@ git commit -m "feat(siri): send UTC offset and speak the daily lookup limit" -m 
 
 ### Task 9: Deploy and verify (needs James — App Store Connect and Firebase access)
 
-No code. Steps 1-2 need App Store Connect access; steps 3-6 change production. Confirm with James before running each deploy command.
+No code. Steps 1-2 and 7 need App Store Connect access; steps 4-5 and 8 change production. Confirm with James before running each deploy command.
 
-- [ ] **Step 1: Create the In-App Purchase API key**
+- [ ] **Step 1: Confirm there are no production subscribers**
+
+Confirm in App Store Connect → Sales/Subscriptions that there are no active production subscriptions. (The rollout has no migration path for existing subscribers.)
+
+- [ ] **Step 2: Create the In-App Purchase API key**
 
 App Store Connect → Users and Access → Integrations → In-App Purchase → Generate. Download the `.p8` (only downloadable once). Note the **Key ID** and the **Issuer ID** shown on that page. Find the app's numeric **Apple ID** under App Store Connect → the app → App Information → General Information → Apple ID.
 
-- [ ] **Step 2: Set the four secrets**
+- [ ] **Step 3: Set the four secrets**
 
 ```bash
 firebase functions:secrets:set APP_STORE_IAP_KEY --data-file path/to/SubscriptionKey_XXXXXXXXXX.p8
@@ -2989,28 +2993,35 @@ firebase functions:secrets:set APP_STORE_ISSUER_ID   # paste Issuer ID
 firebase functions:secrets:set APP_APPLE_ID          # paste numeric Apple ID
 ```
 
-- [ ] **Step 3: Deploy Firestore rules**
+- [ ] **Step 4: Deploy Firestore rules**
 
 Run: `firebase deploy --only firestore:rules`
 Expected: `✔ firestore: released rules firestore.rules to cloud.firestore`
 
-- [ ] **Step 4: Enable TTL cleanup**
+- [ ] **Step 5: Enable TTL cleanup**
 
 Google Cloud console → Firestore → Time-to-live → Create policy: collection group `lookupQuota`, field `expiresAt`. Repeat for `rateLimits` / `expiresAt` if no policy exists yet.
 
-- [ ] **Step 5: Deploy the functions**
+- [ ] **Step 6: Set a spend alert**
+
+Set a GCP budget alert on Perplexity/Cloud Functions spend.
+
+- [ ] **Step 7: Submit app 1.0.2 for review with "Manually release"**
+
+Archive and submit the build containing Tasks 6-8 as usual. In App Store Connect → the 1.0.2 version → App Store Version Release, choose **Manually release this version**.
+
+- [ ] **Step 8: Once 1.0.2 is approved, deploy the functions and immediately release 1.0.2**
 
 Run: `firebase deploy --only functions`
-Expected: both `validateAppStoreReceipt` and `getMultipleCarbCounts` report `Successful update operation`. Optionally remove the now-unused secret afterwards: `firebase functions:secrets:destroy APP_STORE_SHARED_SECRET`.
+Expected: both `validateAppStoreReceipt` and `getMultipleCarbCounts` report `Successful update operation`. Then release 1.0.2 in App Store Connect right away. Optionally remove the now-unused secret afterwards: `firebase functions:secrets:destroy APP_STORE_SHARED_SECRET`.
 
-- [ ] **Step 6: Verify on a TestFlight device**
+> **Order matters.** Don't release 1.0.2 before the functions deploy: 1.0.2 has no limit against the old server (its limit comes from the server's `quota`). 1.0.2 works against the old server during review (a missing `quota` is ignored), so review can happen before the deploy.
+
+- [ ] **Step 9: Verify on a TestFlight device**
 
 1. Fresh install (free): four lookups succeed; Settings shows `AI lookups today: 4 / 4`; the fifth shows the Daily Limit Reached dialog.
 2. Siri: "Log food in CarpeCarb" after the limit → speaks "You've used today's 4 free lookups. Open CarpeCarb to go unlimited."
 3. Sandbox purchase (or Restore for existing TestFlight subscribers) → lookups unlimited; Firestore has `entitlements/{uid}` with `environment: "Sandbox"`.
-4. After sandbox renewals stop (monthly renews every 5 min, up to 12 times), the next lookup reverts the app to the free plan.
-5. Cloud Logging for `getMultipleCarbCounts` shows no `[config] Missing or invalid secrets` lines.
-
-- [ ] **Step 7: Ship app 1.0.2**
-
-Archive and submit the build containing Tasks 6-8 as usual.
+4. Wait more than 5 minutes (one sandbox renewal) and confirm lookups are still unlimited.
+5. After sandbox renewals stop (monthly renews every 5 min, up to 12 times), the next lookup reverts the app to the free plan.
+6. Cloud Logging for `getMultipleCarbCounts` shows no `[config] Missing or invalid secrets` lines.
