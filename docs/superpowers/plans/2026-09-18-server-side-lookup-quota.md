@@ -194,7 +194,7 @@ test("limits are tracked per uid", async () => {
   const checkRateLimit = createRateLimiter(db);
 
   await checkRateLimit("u1", "act", 1, 60);
-  await checkRateLimit("u2", "act", 1, 60);
+  await assert.doesNotReject(checkRateLimit("u2", "act", 1, 60));
 });
 ```
 
