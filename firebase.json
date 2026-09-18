@@ -1,1 +1,48 @@
-{"functions":[{"source":"functions","codebase":"default","ignore":["node_modules",".git","firebase-debug.log","firebase-debug.*.log","*.local"]}],"flutter":{"platforms":{"ios":{"default":{"projectId":"carpecarb","appId":"1:3524983216:ios:32627602ca3cfced9d7e75","uploadDebugSymbols":false,"fileOutput":"ios/Runner/GoogleService-Info.plist"},"buildConfigurations":{"Release":{"projectId":"carpecarb","appId":"1:3524983216:ios:32627602ca3cfced9d7e75","uploadDebugSymbols":false,"fileOutput":"ios/Runner/GoogleService-Info.plist"}}},"dart":{"lib/firebase_options.dart":{"projectId":"carpecarb","configurations":{"ios":"1:3524983216:ios:32627602ca3cfced9d7e75"}}}}}}
+{
+  "firestore": {
+    "rules": "firestore.rules"
+  },
+  "functions": [
+    {
+      "source": "functions",
+      "codebase": "default",
+      "ignore": [
+        "node_modules",
+        ".git",
+        "firebase-debug.log",
+        "firebase-debug.*.log",
+        "*.local",
+        "test",
+        "scripts"
+      ]
+    }
+  ],
+  "flutter": {
+    "platforms": {
+      "ios": {
+        "default": {
+          "projectId": "carpecarb",
+          "appId": "1:3524983216:ios:32627602ca3cfced9d7e75",
+          "uploadDebugSymbols": false,
+          "fileOutput": "ios/Runner/GoogleService-Info.plist"
+        },
+        "buildConfigurations": {
+          "Release": {
+            "projectId": "carpecarb",
+            "appId": "1:3524983216:ios:32627602ca3cfced9d7e75",
+            "uploadDebugSymbols": false,
+            "fileOutput": "ios/Runner/GoogleService-Info.plist"
+          }
+        }
+      },
+      "dart": {
+        "lib/firebase_options.dart": {
+          "projectId": "carpecarb",
+          "configurations": {
+            "ios": "1:3524983216:ios:32627602ca3cfced9d7e75"
+          }
+        }
+      }
+    }
+  }
+}
