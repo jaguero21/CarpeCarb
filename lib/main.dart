@@ -16,6 +16,7 @@ import 'services/health_kit_service.dart';
 import 'services/premium_service.dart';
 import 'services/cloud_sync_service.dart';
 import 'models/food_item.dart';
+import 'models/server_quota.dart';
 import 'screens/settings_page.dart';
 import 'config/app_colors.dart';
 import 'config/app_theme.dart';
@@ -584,7 +585,7 @@ class CarbTrackerHomeState extends State<CarbTrackerHome>
       return;
     }
 
-    // Enforce daily lookup limit for free users
+    // Fast pre-check for free users; the server enforces the real limit.
     if (_premiumService.hasReachedDailyLimit) {
       if (mounted) _showLookupLimitDialog();
       return;
@@ -598,11 +599,13 @@ class CarbTrackerHomeState extends State<CarbTrackerHome>
     });
 
     try {
-      final items = await _perplexityService.getMultipleCarbCounts(foodText);
+      final result = await _perplexityService.getMultipleCarbCounts(foodText);
+      final quota = result.quota;
+      if (quota != null) await _premiumService.applyServerQuota(quota);
 
       if (!mounted) return;
 
-      await _premiumService.incrementLookupCount();
+      final items = result.items;
 
       setState(() {
         isLoading = false;
@@ -627,6 +630,15 @@ class CarbTrackerHomeState extends State<CarbTrackerHome>
       for (final item in items) {
         _writeToHealthKit(item);
       }
+    } on DailyLimitReachedException catch (e) {
+      final limit = e.limit ?? _premiumService.dailyLookupLimit;
+      await _premiumService.applyServerQuota(
+          ServerQuota(premium: false, used: e.used ?? limit, limit: limit));
+      if (!mounted) return;
+      setState(() {
+        isLoading = false;
+      });
+      _showLookupLimitDialog();
     } catch (e) {
       if (!mounted) return;
       setState(() {
@@ -716,7 +728,7 @@ class CarbTrackerHomeState extends State<CarbTrackerHome>
           ],
         ),
         content: Text(
-          "You've used all ${PremiumService.freeDailyLookupLimit} free AI lookups for today.\n\n"
+          "You've used all ${_premiumService.dailyLookupLimit} free AI lookups for today.\n\n"
           "Subscribe to CarpeCarb for unlimited lookups every day. "
           "Manual entry is always available for free.",
           style: TextStyle(

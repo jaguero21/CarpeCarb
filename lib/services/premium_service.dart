@@ -1,11 +1,18 @@
 import 'package:shared_preferences/shared_preferences.dart';
 import '../config/storage_keys.dart';
+import '../models/server_quota.dart';
 
 class PremiumService {
+  PremiumService({DateTime Function()? clock}) : _clock = clock ?? DateTime.now;
+
   static const String monthlyPlan = 'monthly';
   static const String yearlyPlan = 'yearly';
+
+  /// Fallback for display before the server has reported a limit. The
+  /// server's FREE_DAILY_LOOKUP_LIMIT (functions/src/quota.js) is the authority.
   static const int freeDailyLookupLimit = 4;
 
+  final DateTime Function() _clock;
   SharedPreferences? _prefs;
 
   bool get _isReady => _prefs != null;
@@ -21,11 +28,25 @@ class PremiumService {
   bool get isCloudSyncEnabled => true;
   bool get isMacrosEnabled => true;
 
-  int get dailyLookupCount =>
-      (_isReady ? _prefs!.getInt(StorageKeys.dailyLookupCount) : null) ?? 0;
+  /// Local calendar day, matching the server's dayKey for this device.
+  String _todayKey() => _clock().toIso8601String().substring(0, 10);
 
+  /// Lookups used today, as last reported by the server. 0 once the cached
+  /// day is no longer today, so a long-running app doesn't stay locked out.
+  int get dailyLookupCount {
+    if (!_isReady) return 0;
+    if (_prefs!.getString(StorageKeys.dailyLookupDate) != _todayKey()) return 0;
+    return _prefs!.getInt(StorageKeys.dailyLookupCount) ?? 0;
+  }
+
+  int get dailyLookupLimit =>
+      (_isReady ? _prefs!.getInt(StorageKeys.dailyLookupLimit) : null) ??
+      freeDailyLookupLimit;
+
+  /// Fast pre-check that skips a request the server would refuse. The server
+  /// still decides; this only reflects its last answer.
   bool get hasReachedDailyLimit =>
-      !isPremium && dailyLookupCount >= freeDailyLookupLimit;
+      !isPremium && dailyLookupCount >= dailyLookupLimit;
 
   Future<void> init() async {
     _prefs = await SharedPreferences.getInstance();
@@ -36,7 +57,7 @@ class PremiumService {
   Future<void> resetLookupCountIfNewDay() async {
     final prefs = _prefs ?? await SharedPreferences.getInstance();
     _prefs = prefs;
-    final today = DateTime.now().toIso8601String().substring(0, 10);
+    final today = _todayKey();
     final storedDate = prefs.getString(StorageKeys.dailyLookupDate);
     if (storedDate != today) {
       await prefs.setInt(StorageKeys.dailyLookupCount, 0);
@@ -44,11 +65,22 @@ class PremiumService {
     }
   }
 
-  Future<void> incrementLookupCount() async {
+  /// Caches the server's view of this user's quota and premium status.
+  /// Premium follows the server, so a lapsed or refunded subscription
+  /// reverts to free on the next lookup.
+  Future<void> applyServerQuota(ServerQuota quota) async {
     final prefs = _prefs ?? await SharedPreferences.getInstance();
     _prefs = prefs;
-    final count = (prefs.getInt(StorageKeys.dailyLookupCount) ?? 0) + 1;
-    await prefs.setInt(StorageKeys.dailyLookupCount, count);
+    if (quota.premium != isPremium) {
+      await setPremiumEnabled(quota.premium);
+    }
+    final used = quota.used;
+    final limit = quota.limit;
+    if (!quota.premium && used != null && limit != null) {
+      await prefs.setInt(StorageKeys.dailyLookupCount, used);
+      await prefs.setInt(StorageKeys.dailyLookupLimit, limit);
+      await prefs.setString(StorageKeys.dailyLookupDate, _todayKey());
+    }
   }
 
   Future<void> setPremiumPlan(String? plan) async {

@@ -48,7 +48,9 @@ class StorageKeys {
   // MethodChannel for secure token storage (TokenStorageChannel.swift)
   static const String tokenStorageChannel = 'com.carpecarb/tokenstorage';
 
-  // Daily AI lookup rate limiting (free users: 15/day)
+  // Daily AI lookup quota, cached from the server's `quota` response
+  // (free users: 4/day, enforced by getMultipleCarbCounts)
   static const String dailyLookupCount = 'daily_lookup_count';
   static const String dailyLookupDate = 'daily_lookup_date';
+  static const String dailyLookupLimit = 'daily_lookup_limit';
 }

@@ -1589,7 +1589,7 @@ class _SettingsPageState extends State<SettingsPage> {
     final isSubscriber = ps?.isPremium == true;
     final selectedPlan = ps?.premiumPlan;
     final lookupsToday = ps?.dailyLookupCount ?? 0;
-    final limit = PremiumService.freeDailyLookupLimit;
+    final limit = ps?.dailyLookupLimit ?? PremiumService.freeDailyLookupLimit;
 
     Future<void> subscribe() async {
       if (!Platform.isIOS) {
