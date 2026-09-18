@@ -26,13 +26,17 @@ const BUNDLE_ID = "com.jamesaguero.mycarbtracker";
 // SHA-256 63:34:3A:BF:B8:9A:6A:03:EB:B5:7E:9B:3F:5F:A7:BE:7C:4F:5C:75:6F:30:17:B3:A8:C4:88:C3:65:3E:91:79
 const APPLE_ROOT_CERTS = [fs.readFileSync(path.join(__dirname, "certs", "AppleRootCA-G3.cer"))];
 
-/** Reads App Store secrets at request time; throws `internal` if any is unset. */
+/**
+ * Reads App Store secrets at request time; throws `internal` if any is unset.
+ * Values are trimmed: a secret set from a pasted file or `echo` often carries
+ * a trailing newline, which breaks the key ID / issuer ID in Apple's JWT.
+ */
 function readAppStoreConfig() {
   const config = {
-    signingKey: appStoreIapKey.value(),
-    keyId: appStoreKeyId.value(),
-    issuerId: appStoreIssuerId.value(),
-    appAppleId: Number(appAppleId.value()),
+    signingKey: appStoreIapKey.value().trim(),
+    keyId: appStoreKeyId.value().trim(),
+    issuerId: appStoreIssuerId.value().trim(),
+    appAppleId: Number(appAppleId.value().trim()),
   };
   const missing = [];
   if (!config.signingKey) missing.push("APP_STORE_IAP_KEY");
