@@ -1,5 +1,5 @@
 const { HttpsError } = require("firebase-functions/v2/https");
-const { sanitizeFoodInput } = require("./perplexity");
+const { sanitizeFoodInput, isNotBilled } = require("./perplexity");
 const { parseTzOffset } = require("./quota");
 const { PREMIUM_PRODUCT_IDS, isActiveTransaction } = require("./appStore");
 
@@ -49,7 +49,9 @@ function createHandlers(deps) {
     try {
       result = await deps.lookupFoods(sanitized);
     } catch (err) {
-      if (reservation) {
+      // Refund the lookup only if Perplexity didn't bill it; a billed call
+      // that failed afterwards (e.g. unparseable output) still counts.
+      if (reservation && isNotBilled(err)) {
         try {
           await deps.releaseLookup(uid, reservation.dayKey);
         } catch (releaseErr) {

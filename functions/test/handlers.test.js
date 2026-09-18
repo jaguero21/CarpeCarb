@@ -2,6 +2,7 @@ const test = require("node:test");
 const assert = require("node:assert/strict");
 const { HttpsError } = require("firebase-functions/v2/https");
 const { createHandlers } = require("../src/handlers");
+const { notBilled } = require("../src/perplexity");
 
 const NOW = Date.parse("2026-09-18T12:00:00Z");
 const auth = { uid: "u1" };
@@ -69,14 +70,24 @@ test("daily-quota error passes through without calling Perplexity", async () => 
   assert.deepEqual(calls, []);
 });
 
-test("Perplexity failure releases the reserved lookup and rethrows", async () => {
-  const boom = new HttpsError("internal", "Server error. Try again later.");
+test("Perplexity failure that wasn't billed releases the reserved lookup and rethrows", async () => {
+  const boom = notBilled(new HttpsError("internal", "Server error. Try again later."));
   const { deps, calls } = makeDeps({
     lookupFoods: async () => { throw boom; },
   });
 
   await assert.rejects(createHandlers(deps).getMultipleCarbCounts({ auth, data: { input: "an apple" } }), boom);
   assert.deepEqual(calls, [["reserve", "u1", 0], ["release", "u1", "2026-09-18"]]);
+});
+
+test("billed Perplexity failure rethrows without releasing the lookup", async () => {
+  const boom = new HttpsError("internal", "Could not parse food items");
+  const { deps, calls } = makeDeps({
+    lookupFoods: async () => { throw boom; },
+  });
+
+  await assert.rejects(createHandlers(deps).getMultipleCarbCounts({ auth, data: { input: "an apple" } }), boom);
+  assert.deepEqual(calls, [["reserve", "u1", 0]]);
 });
 
 test("quota infrastructure failure fails closed with internal", async () => {

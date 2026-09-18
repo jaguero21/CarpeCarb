@@ -29,21 +29,37 @@ function sanitizeFoodInput(input) {
     .trim();
 }
 
+/** Marks an error as one where Perplexity did not bill us, so the caller may refund the lookup. */
+function notBilled(err) {
+  err.notBilled = true;
+  return err;
+}
+
+/** True when a lookupFoods error means no billable completion was produced. */
+function isNotBilled(err) {
+  return Boolean(err && err.notBilled === true);
+}
+
 /**
  * Looks up carb counts for a sanitized food description via Perplexity.
  *
+ * Errors thrown before a completion was produced (auth, rate limit, server
+ * or network failure) are marked with notBilled; errors after a billed
+ * completion (truncated or unparseable output) are not.
+ *
  * @param {string} sanitized - output of sanitizeFoodInput
  * @param {string} apiKey - Perplexity API key
+ * @param {{fetchImpl?: typeof fetch, sleep?: (ms: number) => Promise<void>}} [options] - injectable for tests
  * @returns {Promise<{items: object[], citations: string[]}>}
  */
-async function lookupFoods(sanitized, apiKey) {
+async function lookupFoods(sanitized, apiKey, { fetchImpl = fetch, sleep = (ms) => new Promise((r) => setTimeout(r, ms)) } = {}) {
   console.log(`Looking up: "${sanitized}"`);
 
   const maxAttempts = 3;
 
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     try {
-      const response = await fetch(
+      const response = await fetchImpl(
         "https://api.perplexity.ai/chat/completions",
         {
           method: "POST",
@@ -91,30 +107,30 @@ async function lookupFoods(sanitized, apiKey) {
 
       if (response.status === 401) {
         console.error("Perplexity API auth failed (401)");
-        throw new HttpsError("internal", "API authentication failed");
+        throw notBilled(new HttpsError("internal", "API authentication failed"));
       }
       if (response.status === 429) {
         console.error("Perplexity API rate limited (429)");
-        throw new HttpsError(
+        throw notBilled(new HttpsError(
           "resource-exhausted",
           "Rate limit exceeded. Try again later."
-        );
+        ));
       }
       if (response.status >= 500) {
         console.error(`Perplexity API server error (${response.status}), attempt ${attempt}/${maxAttempts}`);
         if (attempt < maxAttempts) {
-          await new Promise((r) => setTimeout(r, attempt * 1000));
+          await sleep(attempt * 1000);
           continue;
         }
-        throw new HttpsError("internal", "Server error. Try again later.");
+        throw notBilled(new HttpsError("internal", "Server error. Try again later."));
       }
       if (!response.ok) {
         const errorBody = await response.text();
         console.error(`Perplexity API error (${response.status}): ${errorBody}`);
-        throw new HttpsError(
+        throw notBilled(new HttpsError(
           "internal",
           `API request failed (${response.status})`
-        );
+        ));
       }
 
       const result = await response.json();
@@ -122,10 +138,18 @@ async function lookupFoods(sanitized, apiKey) {
       if (!result.choices || !result.choices[0]) {
         console.error("Invalid API response structure:", JSON.stringify(result).substring(0, 500));
         if (attempt < maxAttempts) {
-          await new Promise((r) => setTimeout(r, attempt * 1000));
+          await sleep(attempt * 1000);
           continue;
         }
         throw new HttpsError("internal", "Invalid API response");
+      }
+
+      if (result.choices[0].finish_reason === "length") {
+        console.error(`Response truncated at max_tokens for input of ${sanitized.length} chars`);
+        throw new HttpsError(
+          "invalid-argument",
+          "Too many foods in one lookup. Try fewer items."
+        );
       }
 
       let content = result.choices[0].message.content.trim();
@@ -141,7 +165,7 @@ async function lookupFoods(sanitized, apiKey) {
       if (!arrayMatch) {
         console.error(`Could not find JSON array (attempt ${attempt}/${maxAttempts}):`, content);
         if (attempt < maxAttempts) {
-          await new Promise((r) => setTimeout(r, attempt * 1000));
+          await sleep(attempt * 1000);
           continue;
         }
         throw new HttpsError("internal", "Could not parse food items");
@@ -153,7 +177,7 @@ async function lookupFoods(sanitized, apiKey) {
       } catch (parseErr) {
         console.error(`JSON parse error (attempt ${attempt}/${maxAttempts}):`, parseErr.message, "Content:", arrayMatch[0]);
         if (attempt < maxAttempts) {
-          await new Promise((r) => setTimeout(r, attempt * 1000));
+          await sleep(attempt * 1000);
           continue;
         }
         throw new HttpsError("internal", "Could not parse food items");
@@ -162,7 +186,7 @@ async function lookupFoods(sanitized, apiKey) {
       if (!Array.isArray(items) || items.length === 0) {
         console.error(`Empty result array (attempt ${attempt}/${maxAttempts}):`, JSON.stringify(items));
         if (attempt < maxAttempts) {
-          await new Promise((r) => setTimeout(r, attempt * 1000));
+          await sleep(attempt * 1000);
           continue;
         }
         throw new HttpsError("internal", "No food items found in response");
@@ -203,13 +227,13 @@ async function lookupFoods(sanitized, apiKey) {
 
       // Retry on transient errors
       if (attempt < maxAttempts) {
-        await new Promise((r) => setTimeout(r, attempt * 1000));
+        await sleep(attempt * 1000);
         continue;
       }
 
-      throw new HttpsError("internal", error.message);
+      throw notBilled(new HttpsError("internal", error.message));
     }
   }
 }
 
-module.exports = { sanitizeFoodInput, lookupFoods };
+module.exports = { sanitizeFoodInput, lookupFoods, notBilled, isNotBilled };
