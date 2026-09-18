@@ -87,7 +87,7 @@ As implemented in `evaluateEntitlement` and `recordTransaction`
   stored expiry (up to a year for `premium_yearly`).
 - Expired, with `originalTransactionId` set → refresh, unless a check made
   *after* the stored expiry confirmed the lapse less than 6 h ago. A check from
-  before the expiry (e.g. the one `recordTransaction` stamps at purchase) says
+  before the expiry (e.g. the first-lookup check right after purchase) says
   nothing about renewal: sandbox monthly subscriptions renew every 5 min, and
   waiting 6 h after the purchase-time check dropped a new buyer (App Review
   included) to free about 5 min after buying.
@@ -102,9 +102,14 @@ As implemented in `evaluateEntitlement` and `recordTransaction`
   premium). The fail-open covers every request in the 15-min backoff, not just
   the one that attempted: a `lastRefreshAttemptMs` newer than `lastCheckedMs`
   means Apple was unreachable, so evaluation keeps the 72 h window.
+- New entitlements: `recordTransaction` writes `lastCheckedMs: 0`, so the
+  first lookup after a purchase or restore re-checks with Apple. A refunded
+  receipt replayed on a fresh UID (no revoked doc to compare against) is
+  caught there instead of getting 24 h of premium; if Apple is down, the
+  unexpired doc still fails open.
 - Replay after a refund: `recordTransaction` refuses a transaction with the
-  revoked doc's `originalTransactionId` whose `purchaseDate` is at or before
-  `revokedAtMs` (any purchase date, if `revokedAtMs` is missing), so the
+  revoked doc's `originalTransactionId` unless its `purchaseDate` is after
+  `revokedAtMs` (a missing `purchaseDate` or `revokedAtMs` refuses), so the
   pre-refund JWS can't un-revoke the doc; `validateAppStoreReceipt` answers
   `{ isValid: false, reason: "revoked" }`.
 - Resubscribe exception: Apple keeps the same `originalTransactionId` when a

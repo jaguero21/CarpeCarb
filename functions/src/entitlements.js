@@ -114,8 +114,14 @@ function createEntitlementStore({ db, appStore, now }) {
    * Stores a verified, active transaction as this user's entitlement.
    *
    * Refuses a transaction purchased before this entitlement was revoked
-   * (a replay of the pre-refund JWS). A later purchase with the same
-   * originalTransactionId is a resubscription and is accepted.
+   * (a replay of the pre-refund JWS), or with no purchase date to prove
+   * otherwise. A later purchase with the same originalTransactionId is a
+   * resubscription and is accepted.
+   *
+   * The doc is written as never checked (lastCheckedMs: 0), so the first
+   * lookup re-checks the subscription with Apple: a refunded receipt replayed
+   * on a fresh UID is caught there instead of getting 24 h of premium. If
+   * Apple is down, the unexpired doc still fails open.
    *
    * @returns {Promise<boolean>} true if the entitlement was written
    */
@@ -124,10 +130,9 @@ function createEntitlementStore({ db, appStore, now }) {
     const snap = await ref.get();
     const existing = snap.exists ? snap.data() : null;
     if (
-      existing &&
-      existing.revoked &&
+      existing?.revoked &&
       existing.originalTransactionId === payload.originalTransactionId &&
-      payload.purchaseDate <= (existing.revokedAtMs ?? Infinity)
+      !(payload.purchaseDate > (existing.revokedAtMs ?? Infinity))
     ) {
       console.warn(
         `[entitlements] Ignoring revoked transaction ${payload.originalTransactionId} replayed by ${uid}`
@@ -141,7 +146,7 @@ function createEntitlementStore({ db, appStore, now }) {
       expiresDateMs: payload.expiresDate,
       environment: payload.environment,
       revoked: false,
-      lastCheckedMs: now(),
+      lastCheckedMs: 0,
       lastRefreshAttemptMs: 0,
     });
     return true;

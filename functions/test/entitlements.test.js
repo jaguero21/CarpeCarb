@@ -244,7 +244,7 @@ test("recordTransaction writes a fresh entitlement doc", async () => {
     expiresDateMs: NOW + 365 * 24 * HOUR,
     environment: "Sandbox",
     revoked: false,
-    lastCheckedMs: NOW,
+    lastCheckedMs: 0,
     lastRefreshAttemptMs: 0,
   });
 });
@@ -285,7 +285,51 @@ test("recordTransaction accepts a resubscription after a refund", async () => {
     expiresDateMs: NOW + 24 * HOUR,
     environment: "Production",
     revoked: false,
-    lastCheckedMs: NOW,
+    lastCheckedMs: 0,
     lastRefreshAttemptMs: 0,
   });
+});
+
+test("recordTransaction refuses an undated transaction for a revoked entitlement", async () => {
+  const db = createFakeFirestore({ "entitlements/u1": revokedDoc });
+  const store = createEntitlementStore({ db, appStore: {}, now: () => NOW });
+
+  const granted = await store.recordTransaction("u1", replayPayload);
+
+  assert.equal(granted, false);
+  assert.deepEqual(db.docs.get("entitlements/u1"), revokedDoc);
+});
+
+test("the first lookup after recordTransaction re-checks with Apple, then trusts the result", async () => {
+  const db = createFakeFirestore();
+  let clock = NOW;
+  let appleCalls = 0;
+  const appStore = {
+    async fetchSubscriptionStatus() {
+      appleCalls += 1;
+      return { status: 1, transaction: { expiresDate: NOW + 30 * 24 * HOUR, productId: "premium_monthlysub" } };
+    },
+  };
+  const store = createEntitlementStore({ db, appStore, now: () => clock });
+
+  await store.recordTransaction("u1", { ...replayPayload, expiresDate: NOW + 30 * 24 * HOUR, purchaseDate: NOW });
+  assert.equal(await store.getPremiumStatus("u1"), true);
+  assert.equal(appleCalls, 1);
+
+  clock = NOW + HOUR;
+  assert.equal(await store.getPremiumStatus("u1"), true);
+  assert.equal(appleCalls, 1);
+});
+
+test("a refunded receipt replayed on a fresh UID is caught on the first lookup", async () => {
+  const db = createFakeFirestore();
+  const appStore = {
+    fetchSubscriptionStatus: async () => ({ status: 5, transaction: { revocationDate: NOW - HOUR } }),
+  };
+  const store = createEntitlementStore({ db, appStore, now: () => NOW });
+
+  const granted = await store.recordTransaction("fresh", { ...replayPayload, purchaseDate: NOW - 30 * 24 * HOUR });
+
+  assert.equal(granted, true);
+  assert.equal(await store.getPremiumStatus("fresh"), false);
 });
