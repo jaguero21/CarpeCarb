@@ -212,7 +212,7 @@ test("sanitizeFoodInput trims and collapses whitespace", () => {
 });
 
 test("sanitizeFoodInput normalizes apostrophe and dash lookalikes", () => {
-  assert.equal(sanitizeFoodInput("Wendy’s chili — large"), "Wendy's chili - large");
+  assert.equal(sanitizeFoodInput("Wendy\u2019s chili \u2014 large"), "Wendy's chili - large");
 });
 
 test("sanitizeFoodInput rejects non-strings, too-short and too-long input", () => {
@@ -310,8 +310,8 @@ function sanitizeFoodInput(input) {
 
   return trimmed
     // Normalize Unicode confusables before allow-list enforcement
-    .replace(/[’‘ʼ`´]/g, "'") // apostrophe lookalikes
-    .replace(/[–—−]/g, "-")              // dash lookalikes
+    .replace(/[\u2019\u2018\u02BC\u0060\u00B4]/g, "'") // apostrophe lookalikes
+    .replace(/[\u2013\u2014\u2212]/g, "-")              // dash lookalikes
     .replace(/[\n\r\t]/g, " ")
     .replace(/\0/g, "")
     .replace(/\s+/g, " ")
