@@ -38,6 +38,18 @@ void main() {
     expect(svc.hasReachedDailyLimit, isFalse);
   });
 
+  test("a quota counted against yesterday doesn't block today", () async {
+    now = DateTime(2026, 9, 19, 0, 5); // lookup finished just after midnight
+    final svc = makeService();
+    await svc.init();
+
+    await svc.applyServerQuota(
+        const ServerQuota(premium: false, used: 4, limit: 4, dayKey: '2026-09-18'));
+
+    expect(svc.dailyLookupCount, 0);
+    expect(svc.hasReachedDailyLimit, isFalse);
+  });
+
   test('server premium=false turns off a local premium flag', () async {
     SharedPreferences.setMockInitialValues({'is_premium': true, 'premium_plan': 'monthly'});
     final svc = makeService();

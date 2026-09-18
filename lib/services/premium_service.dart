@@ -79,7 +79,9 @@ class PremiumService {
     if (!quota.premium && used != null && limit != null) {
       await prefs.setInt(StorageKeys.dailyLookupCount, used);
       await prefs.setInt(StorageKeys.dailyLookupLimit, limit);
-      await prefs.setString(StorageKeys.dailyLookupDate, _todayKey());
+      // The server's day, not ours: a lookup that finishes just after local
+      // midnight was counted against yesterday and must not block today.
+      await prefs.setString(StorageKeys.dailyLookupDate, quota.dayKey ?? _todayKey());
     }
   }
 

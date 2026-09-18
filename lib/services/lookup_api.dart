@@ -80,9 +80,11 @@ UserFacingException parseCallableError(int statusCode, String body) {
   if (statusCode == 429 && details is Map && details['reason'] == 'daily-quota') {
     final used = details['used'];
     final limit = details['limit'];
+    final dayKey = details['dayKey'];
     return DailyLimitReachedException(
       used: used is int ? used : null,
       limit: limit is int ? limit : null,
+      dayKey: dayKey is String ? dayKey : null,
     );
   }
   if (statusCode == 401 || statusCode == 403) {

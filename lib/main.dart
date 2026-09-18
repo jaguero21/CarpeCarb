@@ -632,8 +632,8 @@ class CarbTrackerHomeState extends State<CarbTrackerHome>
       }
     } on DailyLimitReachedException catch (e) {
       final limit = e.limit ?? _premiumService.dailyLookupLimit;
-      await _premiumService.applyServerQuota(
-          ServerQuota(premium: false, used: e.used ?? limit, limit: limit));
+      await _premiumService.applyServerQuota(ServerQuota(
+          premium: false, used: e.used ?? limit, limit: limit, dayKey: e.dayKey));
       if (!mounted) return;
       setState(() {
         isLoading = false;

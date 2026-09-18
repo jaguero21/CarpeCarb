@@ -65,8 +65,8 @@ function createHandlers(deps) {
       items: result.items,
       citations: result.citations,
       quota: premium
-        ? { premium: true, used: null, limit: null }
-        : { premium: false, used: reservation.used, limit: reservation.limit },
+        ? { premium: true, used: null, limit: null, dayKey: null }
+        : { premium: false, used: reservation.used, limit: reservation.limit, dayKey: reservation.dayKey },
     };
   }
 

@@ -41,7 +41,7 @@ test("free lookup reserves quota before calling Perplexity and returns it", asyn
   const res = await getMultipleCarbCounts({ auth, data: { input: "an apple", tzOffsetMinutes: -300 } });
 
   assert.deepEqual(calls, [["reserve", "u1", -300], ["lookup", "an apple"]]);
-  assert.deepEqual(res.quota, { premium: false, used: 1, limit: 4 });
+  assert.deepEqual(res.quota, { premium: false, used: 1, limit: 4, dayKey: "2026-09-18" });
   assert.equal(res.items[0].name, "Apple");
 });
 
@@ -52,7 +52,7 @@ test("premium lookup skips the quota", async () => {
   const res = await getMultipleCarbCounts({ auth, data: { input: "an apple" } });
 
   assert.deepEqual(calls, [["lookup", "an apple"]]);
-  assert.deepEqual(res.quota, { premium: true, used: null, limit: null });
+  assert.deepEqual(res.quota, { premium: true, used: null, limit: null, dayKey: null });
 });
 
 test("missing tzOffsetMinutes reserves against UTC", async () => {

@@ -18,7 +18,7 @@ void main() {
           {'name': 'Apple', 'carbs': 25, 'protein': 0.5, 'details': 'USDA [1]'},
         ],
         'citations': ['https://fdc.nal.usda.gov'],
-        'quota': {'premium': false, 'used': 2, 'limit': 4},
+        'quota': {'premium': false, 'used': 2, 'limit': 4, 'dayKey': '2026-09-18'},
       }));
 
       expect(result.items.single.name, 'Apple');
@@ -28,16 +28,18 @@ void main() {
       expect(result.quota!.premium, isFalse);
       expect(result.quota!.used, 2);
       expect(result.quota!.limit, 4);
+      expect(result.quota!.dayKey, '2026-09-18');
     });
 
     test('parses a premium quota with null counts', () {
       final result = parseLookupResponse(callableResult({
         'items': [{'name': 'Rice', 'carbs': 45}],
-        'quota': {'premium': true, 'used': null, 'limit': null},
+        'quota': {'premium': true, 'used': null, 'limit': null, 'dayKey': null},
       }));
 
       expect(result.quota!.premium, isTrue);
       expect(result.quota!.used, isNull);
+      expect(result.quota!.dayKey, isNull);
     });
 
     test('tolerates a response without quota', () {
@@ -62,13 +64,14 @@ void main() {
       final e = parseCallableError(
         429,
         callableError('RESOURCE_EXHAUSTED', "You've used today's 4 free lookups.",
-            {'reason': 'daily-quota', 'used': 4, 'limit': 4}),
+            {'reason': 'daily-quota', 'used': 4, 'limit': 4, 'dayKey': '2026-09-18'}),
       );
 
       expect(e, isA<DailyLimitReachedException>());
       final limitError = e as DailyLimitReachedException;
       expect(limitError.used, 4);
       expect(limitError.limit, 4);
+      expect(limitError.dayKey, '2026-09-18');
       expect(limitError.message, "You've used all 4 free AI lookups for today.");
     });
 
