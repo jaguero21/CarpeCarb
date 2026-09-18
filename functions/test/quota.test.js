@@ -48,19 +48,25 @@ test("dayKey follows a DST change through the reported offset", () => {
 
 test("applyReservation starts a new day at one", () => {
   assert.deepEqual(applyReservation(null, "2026-09-18", 4), {
-    allowed: true, used: 1, next: { dayKey: "2026-09-18", count: 1 },
+    allowed: true, dayKey: "2026-09-18", used: 1, next: { dayKey: "2026-09-18", count: 1 },
   });
   assert.deepEqual(applyReservation({ dayKey: "2026-09-17", count: 4 }, "2026-09-18", 4), {
-    allowed: true, used: 1, next: { dayKey: "2026-09-18", count: 1 },
+    allowed: true, dayKey: "2026-09-18", used: 1, next: { dayKey: "2026-09-18", count: 1 },
   });
 });
 
 test("applyReservation counts up to the limit, then refuses", () => {
   assert.deepEqual(applyReservation({ dayKey: "2026-09-18", count: 3 }, "2026-09-18", 4), {
-    allowed: true, used: 4, next: { dayKey: "2026-09-18", count: 4 },
+    allowed: true, dayKey: "2026-09-18", used: 4, next: { dayKey: "2026-09-18", count: 4 },
   });
   assert.deepEqual(applyReservation({ dayKey: "2026-09-18", count: 4 }, "2026-09-18", 4), {
-    allowed: false, used: 4, next: null,
+    allowed: false, dayKey: "2026-09-18", used: 4, next: null,
+  });
+});
+
+test("applyReservation never moves the day key backwards", () => {
+  assert.deepEqual(applyReservation({ dayKey: "2026-09-19", count: 2 }, "2026-09-18", 4), {
+    allowed: true, dayKey: "2026-09-19", used: 3, next: { dayKey: "2026-09-19", count: 3 },
   });
 });
 
@@ -81,10 +87,34 @@ test("reserveLookup allows 4 per day and throws daily-quota on the 5th", async (
   }
   await assert.rejects(store.reserveLookup("u1", -300), (err) => {
     assert.equal(err.code, "resource-exhausted");
-    assert.deepEqual(err.details, { reason: "daily-quota", used: 4, limit: 4 });
+    assert.deepEqual(err.details, { reason: "daily-quota", used: 4, limit: 4, dayKey: "2026-09-18" });
     return true;
   });
   assert.ok(db.docs.get("lookupQuota/u1").expiresAt instanceof Date);
+});
+
+test("alternating tzOffsetMinutes cannot reset the daily quota", async () => {
+  const db = createFakeFirestore();
+  const store = createQuotaStore({ db, now: () => Date.parse("2026-09-18T12:00:00Z") });
+
+  const allowed = [];
+  for (let i = 0; i < 10; i++) {
+    const offset = i % 2 === 0 ? -840 : 840;
+    try {
+      allowed.push(await store.reserveLookup("u1", offset));
+    } catch (err) {
+      assert.ok(i >= 5, `call ${i + 1} should have been allowed`);
+      assert.equal(err.details.reason, "daily-quota");
+    }
+  }
+  // 1 on 2026-09-17, then 4 on 2026-09-19; calls 6-10 are refused.
+  assert.deepEqual(allowed, [
+    { dayKey: "2026-09-17", used: 1, limit: 4 },
+    { dayKey: "2026-09-19", used: 1, limit: 4 },
+    { dayKey: "2026-09-19", used: 2, limit: 4 },
+    { dayKey: "2026-09-19", used: 3, limit: 4 },
+    { dayKey: "2026-09-19", used: 4, limit: 4 },
+  ]);
 });
 
 test("releaseLookup gives a reserved lookup back", async () => {

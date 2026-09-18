@@ -28,17 +28,27 @@ function dayKey(nowMs, tzOffsetMin) {
 }
 
 /**
- * Decides whether one more lookup fits in today's quota.
+ * Decides whether one more lookup fits in the quota.
+ *
+ * The day key never moves backwards: a request that claims an earlier local
+ * day than the stored one is counted against the stored (later) day.
+ * Otherwise alternating tzOffsetMinutes would reset the count on every call.
  *
  * @param {{dayKey: string, count: number} | null} doc - stored quota doc
- * @param {string} key - today's dayKey
+ * @param {string} key - the caller's dayKey for this request
  * @param {number} limit
- * @returns {{allowed: boolean, used: number, next: {dayKey: string, count: number} | null}}
+ * @returns {{allowed: boolean, dayKey: string, used: number, next: {dayKey: string, count: number} | null}}
  */
 function applyReservation(doc, key, limit) {
-  const used = doc && doc.dayKey === key ? doc.count : 0;
-  if (used >= limit) return { allowed: false, used, next: null };
-  return { allowed: true, used: used + 1, next: { dayKey: key, count: used + 1 } };
+  const effectiveKey = doc && doc.dayKey > key ? doc.dayKey : key;
+  const used = doc && doc.dayKey === effectiveKey ? doc.count : 0;
+  if (used >= limit) return { allowed: false, dayKey: effectiveKey, used, next: null };
+  return {
+    allowed: true,
+    dayKey: effectiveKey,
+    used: used + 1,
+    next: { dayKey: effectiveKey, count: used + 1 },
+  };
 }
 
 /**
@@ -61,7 +71,7 @@ function createQuotaStore({ db, now, limit = FREE_DAILY_LOOKUP_LIMIT }) {
 
   /**
    * Reserves one lookup for a free user, or throws resource-exhausted with
-   * details {reason: "daily-quota", used, limit}.
+   * details {reason: "daily-quota", used, limit, dayKey}.
    *
    * @returns {Promise<{dayKey: string, used: number, limit: number}>}
    */
@@ -83,10 +93,10 @@ function createQuotaStore({ db, now, limit = FREE_DAILY_LOOKUP_LIMIT }) {
       throw new HttpsError(
         "resource-exhausted",
         `You've used today's ${limit} free lookups.`,
-        { reason: "daily-quota", used: result.used, limit }
+        { reason: "daily-quota", used: result.used, limit, dayKey: result.dayKey }
       );
     }
-    return { dayKey: key, used: result.used, limit };
+    return { dayKey: result.dayKey, used: result.used, limit };
   }
 
   /** Returns a reserved lookup after a failed Perplexity call. */
