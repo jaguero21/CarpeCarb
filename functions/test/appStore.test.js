@@ -2,7 +2,11 @@ const test = require("node:test");
 const assert = require("node:assert/strict");
 const fs = require("fs");
 const path = require("path");
-const { VerificationException } = require("@apple/app-store-server-library");
+const {
+  Environment,
+  SignedDataVerifier,
+  VerificationException,
+} = require("@apple/app-store-server-library");
 const {
   PREMIUM_PRODUCT_IDS,
   peekEnvironment,
@@ -54,6 +58,20 @@ test("isActiveTransaction requires a premium product, future expiry, and no revo
 test("verifyTransaction rejects a JWS signed by a forged 'Apple Root CA - G3' chain", async () => {
   const forged = fs.readFileSync(path.join(__dirname, "fixtures", "forged-jws.txt"), "utf8").trim();
   await assert.rejects(appStore.verifyTransaction(forged), VerificationException);
+});
+
+// The library reports an untrusted root and missing Apple marker extensions
+// as the same VERIFICATION_FAILURE. Trusting the forged root must make the
+// fixture verify, so the rejection above can only come from the root.
+test("the forged JWS verifies when its own root is trusted", async () => {
+  const forged = fs.readFileSync(path.join(__dirname, "fixtures", "forged-jws.txt"), "utf8").trim();
+  const forgedRootDer = fs.readFileSync(path.join(__dirname, "fixtures", "forged-root.cer"));
+  const verifier = new SignedDataVerifier(
+    [forgedRootDer], false, Environment.PRODUCTION, "com.jamesaguero.mycarbtracker", 1234567890
+  );
+
+  const payload = await verifier.verifyAndDecodeTransaction(forged);
+  assert.equal(payload.productId, "premium_yearly");
 });
 
 test("verifyTransaction rejects garbage before touching the verifier", async () => {
