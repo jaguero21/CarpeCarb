@@ -1,0 +1,9 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Only Cloud Functions (Admin SDK) read or write Firestore.
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

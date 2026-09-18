@@ -5,9 +5,9 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import '../config/storage_keys.dart';
-import '../models/food_item.dart';
 import '../utils/input_validation.dart';
 import '../utils/user_facing_exception.dart';
+import 'lookup_api.dart';
 
 class PerplexityFirebaseService {
   static const _tokenChannel = MethodChannel(StorageKeys.tokenStorageChannel);
@@ -19,9 +19,11 @@ class PerplexityFirebaseService {
       'https://us-central1-carpecarb.cloudfunctions.net/getMultipleCarbCounts';
 
   /// Looks up one or more food items via the Firebase Cloud Function.
+  /// Throws [DailyLimitReachedException] when the server refuses a free
+  /// user's lookup for today, and [UserFacingException] for other failures.
   /// Uses direct HTTPS REST call to avoid Firebase Functions SDK AOT crash
   /// (swift_task_switch in HTTPSCallable.call on iOS 12.9.x SDK).
-  Future<List<FoodItem>> getMultipleCarbCounts(String input) async {
+  Future<LookupResult> getMultipleCarbCounts(String input) async {
     await _enforceRateLimit();
 
     final validationError = InputValidation.validateFoodInput(input);
@@ -59,7 +61,13 @@ class PerplexityFirebaseService {
       // Non-fatal — token sharing is best-effort.
     }
 
-    final body = jsonEncode({'data': {'input': sanitizedInput}});
+    final body = jsonEncode({
+      'data': {
+        'input': sanitizedInput,
+        // Lets the server count the free quota per local calendar day.
+        'tzOffsetMinutes': DateTime.now().timeZoneOffset.inMinutes,
+      }
+    });
 
     try {
       final client = HttpClient();
@@ -75,70 +83,12 @@ class PerplexityFirebaseService {
 
         if (kDebugMode) debugPrint('Cloud Function HTTP ${response.statusCode}');
 
-        if (response.statusCode == 401 || response.statusCode == 403) {
-          throw UserFacingException('Authentication error. Please restart the app.');
-        }
-
-        if (response.statusCode == 429) {
-          throw UserFacingException('Rate limit exceeded. Please try again later.');
-        }
-
         if (response.statusCode != 200) {
           if (kDebugMode) debugPrint('Cloud Function error body: $responseBody');
-          try {
-            final errJson = jsonDecode(responseBody) as Map<String, dynamic>;
-            final errMsg = (errJson['error'] as Map<String, dynamic>?)?['message']
-                as String?;
-            if (errMsg != null && errMsg.isNotEmpty) {
-              throw UserFacingException(errMsg);
-            }
-          } catch (e) {
-            if (e is UserFacingException) rethrow;
-          }
-          throw UserFacingException('Failed to get carb count. Please try again.');
+          throw parseCallableError(response.statusCode, responseBody);
         }
 
-        final json = jsonDecode(responseBody) as Map<String, dynamic>;
-        final result = (json['result'] ?? json['data']) as Map<String, dynamic>?;
-
-        if (result == null || result['items'] == null) {
-          if (kDebugMode) debugPrint('Unexpected response shape: $responseBody');
-          throw UserFacingException('No results returned. Please try again.');
-        }
-
-        final items = result['items'] as List<dynamic>;
-        final citations = result['citations'] != null
-            ? List<String>.from(result['citations'] as List)
-            : <String>[];
-
-        if (items.isEmpty) {
-          throw UserFacingException(
-              'No food items found. Please try a different description.');
-        }
-
-        double? parseOptional(dynamic v) {
-          if (v == null) return null;
-          if (v is num) return v.toDouble();
-          return double.tryParse(v.toString());
-        }
-
-        return items.map((item) {
-          final carbsRaw = item['carbs'];
-          final carbs = carbsRaw is num
-              ? carbsRaw.toDouble()
-              : double.tryParse(carbsRaw.toString()) ?? 0.0;
-
-          return FoodItem(
-            name: (item['name'] as String?) ?? 'Unknown',
-            carbs: carbs,
-            protein: parseOptional(item['protein']),
-            fat: parseOptional(item['fat']),
-            fiber: parseOptional(item['fiber']),
-            calories: parseOptional(item['calories']),
-            details: item['details'] as String?,
-            citations: citations,
-          );
-        }).toList();
+        return parseLookupResponse(responseBody);
       } finally {
         client.close();
       }
