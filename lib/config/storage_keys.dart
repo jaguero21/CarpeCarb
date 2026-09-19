@@ -22,6 +22,10 @@ class StorageKeys {
   static const String widgetDailyCarbGoal = 'dailyCarbGoal';
   static const String widgetSiriLoggedItems = 'siriLoggedItems';
   static const String widgetFlutterTotalCarbs = 'flutter.total_carbs';
+  // The day the widget totals belong to (lib/utils/day_key.dart) and the
+  // user's reset hour, so Siri and the widget can tell a new day has started.
+  static const String widgetDayKey = 'dayKey';
+  static const String widgetResetHour = 'dailyResetHour';
 
   // iOS widget name
   static const String widgetName = 'CarbWiseWidget';
