@@ -457,10 +457,6 @@ class CarbTrackerHomeState extends State<CarbTrackerHome>
         foodItems = [];
         dailyCarbGoal = savedGoal;
       });
-      // Let the emptied list rebuild first so the import doesn't insert into
-      // the old AnimatedList, which still counts yesterday's items.
-      await WidgetsBinding.instance.endOfFrame;
-      if (!mounted || token != _loadSavedDataToken) return;
       // Siri may have logged food this morning before the app was opened.
       await _importSiriLoggedItems();
       return;
@@ -492,6 +488,11 @@ class CarbTrackerHomeState extends State<CarbTrackerHome>
 
   Future<void> _importSiriLoggedItems() async {
     final token = ++_importSiriItemsToken;
+    // Let a just-replaced list rebuild first (a new day, or a reload that
+    // swapped in fewer items), so the inserts below don't hit the old
+    // AnimatedList, which still counts the previous items.
+    await WidgetsBinding.instance.endOfFrame;
+    if (!mounted || token != _importSiriItemsToken) return;
     final siriItemsJson = await HomeWidget.getWidgetData<String>(
         StorageKeys.widgetSiriLoggedItems);
     if (!mounted || token != _importSiriItemsToken) return;

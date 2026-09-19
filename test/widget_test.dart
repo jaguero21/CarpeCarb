@@ -1,4 +1,6 @@
 // ignore_for_file: invalid_use_of_protected_member
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -16,6 +18,38 @@ void main() {
   String yesterdayKey() {
     final now = DateTime.now();
     return keyOf(DateTime(now.year, now.month, now.day - 1));
+  }
+
+  TestDefaultBinaryMessenger messenger() =>
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+
+  /// Answers the home_widget plugin's calls, which otherwise never complete
+  /// in tests, from an in-memory App Group. Returns it so a test can seed it.
+  Map<String, Object?> stubHomeWidget() {
+    const channel = MethodChannel('home_widget');
+    final appGroup = <String, Object?>{};
+    messenger().setMockMethodCallHandler(channel, (call) async {
+      final args = (call.arguments as Map?) ?? const {};
+      switch (call.method) {
+        case 'saveWidgetData':
+          appGroup[args['id'] as String] = args['data'];
+          return true;
+        case 'getWidgetData':
+          return appGroup[args['id'] as String] ?? args['defaultValue'];
+      }
+      return null;
+    });
+    addTearDown(() => messenger().setMockMethodCallHandler(channel, null));
+    return appGroup;
+  }
+
+  /// Makes iCloud pulls return an empty payload, so a resume runs
+  /// `_applyCloudData` (and its `_loadSavedData`) alongside the resume's own.
+  void stubCloudSync() {
+    const channel = MethodChannel('com.carpecarb/cloudsync');
+    messenger().setMockMethodCallHandler(channel,
+        (call) async => call.method == 'pullFromCloud' ? <String, Object?>{} : null);
+    addTearDown(() => messenger().setMockMethodCallHandler(channel, null));
   }
 
   // Setup SharedPreferences mock before tests
@@ -267,13 +301,8 @@ void main() {
 
     testWidgets('resume after the day changed starts a new day',
         (WidgetTester tester) async {
-      // The new-day path writes the widget's App Group data; answer the
-      // home_widget plugin's calls, which otherwise never complete in tests.
-      const homeWidget = MethodChannel('home_widget');
-      final messenger =
-          TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
-      messenger.setMockMethodCallHandler(homeWidget, (call) async => null);
-      addTearDown(() => messenger.setMockMethodCallHandler(homeWidget, null));
+      // The new-day path writes the widget's App Group data.
+      stubHomeWidget();
 
       // The app starts with today's items...
       SharedPreferences.setMockInitialValues({
@@ -299,6 +328,50 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(state.foodItems, isEmpty);
+    });
+
+    testWidgets(
+        'resume after the day changed, with iCloud sync, imports Siri items into the new day',
+        (WidgetTester tester) async {
+      final appGroup = stubHomeWidget();
+      stubCloudSync();
+
+      SharedPreferences.setMockInitialValues({
+        'food_items':
+            '[{"name":"Pasta","carbs":60.0,"loggedAt":"2026-03-09T19:00:00.000","category":"dinner"},'
+                '{"name":"Apple","carbs":25.0,"loggedAt":"2026-03-09T10:00:00.000","category":"snack"}]',
+        'last_save_date': todayKey(),
+      });
+
+      await tester.pumpWidget(const CarbTrackerApp());
+      await tester.pumpAndSettle();
+
+      final state = tester.state<CarbTrackerHomeState>(
+        find.byType(CarbTrackerHome),
+      );
+      expect(state.foodItems, hasLength(2));
+
+      // Overnight the saved list becomes yesterday's, and Siri logs a food.
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('last_save_date', yesterdayKey());
+      appGroup['siriLoggedItems'] = jsonEncode([
+        {
+          'name': 'Toast',
+          'carbs': 15,
+          'loggedAt': DateTime.now().toUtc().toIso8601String(),
+        },
+      ]);
+
+      // Resume starts both the day reload and an iCloud pull, whose
+      // _applyCloudData reloads again while the first reload is in flight.
+      state.didChangeAppLifecycleState(AppLifecycleState.resumed);
+      await tester.pumpAndSettle();
+
+      expect(tester.takeException(), isNull);
+      expect(state.foodItems.map((f) => f.name), ['Toast']);
+
+      // Let the 2-second "synced" badge timer from the iCloud push finish.
+      await tester.pump(const Duration(seconds: 2));
     });
   });
 
