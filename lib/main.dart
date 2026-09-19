@@ -15,6 +15,7 @@ import 'services/perplexity_firebase_service.dart';
 import 'services/health_kit_service.dart';
 import 'services/premium_service.dart';
 import 'services/cloud_sync_service.dart';
+import 'services/siri_import.dart';
 import 'models/food_item.dart';
 import 'models/server_quota.dart';
 import 'screens/settings_page.dart';
@@ -22,6 +23,7 @@ import 'config/app_colors.dart';
 import 'config/app_theme.dart';
 import 'config/storage_keys.dart';
 import 'utils/date_format.dart';
+import 'utils/day_key.dart';
 import 'utils/input_validation.dart';
 import 'utils/user_facing_exception.dart';
 import 'widgets/food_item_card.dart';
@@ -50,25 +52,7 @@ Future<void> main() async {
   // Initialize HomeWidget for iOS widget data sharing
   HomeWidget.setAppGroupId(StorageKeys.appGroupId);
 
-  // Persist the Firebase ID token to the shared App Group UserDefaults so
-  // Siri App Intents (and Watch extensions) can authenticate Cloud Function calls.
-  _refreshSharedFirebaseToken();
-
   runApp(const CarbTrackerApp());
-}
-
-/// Fetches a fresh Firebase ID token and writes it to the shared App Group
-/// UserDefaults so Siri App Intents and Watch extensions can auth Cloud Function calls.
-Future<void> _refreshSharedFirebaseToken() async {
-  try {
-    final user = FirebaseAuth.instance.currentUser;
-    if (user == null) return;
-    final token = await user.getIdToken();
-    if (token == null || token.isEmpty) return;
-    await HomeWidget.saveWidgetData<String>(StorageKeys.firebaseIdToken, token);
-  } catch (e) {
-    if (kDebugMode) debugPrint('Failed to refresh shared Firebase token: $e');
-  }
 }
 
 class CarbTrackerApp extends StatelessWidget {
@@ -383,7 +367,7 @@ class CarbTrackerHomeState extends State<CarbTrackerHome>
   void didChangeAppLifecycleState(AppLifecycleState state) {
     super.didChangeAppLifecycleState(state);
     if (state == AppLifecycleState.resumed) {
-      _importSiriLoggedItems();
+      _onResumed();
       if (_premiumService.isCloudSyncEnabled) {
         _cloudSyncService.pullFromCloud().then((pulled) {
           if (pulled != null && mounted) _applyCloudData(pulled);
@@ -391,6 +375,20 @@ class CarbTrackerHomeState extends State<CarbTrackerHome>
       } else {
         _cloudSyncService.stopListening();
       }
+    }
+  }
+
+  /// On resume, start a new day if the app was suspended across the day
+  /// boundary (its in-memory list is still yesterday's); otherwise just pick
+  /// up Siri items. `_loadSavedData`'s new-day branch imports Siri items itself.
+  Future<void> _onResumed() async {
+    final prefs = await SharedPreferences.getInstance();
+    if (!mounted) return;
+    final lastSaveDate = prefs.getString(StorageKeys.lastSaveDate);
+    if (lastSaveDate != null && lastSaveDate != _todayString()) {
+      await _loadSavedData();
+    } else {
+      await _importSiriLoggedItems();
     }
   }
 
@@ -416,7 +414,15 @@ class CarbTrackerHomeState extends State<CarbTrackerHome>
     );
     await HomeWidget.saveWidgetData<double>(
         StorageKeys.widgetDailyCarbGoal, dailyCarbGoal ?? 0.0);
+    await _saveWidgetDay();
     await HomeWidget.updateWidget(iOSName: StorageKeys.widgetName);
+  }
+
+  /// Tells Siri and the widget which day the stored totals belong to.
+  Future<void> _saveWidgetDay() async {
+    await HomeWidget.saveWidgetData<String>(
+        StorageKeys.widgetDayKey, _todayString());
+    await HomeWidget.saveWidgetData<int>(StorageKeys.widgetResetHour, resetHour);
   }
 
   Future<void> _loadSavedData() async {
@@ -444,12 +450,15 @@ class CarbTrackerHomeState extends State<CarbTrackerHome>
           StorageKeys.widgetLastFoodName, '');
       await HomeWidget.saveWidgetData<double>(
           StorageKeys.widgetLastFoodCarbs, 0.0);
+      await _saveWidgetDay();
       await HomeWidget.updateWidget(iOSName: StorageKeys.widgetName);
       if (!mounted || token != _loadSavedDataToken) return;
       setState(() {
         foodItems = [];
         dailyCarbGoal = savedGoal;
       });
+      // Siri may have logged food this morning before the app was opened.
+      await _importSiriLoggedItems();
       return;
     }
 
@@ -479,35 +488,24 @@ class CarbTrackerHomeState extends State<CarbTrackerHome>
 
   Future<void> _importSiriLoggedItems() async {
     final token = ++_importSiriItemsToken;
+    // Let a just-replaced list rebuild first (a new day, or a reload that
+    // swapped in fewer items), so the inserts below don't hit the old
+    // AnimatedList, which still counts the previous items.
+    await WidgetsBinding.instance.endOfFrame;
+    if (!mounted || token != _importSiriItemsToken) return;
     final siriItemsJson = await HomeWidget.getWidgetData<String>(
         StorageKeys.widgetSiriLoggedItems);
     if (!mounted || token != _importSiriItemsToken) return;
     if (siriItemsJson == null) return;
 
     try {
-      final List<dynamic> siriItems = jsonDecode(siriItemsJson);
-      if (siriItems.isEmpty) return;
+      final siri =
+          SiriImport.parse(siriItemsJson, DateTime.now(), resetHour);
+      if (siri.today.isEmpty && siri.earlier.isEmpty) return;
 
-      // Build all items first, then insert one at a time to keep
-      // AnimatedList's internal count in sync with the data list.
-      final newItems = <FoodItem>[];
-      for (final item in siriItems) {
-        final citations = item['citations'] != null
-            ? List<String>.from(item['citations'])
-            : <String>[];
-        DateTime? loggedAt;
-        if (item['loggedAt'] != null) {
-          loggedAt = DateTime.tryParse(item['loggedAt'] as String);
-        }
-        newItems.add(FoodItem(
-          name: item['name'] as String,
-          carbs: item['carbs'] is num ? (item['carbs'] as num).toDouble() : 0.0,
-          details: item['details'] as String?,
-          citations: citations,
-          loggedAt: loggedAt ?? DateTime.now(),
-        ));
-      }
-      for (final foodItem in newItems) {
+      // Insert one at a time to keep AnimatedList's internal count in sync
+      // with the data list.
+      for (final foodItem in siri.today) {
         if (!mounted || token != _importSiriItemsToken) return;
         setState(() {
           foodItems.insert(0, foodItem);
@@ -520,10 +518,12 @@ class CarbTrackerHomeState extends State<CarbTrackerHome>
       await HomeWidget.saveWidgetData<String?>(
           StorageKeys.widgetSiriLoggedItems, null);
       await _saveData();
+      await _updateWidget();
 
-      // Sync Siri-logged items to HealthKit
+      // Items from an earlier day stay out of today's list but still go to
+      // Apple Health at the time they were logged.
       if (_premiumService.isHealthSyncEnabled) {
-        for (final foodItem in newItems) {
+        for (final foodItem in [...siri.today, ...siri.earlier]) {
           _writeToHealthKit(foodItem);
         }
       }
@@ -552,14 +552,7 @@ class CarbTrackerHomeState extends State<CarbTrackerHome>
     }
   }
 
-  String _todayString() {
-    var now = DateTime.now();
-    // If before the reset hour, treat it as the previous day
-    if (resetHour > 0 && now.hour < resetHour) {
-      now = now.subtract(const Duration(days: 1));
-    }
-    return '${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}';
-  }
+  String _todayString() => dayKey(DateTime.now(), resetHour);
 
   String? _validateFoodInput(String input) {
     // Use hardened validation from InputValidation utility

@@ -3,14 +3,11 @@ import 'dart:io';
 
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
-import 'package:flutter/services.dart';
-import '../config/storage_keys.dart';
 import '../utils/input_validation.dart';
 import '../utils/user_facing_exception.dart';
 import 'lookup_api.dart';
 
 class PerplexityFirebaseService {
-  static const _tokenChannel = MethodChannel(StorageKeys.tokenStorageChannel);
   // Rate limiting to prevent UI-level spamming
   static DateTime? _lastRequestTime;
   static const Duration _minRequestInterval = Duration(milliseconds: 1500);
@@ -51,14 +48,6 @@ class PerplexityFirebaseService {
 
     if (idToken.isEmpty) {
       throw UserFacingException('Authentication error. Please restart the app.');
-    }
-
-    // Keep the shared token fresh so Siri/Watch extensions can auth.
-    // Stored in Keychain (secure) + App Group UserDefaults (backward compat).
-    try {
-      await _tokenChannel.invokeMethod<void>('saveToken', idToken);
-    } catch (_) {
-      // Non-fatal — token sharing is best-effort.
     }
 
     final body = jsonEncode({
