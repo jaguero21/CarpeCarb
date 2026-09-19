@@ -57,6 +57,16 @@ struct PerplexityClientParseTests {
         ], citations: ["https://example.com"]))
     }
 
+    @Test func nonFiniteOrNegativeNumbersAreDropped() throws {
+        let data = try body([
+            "items": [
+                ["name": "Mystery", "carbs": "nan", "protein": "inf", "fat": -3],
+            ],
+        ])
+        let result = try PerplexityClient.parseResponse(data)
+        #expect(result.items == [LookupItem(name: "Mystery", carbs: 0, protein: nil, fat: nil)])
+    }
+
     @Test func emptyItemsSaysNothingWasFound() throws {
         let data = try body(["items": [] as [Any]])
         #expect(throws: IntentError.self) { try PerplexityClient.parseResponse(data) }

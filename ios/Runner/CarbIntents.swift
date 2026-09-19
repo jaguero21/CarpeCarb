@@ -17,10 +17,12 @@ struct LogFoodIntent: AppIntent {
         let result = try await PerplexityClient.lookupCarbs(for: foodItem, idToken: idToken)
 
         let now = Date()
-        for item in result.items {
-            await CarbDataStore.shared.addFood(LoggedFood(item: item, citations: result.citations), now: now)
+        let totalToday = await MainActor.run { () -> Double in
+            for item in result.items {
+                CarbDataStore.shared.addFood(LoggedFood(item: item, citations: result.citations), now: now)
+            }
+            return CarbDataStore.shared.snapshot(now: now).totalCarbs
         }
-        let totalToday = CarbDataStore.shared.snapshot(now: now).totalCarbs
 
         return .result(dialog: IntentDialog(stringLiteral: LogFoodDialog.text(items: result.items, totalToday: totalToday)))
     }

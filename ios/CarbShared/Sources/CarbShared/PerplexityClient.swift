@@ -73,7 +73,7 @@ public struct PerplexityClient {
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue("Bearer \(idToken)", forHTTPHeaderField: "Authorization")
-        request.timeoutInterval = 60
+        request.timeoutInterval = 30 // Siri users won't wait a minute
 
         let body: [String: Any] = [
             "data": [
@@ -85,7 +85,13 @@ public struct PerplexityClient {
 
         request.httpBody = try JSONSerialization.data(withJSONObject: body)
 
-        let (data, response) = try await URLSession.shared.data(for: request)
+        let data: Data
+        let response: URLResponse
+        do {
+            (data, response) = try await URLSession.shared.data(for: request)
+        } catch is URLError {
+            throw IntentError.message("Couldn't reach CarpeCarb. Check your connection and try again.")
+        }
 
         guard let httpResponse = response as? HTTPURLResponse else {
             throw IntentError.message("Invalid response from server.")
@@ -124,10 +130,13 @@ public struct PerplexityClient {
         return LookupResult(items: items, citations: result["citations"] as? [String] ?? [])
     }
 
+    /// A finite, non-negative number, or nil. Nutrition values can't be
+    /// negative, and a NaN or infinity would make `JSONSerialization` in
+    /// `CarbDataStore.addFood` raise an Objective-C exception Swift can't catch.
     private static func number(_ value: Any?) -> Double? {
-        if let number = value as? NSNumber { return number.doubleValue }
-        if let string = value as? String { return Double(string) }
-        return nil
+        let parsed = (value as? NSNumber)?.doubleValue ?? (value as? String).flatMap { Double($0) }
+        guard let parsed, parsed.isFinite, parsed >= 0 else { return nil }
+        return parsed
     }
 
     /// Maps a non-200 response from the callable function to a message Siri

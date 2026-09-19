@@ -60,12 +60,15 @@ struct CarbWiseProvider: TimelineProvider {
         logWidgetData(data, context: "timeline")
 
         // A second entry at the day boundary (midnight or the user's reset
-        // hour) shows 0 even if the app isn't opened before then.
+        // hour) shows 0 even if the app isn't opened before then. Only once
+        // the app has written a `dayKey`: before that, the stored total is
+        // trusted as today, so a 0 at the boundary would flash and then
+        // revert to the old total on the next refresh.
         let dayBoundary = CarbDay.nextBoundary(after: currentDate, resetHour: CarbDataStore.shared.resetHour)
-        let entries = [
-            CarbWiseEntry(date: currentDate, data: data),
-            CarbWiseEntry(date: dayBoundary, data: data.startingNewDay),
-        ]
+        var entries = [CarbWiseEntry(date: currentDate, data: data)]
+        if CarbDataStore.shared.storedDayKey != nil {
+            entries.append(CarbWiseEntry(date: dayBoundary, data: data.startingNewDay))
+        }
 
         // Refresh every 15 minutes
         let refreshDate = Calendar.current.date(byAdding: .minute, value: 15, to: currentDate) ?? currentDate.addingTimeInterval(900)

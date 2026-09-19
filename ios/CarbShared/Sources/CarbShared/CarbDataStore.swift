@@ -83,6 +83,12 @@ public struct CarbDataStore {
         defaults?.integer(forKey: Keys.dailyResetHour) ?? 0
     }
 
+    /// The day the stored totals belong to, or nil before an app build with
+    /// day tracking (or Siri) has written one.
+    public var storedDayKey: String? {
+        defaults?.string(forKey: Keys.dayKey)
+    }
+
     /// Today's totals. If the stored totals belong to an earlier day, total and
     /// last food are empty; the goal is kept. A missing `dayKey` (written by an
     /// app build from before day tracking) is trusted as today.
@@ -101,8 +107,11 @@ public struct CarbDataStore {
     /// from 0 on a new day), stamps today's `dayKey`, and appends the item to
     /// the buffer the app imports on its next launch or resume.
     ///
-    /// Main-actor isolated: Siri runs in the app's process, so this keeps its
-    /// read-modify-write from interleaving with the app's own App Group writes.
+    /// Main-actor isolated: Siri runs in the app's process, and home_widget
+    /// handles the app's App Group writes on the main thread, so each call's
+    /// read-modify-write is serialized with them. That covers one call only:
+    /// callers adding several items should add the batch and read the total in
+    /// one main-actor hop, as `LogFoodIntent` does, so no app write lands between.
     @MainActor
     public func addFood(_ food: LoggedFood, now: Date = Date()) {
         let newTotal = snapshot(now: now).totalCarbs + food.carbs
@@ -146,7 +155,7 @@ public struct CarbDataStore {
     }
 
     private func isStoredDayCurrent(now: Date) -> Bool {
-        guard let storedDay = defaults?.string(forKey: Keys.dayKey) else { return true }
+        guard let storedDay = storedDayKey else { return true }
         return storedDay == CarbDay.key(for: now, resetHour: resetHour)
     }
 }

@@ -62,6 +62,12 @@ struct CarbDataStoreTests {
         #expect(defaults.string(forKey: CarbDataStore.Keys.dayKey) == "2026-09-17")
     }
 
+    @Test func storedDayKeyIsSetOnceFoodIsAdded() {
+        #expect(store.storedDayKey == nil)
+        store.addFood(LoggedFood(name: "Apple", carbs: 25), now: noon)
+        #expect(store.storedDayKey == "2026-09-18")
+    }
+
     @Test func addFoodAddsToTodaysTotal() {
         store.addFood(LoggedFood(name: "Apple", carbs: 25), now: noon)
         store.addFood(LoggedFood(name: "Fries", carbs: 48), now: noon)
