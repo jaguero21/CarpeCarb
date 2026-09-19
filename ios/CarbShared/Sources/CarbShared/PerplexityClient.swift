@@ -1,5 +1,47 @@
 import Foundation
 
+/// One food from a carb lookup.
+public struct LookupItem: Equatable, Sendable {
+    public let name: String
+    public let carbs: Double
+    public let protein: Double?
+    public let fat: Double?
+    public let fiber: Double?
+    public let calories: Double?
+    public let details: String?
+
+    public init(name: String, carbs: Double, protein: Double? = nil, fat: Double? = nil,
+                fiber: Double? = nil, calories: Double? = nil, details: String? = nil) {
+        self.name = name
+        self.carbs = carbs
+        self.protein = protein
+        self.fat = fat
+        self.fiber = fiber
+        self.calories = calories
+        self.details = details
+    }
+}
+
+/// Every food the server found for one lookup ("burger and fries" → 2 items).
+public struct LookupResult: Equatable, Sendable {
+    public let items: [LookupItem]
+    public let citations: [String]
+
+    public init(items: [LookupItem], citations: [String]) {
+        self.items = items
+        self.citations = citations
+    }
+}
+
+extension LoggedFood {
+    /// The buffered form of a looked-up item, keeping its macros.
+    public init(item: LookupItem, citations: [String]) {
+        self.init(name: item.name, carbs: item.carbs, protein: item.protein, fat: item.fat,
+                  fiber: item.fiber, calories: item.calories, details: item.details,
+                  citations: citations)
+    }
+}
+
 public struct PerplexityClient {
     private static var lastRequestTime: Date?
     private static let minInterval: TimeInterval = 1.5
@@ -17,18 +59,21 @@ public struct PerplexityClient {
         lastRequestTime = Date()
     }
 
-    public static func lookupCarbs(for foodItem: String) async throws -> (name: String, carbs: Double, details: String?, citations: [String]) {
+    /// Looks up every food in `foodItem` via the Cloud Function.
+    ///
+    /// - Parameter idToken: a current Firebase ID token for the signed-in user.
+    ///   CarbShared stays free of Firebase, so the caller supplies it.
+    public static func lookupCarbs(for foodItem: String, idToken: String) async throws -> LookupResult {
         await enforceRateLimit()
 
-        let url = URL(string: cloudFunctionURL)!
+        guard let url = URL(string: cloudFunctionURL) else {
+            throw IntentError.message("Invalid server address.")
+        }
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("Bearer \(idToken)", forHTTPHeaderField: "Authorization")
         request.timeoutInterval = 60
-
-        if let token = CarbDataStore.firebaseIdToken(), !token.isEmpty {
-            request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
-        }
 
         let body: [String: Any] = [
             "data": [
@@ -50,33 +95,39 @@ public struct PerplexityClient {
             throw IntentError.message(errorMessage(status: httpResponse.statusCode, body: data))
         }
 
-        // Firebase callable functions wrap the response in {"result": ...}
-        guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+        return try parseResponse(data)
+    }
+
+    /// Parses a 200 response. Firebase callable functions wrap it in
+    /// `{"result": {"items": [...], "citations": [...]}}`.
+    static func parseResponse(_ data: Data) throws -> LookupResult {
+        guard let json = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
               let result = json["result"] as? [String: Any],
-              let items = result["items"] as? [[String: Any]],
-              let first = items.first else {
+              let rawItems = result["items"] as? [[String: Any]] else {
             throw IntentError.message("Could not parse server response.")
         }
 
-        let name = first["name"] as? String ?? "Unknown"
-        let carbs: Double
-        if let carbNum = first["carbs"] as? NSNumber {
-            carbs = carbNum.doubleValue
-        } else if let carbStr = first["carbs"] as? String, let parsed = Double(carbStr) {
-            carbs = parsed
-        } else {
-            carbs = 0
+        let items = rawItems.map { raw in
+            LookupItem(
+                name: raw["name"] as? String ?? "Unknown",
+                carbs: number(raw["carbs"]) ?? 0,
+                protein: number(raw["protein"]),
+                fat: number(raw["fat"]),
+                fiber: number(raw["fiber"]),
+                calories: number(raw["calories"]),
+                details: raw["details"] as? String
+            )
         }
-        let details = first["details"] as? String
-
-        let citations: [String]
-        if let citationArray = result["citations"] as? [String] {
-            citations = citationArray
-        } else {
-            citations = []
+        guard !items.isEmpty else {
+            throw IntentError.message("I couldn't find nutrition info for that.")
         }
+        return LookupResult(items: items, citations: result["citations"] as? [String] ?? [])
+    }
 
-        return (name: name, carbs: carbs, details: details, citations: citations)
+    private static func number(_ value: Any?) -> Double? {
+        if let number = value as? NSNumber { return number.doubleValue }
+        if let string = value as? String { return Double(string) }
+        return nil
     }
 
     /// Maps a non-200 response from the callable function to a message Siri

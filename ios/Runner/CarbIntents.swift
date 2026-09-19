@@ -13,14 +13,16 @@ struct LogFoodIntent: AppIntent {
     var foodItem: String
 
     func perform() async throws -> some IntentResult & ProvidesDialog {
-        let result = try await PerplexityClient.lookupCarbs(for: foodItem)
+        let idToken = try await SiriAuth.idToken()
+        let result = try await PerplexityClient.lookupCarbs(for: foodItem, idToken: idToken)
 
-        CarbDataStore.addFood(name: result.name, carbs: result.carbs, details: result.details, citations: result.citations)
+        let now = Date()
+        for item in result.items {
+            await CarbDataStore.shared.addFood(LoggedFood(item: item, citations: result.citations), now: now)
+        }
+        let totalToday = CarbDataStore.shared.snapshot(now: now).totalCarbs
 
-        let formattedCarbs = String(format: "%.1f", result.carbs)
-        let formattedTotal = String(format: "%.1f", CarbDataStore.totalCarbs())
-
-        return .result(dialog: "\(result.name) has \(formattedCarbs) grams of carbs. Your total today is \(formattedTotal) grams.")
+        return .result(dialog: IntentDialog(stringLiteral: LogFoodDialog.text(items: result.items, totalToday: totalToday)))
     }
 }
 
@@ -33,10 +35,11 @@ struct CheckCarbsIntent: AppIntent {
     static var openAppWhenRun: Bool = false
 
     func perform() async throws -> some IntentResult & ProvidesDialog {
-        let total = CarbDataStore.totalCarbs()
-        let lastFood = CarbDataStore.lastFoodName()
-        let lastCarbs = CarbDataStore.lastFoodCarbs()
-        let goal = CarbDataStore.dailyCarbGoal()
+        let today = CarbDataStore.shared.snapshot()
+        let total = today.totalCarbs
+        let lastFood = today.lastFoodName
+        let lastCarbs = today.lastFoodCarbs
+        let goal = today.dailyGoal
 
         let formattedTotal = String(format: "%.1f", total)
 
