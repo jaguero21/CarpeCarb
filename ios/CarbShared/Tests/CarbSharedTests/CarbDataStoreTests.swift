@@ -55,6 +55,13 @@ struct CarbDataStoreTests {
         #expect(defaults.string(forKey: CarbDataStore.Keys.dayKey) == "2026-09-18")
     }
 
+    @Test func addFoodBeforeTheResetHourStampsThePreviousDay() throws {
+        defaults.set(4, forKey: CarbDataStore.Keys.dailyResetHour)
+        let threeAM = try #require(Calendar.current.date(from: DateComponents(year: 2026, month: 9, day: 18, hour: 3)))
+        store.addFood(LoggedFood(name: "Toast", carbs: 15), now: threeAM)
+        #expect(defaults.string(forKey: CarbDataStore.Keys.dayKey) == "2026-09-17")
+    }
+
     @Test func addFoodAddsToTodaysTotal() {
         store.addFood(LoggedFood(name: "Apple", carbs: 25), now: noon)
         store.addFood(LoggedFood(name: "Fries", carbs: 48), now: noon)

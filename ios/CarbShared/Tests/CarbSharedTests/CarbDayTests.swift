@@ -27,6 +27,16 @@ struct CarbDayTests {
         #expect(CarbDay.key(for: date(y, m, d, h, min), resetHour: resetHour, calendar: calendar) == expected)
     }
 
+    @Test func keyIsGregorianWhateverTheDeviceCalendar() {
+        var buddhist = Calendar(identifier: .buddhist)
+        buddhist.timeZone = calendar.timeZone
+        #expect(CarbDay.key(for: date(2026, 9, 18, 12, 0), resetHour: 0, calendar: buddhist) == "2026-09-18")
+
+        var japanese = Calendar(identifier: .japanese)
+        japanese.timeZone = calendar.timeZone
+        #expect(CarbDay.key(for: date(2026, 9, 18, 3, 0), resetHour: 4, calendar: japanese) == "2026-09-17")
+    }
+
     @Test func nextBoundaryIsNextMidnightWithNoResetHour() {
         let next = CarbDay.nextBoundary(after: date(2026, 9, 18, 21, 15), resetHour: 0, calendar: calendar)
         #expect(next == date(2026, 9, 19, 0, 0))
