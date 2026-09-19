@@ -1,3 +1,4 @@
+import CarbShared
 import WidgetKit
 import SwiftUI
 import os.log
@@ -27,6 +28,11 @@ struct CarbWidgetData {
         lastFoodCarbs: 0.0,
         dailyGoal: nil
     )
+
+    /// What to show once the day rolls over: nothing logged yet, goal kept.
+    var startingNewDay: CarbWidgetData {
+        CarbWidgetData(totalCarbs: 0, lastFoodName: "", lastFoodCarbs: 0, dailyGoal: dailyGoal)
+    }
 }
 
 // MARK: - Timeline Provider
@@ -50,20 +56,26 @@ struct CarbWiseProvider: TimelineProvider {
         logger.info("⏰ Timeline requested for widget family: \(String(describing: context.family))")
         
         let currentDate = Date()
-        let data = loadData()
+        let data = loadData(now: currentDate)
         logWidgetData(data, context: "timeline")
-        
-        let entry = CarbWiseEntry(date: currentDate, data: data)
-        
+
+        // A second entry at the day boundary (midnight or the user's reset
+        // hour) shows 0 even if the app isn't opened before then.
+        let dayBoundary = CarbDay.nextBoundary(after: currentDate, resetHour: CarbDataStore.shared.resetHour)
+        let entries = [
+            CarbWiseEntry(date: currentDate, data: data),
+            CarbWiseEntry(date: dayBoundary, data: data.startingNewDay),
+        ]
+
         // Refresh every 15 minutes
         let refreshDate = Calendar.current.date(byAdding: .minute, value: 15, to: currentDate) ?? currentDate.addingTimeInterval(900)
-        logger.debug("Next refresh scheduled for: \(refreshDate.formatted())")
-        
-        let timeline = Timeline(entries: [entry], policy: .after(refreshDate))
+        logger.debug("Next refresh scheduled for: \(refreshDate.formatted()); day boundary at \(dayBoundary.formatted())")
+
+        let timeline = Timeline(entries: entries, policy: .after(refreshDate))
         completion(timeline)
     }
 
-    private func loadData() -> CarbWidgetData {
+    private func loadData(now: Date = Date()) -> CarbWidgetData {
         logger.debug("📖 Loading widget data from App Group")
         
         // Validate App Group configuration
@@ -73,27 +85,19 @@ struct CarbWiseProvider: TimelineProvider {
             return .empty
         }
         
-        guard let defaults = AppGroupConfig.sharedDefaults else {
-            logger.error("❌ Failed to access App Group UserDefaults")
-            return .empty
-        }
-        
-        // Use centralized keys for consistency
-        let totalCarbs = defaults.double(forKey: AppGroupConfig.Keys.totalCarbs)
-        let lastFoodName = defaults.string(forKey: AppGroupConfig.Keys.lastFoodName) ?? ""
-        let lastFoodCarbs = defaults.double(forKey: AppGroupConfig.Keys.lastFoodCarbs)
-        let goalValue = defaults.double(forKey: AppGroupConfig.Keys.dailyCarbGoal)
-        
+        // Day-aware: totals stored on an earlier day read as 0.
+        let today = CarbDataStore.shared.snapshot(now: now)
+
         logger.debug("   App Group ID: '\(AppGroupConfig.identifier)'")
-        logger.debug("   Total carbs: \(totalCarbs)g")
-        logger.debug("   Last food: '\(lastFoodName.isEmpty ? "(none)" : lastFoodName)' (\(lastFoodCarbs)g)")
-        logger.debug("   Daily goal: \(goalValue > 0 ? "\(goalValue)g" : "(not set)")")
-        
+        logger.debug("   Total carbs: \(today.totalCarbs)g")
+        logger.debug("   Last food: '\(today.lastFoodName.isEmpty ? "(none)" : today.lastFoodName)' (\(today.lastFoodCarbs)g)")
+        logger.debug("   Daily goal: \(today.dailyGoal.map { "\($0)g" } ?? "(not set)")")
+
         return CarbWidgetData(
-            totalCarbs: totalCarbs,
-            lastFoodName: lastFoodName,
-            lastFoodCarbs: lastFoodCarbs,
-            dailyGoal: goalValue > 0 ? goalValue : nil
+            totalCarbs: today.totalCarbs,
+            lastFoodName: today.lastFoodName,
+            lastFoodCarbs: today.lastFoodCarbs,
+            dailyGoal: today.dailyGoal
         )
     }
     

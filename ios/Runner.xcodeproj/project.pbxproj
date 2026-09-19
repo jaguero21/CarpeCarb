@@ -10,6 +10,7 @@
 		1498D2341E8E89220040F4C2 /* GeneratedPluginRegistrant.m in Sources */ = {isa = PBXBuildFile; fileRef = 1498D2331E8E89220040F4C2 /* GeneratedPluginRegistrant.m */; };
 		1C2429AFA1FF4832BD317300 /* TokenStorageChannel.swift in Sources */ = {isa = PBXBuildFile; fileRef = E8893DCA54D941609C542800 /* TokenStorageChannel.swift */; };
 		250470652F4FC03600AAEB6C /* CarbShared in Frameworks */ = {isa = PBXBuildFile; productRef = 250470642F4FC03600AAEB6C /* CarbShared */; };
+		CW0001P3 /* CarbShared in Frameworks */ = {isa = PBXBuildFile; productRef = CW0001P2 /* CarbShared */; };
 		2599376A2F5F655F008B6262 /* CloudSyncChannel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 259937672F5F655F008B6262 /* CloudSyncChannel.swift */; };
 		259939122F625341008B6262 /* CloudSyncChannel-ErrorHandling.md in Resources */ = {isa = PBXBuildFile; fileRef = 259939112F625341008B6262 /* CloudSyncChannel-ErrorHandling.md */; };
 		259939162F62546A008B6262 /* CloudSyncStore-ThreadSafety.md in Resources */ = {isa = PBXBuildFile; fileRef = 259939152F62546A008B6262 /* CloudSyncStore-ThreadSafety.md */; };
@@ -176,6 +177,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				CW0001P3 /* CarbShared in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -371,6 +373,9 @@
 			dependencies = (
 			);
 			name = CarbWiseWidgetExtension;
+			packageProductDependencies = (
+				CW0001P2 /* CarbShared */,
+			);
 			productName = CarbWiseWidgetExtension;
 			productReference = CW0001A4 /* CarbWiseWidgetExtension.appex */;
 			productType = "com.apple.product-type.app-extension";
@@ -1435,6 +1440,10 @@
 
 /* Begin XCSwiftPackageProductDependency section */
 		250470642F4FC03600AAEB6C /* CarbShared */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = CarbShared;
+		};
+		CW0001P2 /* CarbShared */ = {
 			isa = XCSwiftPackageProductDependency;
 			productName = CarbShared;
 		};
