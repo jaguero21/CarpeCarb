@@ -10,6 +10,9 @@ void main() {
     (DateTime(2026, 9, 18, 4, 0), 4, '2026-09-18', 'at the reset hour: same day'),
     (DateTime(2026, 3, 1, 2, 0), 4, '2026-02-28', 'month boundary'),
     (DateTime(2026, 1, 1, 0, 30), 4, '2025-12-31', 'year boundary'),
+    // Only catches the old "minus 24 hours" bug when the tests run in a US
+    // daylight-saving time zone (e.g. `TZ=America/Chicago flutter test`); in
+    // UTC there's no 23-hour day, so both versions pass.
     (DateTime(2026, 3, 9, 0, 30), 4, '2026-03-08', 'day after DST starts (23-hour day)'),
   ];
 

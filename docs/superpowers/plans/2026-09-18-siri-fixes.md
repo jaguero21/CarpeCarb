@@ -1654,8 +1654,11 @@ git commit -m "fix: stop copying the Firebase token for Siri; remove old copies"
 No code. On an iPhone with a build from this branch:
 
 - [ ] Leave the app closed for more than an hour, then "Log food in CarpeCarb" → it logs and speaks a total (no "Server error (401)").
+- [ ] Siri after more than an hour, twice: once with the app swiped away (exercises `SiriAuth`'s `FirebaseApp.configure()` path), once with it only backgrounded. Both log and speak a total.
 - [ ] "Log food in CarpeCarb", "burger and fries" → two items logged; the reply lists both.
 - [ ] Next morning, before opening the app: "How many carbs today in CarpeCarb" says nothing has been tracked yet; the widget shows 0 after midnight (or the reset hour).
+- [ ] Leave the app suspended (not force-quit) overnight, open it in the morning → the list is empty or today-only, and the widget and Siri don't include yesterday.
 - [ ] Log something with Siri late at night, open the app the next day → it's in Apple Health at its real time but not in today's list.
 - [ ] Siri-logged items show macros (protein/fat/fiber/calories) in the app's detail view and Apple Health.
-- [ ] Fresh install, never opened, "Log food in CarpeCarb" → "Open CarpeCarb once to finish setting up Siri."
+- [ ] On a device that has never had CarpeCarb installed (Firebase's saved user survives deleting the app, so a reinstall still has a user), "Log food in CarpeCarb" → "Open CarpeCarb once to finish setting up Siri."
+- [ ] Set Region to Thailand (or Calendar to Buddhist) → the widget and Siri totals match the app.
