@@ -22,6 +22,7 @@ import 'config/app_colors.dart';
 import 'config/app_theme.dart';
 import 'config/storage_keys.dart';
 import 'utils/date_format.dart';
+import 'utils/day_key.dart';
 import 'utils/input_validation.dart';
 import 'utils/user_facing_exception.dart';
 import 'widgets/food_item_card.dart';
@@ -552,14 +553,7 @@ class CarbTrackerHomeState extends State<CarbTrackerHome>
     }
   }
 
-  String _todayString() {
-    var now = DateTime.now();
-    // If before the reset hour, treat it as the previous day
-    if (resetHour > 0 && now.hour < resetHour) {
-      now = now.subtract(const Duration(days: 1));
-    }
-    return '${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}';
-  }
+  String _todayString() => dayKey(DateTime.now(), resetHour);
 
   String? _validateFoodInput(String input) {
     // Use hardened validation from InputValidation utility
