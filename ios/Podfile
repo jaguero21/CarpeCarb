@@ -1,5 +1,6 @@
-# Uncomment this line to define a global platform for your project
-platform :ios, '16.0'
+# Must match IPHONEOS_DEPLOYMENT_TARGET of the Runner target (16.0).
+IOS_DEPLOYMENT_TARGET = '16.0'
+platform :ios, IOS_DEPLOYMENT_TARGET
 
 # CocoaPods analytics sends network stats synchronously affecting flutter build latency.
 ENV['COCOAPODS_DISABLE_STATS'] = 'true'
@@ -40,5 +41,24 @@ end
 post_install do |installer|
   installer.pods_project.targets.each do |target|
     flutter_additional_ios_build_settings(target)
+
+    # Xcode 27 fails the build for any pod target below iOS 15 (pods here
+    # declare 11.0-14.0). Raise them to the app's own minimum.
+    target.build_configurations.each do |config|
+      current = config.build_settings['IPHONEOS_DEPLOYMENT_TARGET']
+      if current.to_s.empty? || Gem::Version.new(current) < Gem::Version.new(IOS_DEPLOYMENT_TARGET)
+        config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = IOS_DEPLOYMENT_TARGET
+      end
+
+      # Plugin/pod code lives in ~/.pub-cache and is regenerated on every
+      # `pub get`, so its warnings (mostly StoreKit 1 deprecations in
+      # in_app_purchase_storekit) aren't fixable here. Silence them so
+      # Xcode's issue list only shows this project's own code.
+      config.build_settings['GCC_WARN_INHIBIT_ALL_WARNINGS'] = 'YES'
+      config.build_settings['SWIFT_SUPPRESS_WARNINGS'] = 'YES'
+      # Xcode's explicit modules build a pod's Clang module with its Swift
+      # flags, so the C-side inhibit above doesn't reach those headers.
+      config.build_settings['OTHER_SWIFT_FLAGS'] = '$(inherited) -Xcc -w'
+    end
   end
 end

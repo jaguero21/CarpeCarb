@@ -89,7 +89,6 @@ PODS:
     - Flutter
 
 DEPENDENCIES:
-  - cloud_functions (from `.symlinks/plugins/cloud_functions/ios`)
   - device_info_plus (from `.symlinks/plugins/device_info_plus/ios`)
   - firebase_auth (from `.symlinks/plugins/firebase_auth/ios`)
   - firebase_core (from `.symlinks/plugins/firebase_core/ios`)
@@ -110,16 +109,11 @@ SPEC REPOS:
     - FirebaseCore
     - FirebaseCoreExtension
     - FirebaseCoreInternal
-    - FirebaseFunctions
-    - FirebaseMessagingInterop
-    - FirebaseSharedSwift
     - GoogleUtilities
     - GTMSessionFetcher
     - RecaptchaInterop
 
 EXTERNAL SOURCES:
-  cloud_functions:
-    :path: ".symlinks/plugins/cloud_functions/ios"
   device_info_plus:
     :path: ".symlinks/plugins/device_info_plus/ios"
   firebase_auth:
@@ -167,6 +161,6 @@ SPEC CHECKSUMS:
   shared_preferences_foundation: 7036424c3d8ec98dfe75ff1667cb0cd531ec82bb
   url_launcher_ios: 7a95fa5b60cc718a708b8f2966718e93db0cef1b
 
-PODFILE CHECKSUM: ded38b422d9242255ccf29312a30f6094f6be708
+PODFILE CHECKSUM: d1f54589e7e3e12005ac6efd14431e8c41a9518d
 
-COCOAPODS: 1.16.2
+COCOAPODS: 1.17.0

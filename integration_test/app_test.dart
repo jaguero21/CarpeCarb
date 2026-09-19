@@ -23,6 +23,7 @@ import 'package:firebase_core/firebase_core.dart';
 
 import 'package:carb_tracker/main.dart';
 import 'package:carb_tracker/models/food_item.dart';
+import 'package:carb_tracker/models/server_quota.dart';
 import 'package:carb_tracker/services/premium_service.dart';
 import 'package:carb_tracker/firebase_options.dart';
 import 'package:carb_tracker/config/storage_keys.dart';
@@ -318,13 +319,13 @@ void main() {
       expect(svc.hasReachedDailyLimit, isFalse);
     });
 
-    test('incrementLookupCount increments correctly', () async {
+    test('applyServerQuota caches the server count', () async {
       SharedPreferences.setMockInitialValues({});
       final svc = PremiumService();
       await svc.init();
 
-      await svc.incrementLookupCount();
-      await svc.incrementLookupCount();
+      await svc.applyServerQuota(
+          const ServerQuota(premium: false, used: 2, limit: 4));
 
       expect(svc.dailyLookupCount, 2);
     });

@@ -135,7 +135,9 @@ class CloudSyncChannel {
         
         logger.info("👀 startObserving: Starting to observe iCloud changes")
         
-        Task { @MainActor in
+        // Explicit [self]: the short-lived Task holds the channel strongly; the
+        // long-lived observer callback below holds it weakly.
+        Task { @MainActor [self] in
             CloudSyncStore.shared.startObserving { [weak self] data in
                 guard let self = self else {
                     Logger(subsystem: "com.carpecarb", category: "CloudSyncChannel")
