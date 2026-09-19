@@ -46,7 +46,6 @@
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "2541C13D2F4B84DC00E6F8C6"
             BuildableName = "CarpeCarbWatchApp Watch App.app"
-            BlueprintName = "CarpeCarbWatchApp Watch App"
             ReferencedContainer = "container:Runner.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>
@@ -63,7 +62,6 @@
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "2541C13D2F4B84DC00E6F8C6"
             BuildableName = "CarpeCarbWatchApp Watch App.app"
-            BlueprintName = "CarpeCarbWatchApp Watch App"
             ReferencedContainer = "container:Runner.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>

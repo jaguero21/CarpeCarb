@@ -561,6 +561,7 @@
 		};
 		F6F1868A4CA5174A454CE32C /* FlutterFire: "flutterfire bundle-service-file" */ = {
 			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
 			buildActionMask = 2147483647;
 			files = (
 			);
@@ -1273,6 +1274,7 @@
 		};
 		CW0001G2 /* Debug */ = {
 			isa = XCBuildConfiguration;
+			baseConfigurationReference = 9740EEB31CF90195004384FC /* Generated.xcconfig */;
 			buildSettings = {
 				CODE_SIGN_ENTITLEMENTS = CarbWiseWidget/CarbWiseWidgetExtension.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
@@ -1296,6 +1298,7 @@
 		};
 		CW0001G3 /* Release */ = {
 			isa = XCBuildConfiguration;
+			baseConfigurationReference = 9740EEB31CF90195004384FC /* Generated.xcconfig */;
 			buildSettings = {
 				CODE_SIGN_ENTITLEMENTS = CarbWiseWidget/CarbWiseWidgetExtension.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
@@ -1317,6 +1320,7 @@
 		};
 		CW0001G4 /* Profile */ = {
 			isa = XCBuildConfiguration;
+			baseConfigurationReference = 9740EEB31CF90195004384FC /* Generated.xcconfig */;
 			buildSettings = {
 				CODE_SIGN_ENTITLEMENTS = CarbWiseWidget/CarbWiseWidgetExtension.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
@@ -1338,6 +1342,7 @@
 		};
 		CW0001G5 /* alpha */ = {
 			isa = XCBuildConfiguration;
+			baseConfigurationReference = 9740EEB31CF90195004384FC /* Generated.xcconfig */;
 			buildSettings = {
 				CODE_SIGN_ENTITLEMENTS = CarbWiseWidget/CarbWiseWidgetExtension.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
