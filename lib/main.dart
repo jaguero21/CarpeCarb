@@ -52,25 +52,7 @@ Future<void> main() async {
   // Initialize HomeWidget for iOS widget data sharing
   HomeWidget.setAppGroupId(StorageKeys.appGroupId);
 
-  // Persist the Firebase ID token to the shared App Group UserDefaults so
-  // Siri App Intents (and Watch extensions) can authenticate Cloud Function calls.
-  _refreshSharedFirebaseToken();
-
   runApp(const CarbTrackerApp());
-}
-
-/// Fetches a fresh Firebase ID token and writes it to the shared App Group
-/// UserDefaults so Siri App Intents and Watch extensions can auth Cloud Function calls.
-Future<void> _refreshSharedFirebaseToken() async {
-  try {
-    final user = FirebaseAuth.instance.currentUser;
-    if (user == null) return;
-    final token = await user.getIdToken();
-    if (token == null || token.isEmpty) return;
-    await HomeWidget.saveWidgetData<String>(StorageKeys.firebaseIdToken, token);
-  } catch (e) {
-    if (kDebugMode) debugPrint('Failed to refresh shared Firebase token: $e');
-  }
 }
 
 class CarbTrackerApp extends StatelessWidget {

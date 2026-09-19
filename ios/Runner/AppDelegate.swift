@@ -6,7 +6,6 @@ import os.log
 @main
 @objc class AppDelegate: FlutterAppDelegate, FlutterImplicitEngineDelegate {
   private var cloudSyncChannel: CloudSyncChannel?
-  private var tokenStorageChannel: TokenStorageChannel?
   private let logger = Logger(subsystem: "com.carpecarb", category: "AppDelegate")
 
   override func application(
@@ -14,6 +13,12 @@ import os.log
     didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?
   ) -> Bool {
     logger.info("🚀 Application launching")
+
+    // Siri now gets its own fresh Firebase token (SiriAuth.swift). Remove the
+    // copy older builds kept in App Group UserDefaults (plain text) and the
+    // Keychain so it doesn't linger on updated devices.
+    UserDefaults(suiteName: CarbDataStore.appGroupID)?.removeObject(forKey: "firebaseIdToken")
+    KeychainHelper.delete(forKey: "firebaseIdToken")
     
     // Log launch options if present
     if let options = launchOptions {
@@ -48,13 +53,6 @@ import os.log
     
     cloudSyncChannel = CloudSyncChannel(messenger: registrar.messenger())
     logger.info("✓ CloudSyncChannel registered successfully")
-
-    guard let tokenRegistrar = engineBridge.pluginRegistry.registrar(forPlugin: "TokenStorageChannel") else {
-      logger.error("❌ Failed to get plugin registrar for TokenStorageChannel")
-      return
-    }
-    tokenStorageChannel = TokenStorageChannel(messenger: tokenRegistrar.messenger())
-    logger.info("✓ TokenStorageChannel registered successfully")
   }
   
   override func applicationWillResignActive(_ application: UIApplication) {

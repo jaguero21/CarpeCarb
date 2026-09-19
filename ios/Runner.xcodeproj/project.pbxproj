@@ -8,7 +8,6 @@
 
 /* Begin PBXBuildFile section */
 		1498D2341E8E89220040F4C2 /* GeneratedPluginRegistrant.m in Sources */ = {isa = PBXBuildFile; fileRef = 1498D2331E8E89220040F4C2 /* GeneratedPluginRegistrant.m */; };
-		1C2429AFA1FF4832BD317300 /* TokenStorageChannel.swift in Sources */ = {isa = PBXBuildFile; fileRef = E8893DCA54D941609C542800 /* TokenStorageChannel.swift */; };
 		250470652F4FC03600AAEB6C /* CarbShared in Frameworks */ = {isa = PBXBuildFile; productRef = 250470642F4FC03600AAEB6C /* CarbShared */; };
 		CW0001P3 /* CarbShared in Frameworks */ = {isa = PBXBuildFile; productRef = CW0001P2 /* CarbShared */; };
 		2599376A2F5F655F008B6262 /* CloudSyncChannel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 259937672F5F655F008B6262 /* CloudSyncChannel.swift */; };
@@ -126,7 +125,6 @@
 		CW0001A5 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		CW0001A6 /* CarbWiseWidgetExtension.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = CarbWiseWidgetExtension.entitlements; sourceTree = "<group>"; };
 		CW0001A7 /* Runner.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; name = Runner.entitlements; path = Runner/Runner.entitlements; sourceTree = "<group>"; };
-		E8893DCA54D941609C542800 /* TokenStorageChannel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Runner/TokenStorageChannel.swift; sourceTree = "<group>"; };
 		EF72A99D136AC194EB9BF323 /* Pods-Runner.alpha.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-Runner.alpha.xcconfig"; path = "Target Support Files/Pods-Runner/Pods-Runner.alpha.xcconfig"; sourceTree = "<group>"; };
 		F452E01737226AA29BB4C808 /* Pods-RunnerTests.profile.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-RunnerTests.profile.xcconfig"; path = "Target Support Files/Pods-RunnerTests/Pods-RunnerTests.profile.xcconfig"; sourceTree = "<group>"; };
 		SI0001A1 /* CarbIntents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CarbIntents.swift; sourceTree = "<group>"; };
@@ -222,7 +220,6 @@
 			isa = PBXGroup;
 			children = (
 				259937672F5F655F008B6262 /* CloudSyncChannel.swift */,
-				E8893DCA54D941609C542800 /* TokenStorageChannel.swift */,
 				9740EEB11CF90186004384FC /* Flutter */,
 				97C146F01CF9000F007C117D /* Runner */,
 				2541C1422F4B84DC00E6F8C6 /* CarpeCarbWatchApp Watch App */,
@@ -610,7 +607,6 @@
 			files = (
 				74858FAF1ED2DC5600515810 /* AppDelegate.swift in Sources */,
 				2599376A2F5F655F008B6262 /* CloudSyncChannel.swift in Sources */,
-				1C2429AFA1FF4832BD317300 /* TokenStorageChannel.swift in Sources */,
 				SI0001B1 /* CarbIntents.swift in Sources */,
 				SI0001B2 /* CarpeCarbShortcuts.swift in Sources */,
 				SI0001B3 /* SiriAuth.swift in Sources */,
