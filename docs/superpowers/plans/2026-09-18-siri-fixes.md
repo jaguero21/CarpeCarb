@@ -1653,8 +1653,7 @@ git commit -m "fix: stop copying the Firebase token for Siri; remove old copies"
 
 No code. On an iPhone with a build from this branch:
 
-- [ ] Leave the app closed for more than an hour, then "Log food in CarpeCarb" → it logs and speaks a total (no "Server error (401)").
-- [ ] Siri after more than an hour, twice: once with the app swiped away (exercises `SiriAuth`'s `FirebaseApp.configure()` path), once with it only backgrounded. Both log and speak a total.
+- [ ] More than an hour after last using the app, "Log food in CarpeCarb" twice: once with the app swiped away (exercises `SiriAuth`'s `FirebaseApp.configure()` path), once with it only backgrounded. Both log and speak a total (no "Server error (401)").
 - [ ] "Log food in CarpeCarb", "burger and fries" → two items logged; the reply lists both.
 - [ ] Next morning, before opening the app: "How many carbs today in CarpeCarb" says nothing has been tracked yet; the widget shows 0 after midnight (or the reset hour).
 - [ ] Leave the app suspended (not force-quit) overnight, open it in the morning → the list is empty or today-only, and the widget and Siri don't include yesterday.
