@@ -1,5 +1,6 @@
 // ignore_for_file: invalid_use_of_protected_member
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -7,9 +8,14 @@ import 'package:carb_tracker/main.dart';
 import 'package:carb_tracker/models/food_item.dart';
 
 void main() {
-  String todayKey() {
+  String keyOf(DateTime day) =>
+      '${day.year}-${day.month.toString().padLeft(2, '0')}-${day.day.toString().padLeft(2, '0')}';
+
+  String todayKey() => keyOf(DateTime.now());
+
+  String yesterdayKey() {
     final now = DateTime.now();
-    return '${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}';
+    return keyOf(DateTime(now.year, now.month, now.day - 1));
   }
 
   // Setup SharedPreferences mock before tests
@@ -257,6 +263,42 @@ void main() {
           isTrue);
       expect(
           restoredState.foodItems.any((item) => item.name == 'Lunch'), isTrue);
+    });
+
+    testWidgets('resume after the day changed starts a new day',
+        (WidgetTester tester) async {
+      // The new-day path writes the widget's App Group data; answer the
+      // home_widget plugin's calls, which otherwise never complete in tests.
+      const homeWidget = MethodChannel('home_widget');
+      final messenger =
+          TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+      messenger.setMockMethodCallHandler(homeWidget, (call) async => null);
+      addTearDown(() => messenger.setMockMethodCallHandler(homeWidget, null));
+
+      // The app starts with today's items...
+      SharedPreferences.setMockInitialValues({
+        'food_items':
+            '[{"name":"Saved Item","carbs":42.5,"loggedAt":"2026-03-09T10:00:00.000","category":"snack"}]',
+        'last_save_date': todayKey(),
+      });
+
+      await tester.pumpWidget(const CarbTrackerApp());
+      await tester.pumpAndSettle();
+
+      final state = tester.state<CarbTrackerHomeState>(
+        find.byType(CarbTrackerHome),
+      );
+      expect(state.foodItems, isNotEmpty);
+
+      // ...then stays suspended past the day boundary, so what it saved is
+      // now yesterday's.
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('last_save_date', yesterdayKey());
+
+      state.didChangeAppLifecycleState(AppLifecycleState.resumed);
+      await tester.pumpAndSettle();
+
+      expect(state.foodItems, isEmpty);
     });
   });
 

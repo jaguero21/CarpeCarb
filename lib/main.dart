@@ -367,7 +367,7 @@ class CarbTrackerHomeState extends State<CarbTrackerHome>
   void didChangeAppLifecycleState(AppLifecycleState state) {
     super.didChangeAppLifecycleState(state);
     if (state == AppLifecycleState.resumed) {
-      _importSiriLoggedItems();
+      _onResumed();
       if (_premiumService.isCloudSyncEnabled) {
         _cloudSyncService.pullFromCloud().then((pulled) {
           if (pulled != null && mounted) _applyCloudData(pulled);
@@ -375,6 +375,20 @@ class CarbTrackerHomeState extends State<CarbTrackerHome>
       } else {
         _cloudSyncService.stopListening();
       }
+    }
+  }
+
+  /// On resume, start a new day if the app was suspended across the day
+  /// boundary (its in-memory list is still yesterday's); otherwise just pick
+  /// up Siri items. `_loadSavedData`'s new-day branch imports Siri items itself.
+  Future<void> _onResumed() async {
+    final prefs = await SharedPreferences.getInstance();
+    if (!mounted) return;
+    final lastSaveDate = prefs.getString(StorageKeys.lastSaveDate);
+    if (lastSaveDate != null && lastSaveDate != _todayString()) {
+      await _loadSavedData();
+    } else {
+      await _importSiriLoggedItems();
     }
   }
 
@@ -443,6 +457,10 @@ class CarbTrackerHomeState extends State<CarbTrackerHome>
         foodItems = [];
         dailyCarbGoal = savedGoal;
       });
+      // Let the emptied list rebuild first so the import doesn't insert into
+      // the old AnimatedList, which still counts yesterday's items.
+      await WidgetsBinding.instance.endOfFrame;
+      if (!mounted || token != _loadSavedDataToken) return;
       // Siri may have logged food this morning before the app was opened.
       await _importSiriLoggedItems();
       return;
