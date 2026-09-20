@@ -98,6 +98,11 @@ no I/O so it can be tested directly. `main.dart` calls it.
 - `handlePushToCloud` returns the store's result instead of a constant `true`
   (`:101`).
 
+**`lib/services/cloud_sync_service.dart`**
+- `pushToCloud` returns what the channel answered instead of `true` whenever the
+  call didn't throw (`:38-44`). Without this the Swift fix changes nothing: Dart
+  would still report every push as a success.
+
 **Siri buffer take-and-clear**
 - `CarbDataStore` gains `@MainActor takeSiriLoggedItems() -> String?`: returns
   the buffer and removes it in one main-actor step.
