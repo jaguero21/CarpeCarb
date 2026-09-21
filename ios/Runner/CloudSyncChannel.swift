@@ -96,9 +96,11 @@ class CloudSyncChannel {
         }
         
         Task { @MainActor in
-            CloudSyncStore.shared.pushToCloud(data)
-            self.logger.info("✓ pushToCloud: Completed")
-            result(true)
+            // Report what actually happened: answering true regardless made the
+            // app show a synced icon after a push that iCloud never took.
+            let pushed = CloudSyncStore.shared.pushToCloud(data)
+            self.logger.info("\(pushed ? "✓" : "✗") pushToCloud: Completed (pushed: \(pushed))")
+            result(pushed)
         }
     }
     
