@@ -20,6 +20,8 @@ class StorageKeys {
   static const String widgetLastFoodName = 'lastFoodName';
   static const String widgetLastFoodCarbs = 'lastFoodCarbs';
   static const String widgetDailyCarbGoal = 'dailyCarbGoal';
+  // Written by Siri (CarbDataStore.addFood) and taken by the app through
+  // com.carpecarb/siribuffer, not read from here — see SiriBufferService.
   static const String widgetSiriLoggedItems = 'siriLoggedItems';
   static const String widgetFlutterTotalCarbs = 'flutter.total_carbs';
   // The day the widget totals belong to (lib/utils/day_key.dart) and the
@@ -42,6 +44,14 @@ class StorageKeys {
 
   // Cloud sync
   static const String cloudLastModified = 'cloud_last_modified';
+  // Ids deleted today, so a delete isn't undone by another device's copy.
+  // Cleared with food_items on a new day.
+  static const String foodItemsDeleted = 'food_items_deleted';
+  // Favourite key (lower-cased name) -> {updatedAt, deleted}: the most recent
+  // add or delete, so the newer one wins when devices merge.
+  static const String savedFoodsChanges = 'saved_foods_changes';
+  // When the user last changed goals or the reset hour on this device.
+  static const String settingsUpdatedAt = 'settings_updated_at';
 
   // Disclaimer
   static const String disclaimerAccepted = 'disclaimer_accepted';
