@@ -30,7 +30,8 @@ migrate_working_dir/
 .pub-cache/
 .pub/
 /build/
-pubspec.lock
+# pubspec.lock is committed: this is an app, and ios/Podfile.lock pins native
+# pods to the plugin versions it resolves (Flutter's guidance for apps).
 
 # Web related
 lib/generated_plugin_registrant.dart
