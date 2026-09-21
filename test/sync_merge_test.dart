@@ -178,6 +178,36 @@ void main() {
       expect(here.favorites.map((f) => f.name), ['Apple', 'Bagel']);
       expect(there.favorites.map((f) => f.name), ['Apple', 'Bagel']);
     });
+
+    test('a delete marker exactly at the 60-day mark is still kept', () {
+      final merged = merge(
+        state(changes: {
+          'bagel': change(now.subtract(const Duration(days: 60)), deleted: true)
+        }),
+        state(),
+      );
+
+      expect(merged.favoriteChanges.containsKey('bagel'), isTrue);
+    });
+
+    test('on an exact tie the cloud copy wins and nothing is pushed back', () {
+      final at = DateTime(2026, 9, 20, 9);
+      final local = state(
+        favorites: [item('f-local', 'Bagel', carbs: 40)],
+        changes: {'bagel': change(at)},
+      );
+      final cloud = state(
+        favorites: [item('f-cloud', 'Bagel', carbs: 48)],
+        changes: {'bagel': change(at)},
+      );
+
+      final merged = merge(local, cloud);
+
+      expect(merged.favorites.single.id, 'f-cloud');
+      // Matching the payload it just read is what stops this device pushing
+      // its own copy straight back at the other one.
+      expect(syncStateDiffers(merged, cloud), isFalse);
+    });
   });
 
   group('goals and reset hour', () {
@@ -205,6 +235,18 @@ void main() {
       );
 
       expect(merged.settings.dailyCarbGoal, 150);
+    });
+
+    test('on an exact tie the cloud settings win and nothing is pushed back',
+        () {
+      final at = DateTime(2026, 9, 20, 9);
+      final local = state(settings: SyncSettings(dailyCarbGoal: 100, updatedAt: at));
+      final cloud = state(settings: SyncSettings(dailyCarbGoal: 150, updatedAt: at));
+
+      final merged = merge(local, cloud);
+
+      expect(merged.settings.dailyCarbGoal, 150);
+      expect(syncStateDiffers(merged, cloud), isFalse);
     });
   });
 

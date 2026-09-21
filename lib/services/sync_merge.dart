@@ -155,6 +155,10 @@ SyncState mergeSyncState({
     deletedItemIds = {...local.deletedItemIds, ...cloud.deletedItemIds};
     final seen = <String>{};
     final merged = <FoodItem>[];
+    // Cloud first, so on a shared id the cloud's copy is the one kept. That is
+    // only safe because a logged item is never edited in place — the two
+    // copies are the same item. If editing is ever added, the newer edit has
+    // to win here instead.
     for (final item in [...cloud.items, ...local.items]) {
       if (deletedItemIds.contains(item.id)) continue;
       if (seen.add(item.id)) merged.add(item);
@@ -187,24 +191,35 @@ SyncState mergeSyncState({
     final cloudChange = cloud.favoriteChanges[key] ??
         (cloudItems.containsKey(key) ? FavoriteChange.legacyAdd : null);
     final FavoriteChange winner;
+    // Which side's copy of the favourite the winning change belongs to. It
+    // can't be recovered from `winner` afterwards: two equal changes compare
+    // equal, so the answer would always come out "cloud" by accident.
+    final bool takeCloudItem;
     if (localChange == null) {
       if (cloudChange == null) continue;
       winner = cloudChange;
+      takeCloudItem = true;
     } else if (cloudChange == null) {
       winner = localChange;
+      takeCloudItem = false;
     } else {
-      winner = cloudChange.beats(localChange) ? cloudChange : localChange;
+      // The cloud's copy wins unless this device's change is strictly newer,
+      // so both devices settle on the one value they can both see. Keeping
+      // the local copy on a tie would have each device push its own forever.
+      takeCloudItem = !localChange.beats(cloudChange);
+      winner = takeCloudItem ? cloudChange : localChange;
     }
 
     if (winner.deleted) {
       // Keep the delete around long enough for a device that has been away to
-      // see it, then forget it.
-      if (now.difference(winner.updatedAt) < tombstoneTtl) {
+      // see it, then forget it. At exactly the TTL it is not yet older than
+      // the TTL, so it survives one more merge.
+      if (now.difference(winner.updatedAt) <= tombstoneTtl) {
         changes[key] = winner;
       }
       continue;
     }
-    final item = (winner == cloudChange ? cloudItems[key] : localItems[key]) ??
+    final item = (takeCloudItem ? cloudItems[key] : localItems[key]) ??
         localItems[key] ??
         cloudItems[key];
     if (item == null) continue;
@@ -215,8 +230,10 @@ SyncState mergeSyncState({
   // ── Goals and reset hour: newest change wins ──
   final localAt = local.settings.updatedAt;
   final cloudAt = cloud.settings.updatedAt;
+  // The cloud wins unless this device's change is strictly newer — on an equal
+  // timestamp both devices take the cloud's values and stop there.
   final takeCloud =
-      cloudAt != null && (localAt == null || cloudAt.isAfter(localAt));
+      cloudAt != null && (localAt == null || !localAt.isAfter(cloudAt));
 
   return SyncState(
     dayKey: local.dayKey,
