@@ -87,4 +87,19 @@ struct CarbDataStoreTests {
         #expect(buffer[0]["loggedAt"] as? String == ISO8601DateFormatter().string(from: noon))
         #expect(buffer[1]["protein"] == nil)
     }
+
+    @Test func takeSiriLoggedItemsReturnsTheBufferAndEmptiesIt() {
+        store.addFood(LoggedFood(name: "Toast", carbs: 15), now: noon)
+
+        let taken = store.takeSiriLoggedItems()
+
+        #expect(taken?.contains("Toast") == true)
+        #expect(defaults.string(forKey: CarbDataStore.Keys.siriLoggedItems) == nil)
+        // A second take finds nothing, so nothing is imported twice.
+        #expect(store.takeSiriLoggedItems() == nil)
+    }
+
+    @Test func takeSiriLoggedItemsReturnsNilWhenNothingIsWaiting() {
+        #expect(store.takeSiriLoggedItems() == nil)
+    }
 }

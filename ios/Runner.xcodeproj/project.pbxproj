@@ -32,6 +32,7 @@
 		SI0001B1 /* CarbIntents.swift in Sources */ = {isa = PBXBuildFile; fileRef = SI0001A1 /* CarbIntents.swift */; };
 		SI0001B2 /* CarpeCarbShortcuts.swift in Sources */ = {isa = PBXBuildFile; fileRef = SI0001A2 /* CarpeCarbShortcuts.swift */; };
 		SI0001B3 /* SiriAuth.swift in Sources */ = {isa = PBXBuildFile; fileRef = SI0001A3 /* SiriAuth.swift */; };
+		SI0001B4 /* SiriBufferChannel.swift in Sources */ = {isa = PBXBuildFile; fileRef = SI0001A4 /* SiriBufferChannel.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -130,6 +131,7 @@
 		SI0001A1 /* CarbIntents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CarbIntents.swift; sourceTree = "<group>"; };
 		SI0001A2 /* CarpeCarbShortcuts.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CarpeCarbShortcuts.swift; sourceTree = "<group>"; };
 		SI0001A3 /* SiriAuth.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SiriAuth.swift; sourceTree = "<group>"; };
+		SI0001A4 /* SiriBufferChannel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SiriBufferChannel.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -257,6 +259,7 @@
 				SI0001A1 /* CarbIntents.swift */,
 				SI0001A2 /* CarpeCarbShortcuts.swift */,
 				SI0001A3 /* SiriAuth.swift */,
+				SI0001A4 /* SiriBufferChannel.swift */,
 				74858FAD1ED2DC5600515810 /* Runner-Bridging-Header.h */,
 				259939112F625341008B6262 /* CloudSyncChannel-ErrorHandling.md */,
 				259939152F62546A008B6262 /* CloudSyncStore-ThreadSafety.md */,
@@ -610,6 +613,7 @@
 				SI0001B1 /* CarbIntents.swift in Sources */,
 				SI0001B2 /* CarpeCarbShortcuts.swift in Sources */,
 				SI0001B3 /* SiriAuth.swift in Sources */,
+				SI0001B4 /* SiriBufferChannel.swift in Sources */,
 				1498D2341E8E89220040F4C2 /* GeneratedPluginRegistrant.m in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
