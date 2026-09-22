@@ -200,7 +200,9 @@ async function lookupFoods(sanitized, apiKey, { fetchImpl = fetch, sleep = (ms) 
       try {
         items = JSON.parse(arrayMatch[0]);
       } catch (parseErr) {
-        console.error(`JSON parse error (attempt ${attempt}/${maxAttempts}): ${parseErr.message}`);
+        // Not parseErr.message: it quotes the text that failed to parse, which
+        // is the model's output.
+        console.error(`JSON parse error (attempt ${attempt}/${maxAttempts}): ${parseErr.name}, ${arrayMatch[0].length} chars`);
         if (truncated) throw tooManyFoods();
         if (attempt < maxAttempts) {
           await sleep(attempt * 1000);

@@ -244,6 +244,12 @@ test("lookupFoods never logs the food text or the model's output", async () => {
       fetchImpl: stubFetch(completion("PRIVATE-GARBAGE with no array")),
       sleep: noSleep,
     }).catch(() => {});
+    // An array that looks parseable and isn't: this reaches JSON.parse, whose
+    // error message quotes the text it choked on.
+    await lookupFoods("secret mystery stew", "key", {
+      fetchImpl: stubFetch(completion('[PRIVATE-GARBAGE not json]')),
+      sleep: noSleep,
+    }).catch(() => {});
     // A malformed API response.
     const malformed = {
       status: 200, ok: true,
