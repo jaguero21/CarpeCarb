@@ -26,10 +26,15 @@ public struct LookupItem: Equatable, Sendable {
 public struct LookupResult: Equatable, Sendable {
     public let items: [LookupItem]
     public let citations: [String]
+    /// Foods the server found but had no reliable carb value for. Siri doesn't
+    /// log them and says so; they never become a `LookupItem`, whose carbs are
+    /// always a number.
+    public let unknownCarbs: [String]
 
-    public init(items: [LookupItem], citations: [String]) {
+    public init(items: [LookupItem], citations: [String], unknownCarbs: [String] = []) {
         self.items = items
         self.citations = citations
+        self.unknownCarbs = unknownCarbs
     }
 }
 
@@ -80,6 +85,10 @@ public struct PerplexityClient {
                 "input": foodItem,
                 // Lets the server count the free quota per local calendar day.
                 "tzOffsetMinutes": TimeZone.current.secondsFromGMT() / 60,
+                // This build handles a food with no carb value
+                // (LookupResult.unknownCarbs). Without it the server drops such
+                // foods, because older builds turned the missing value into 0.
+                "acceptsUnknownCarbs": true,
             ] as [String: Any]
         ]
 
@@ -113,21 +122,37 @@ public struct PerplexityClient {
             throw IntentError.message("Could not parse server response.")
         }
 
-        let items = rawItems.map { raw in
-            LookupItem(
-                name: raw["name"] as? String ?? "Unknown",
-                carbs: number(raw["carbs"]) ?? 0,
+        var items: [LookupItem] = []
+        var unknownCarbs: [String] = []
+        for raw in rawItems {
+            let name = raw["name"] as? String ?? "Unknown"
+            // No carb value means the server couldn't find one. Never read as
+            // 0: a confident 0 g is worse than no answer for someone dosing
+            // insulin, so Siri skips the food and says so.
+            guard let carbs = number(raw["carbs"]) else {
+                unknownCarbs.append(name)
+                continue
+            }
+            items.append(LookupItem(
+                name: name,
+                carbs: carbs,
                 protein: number(raw["protein"]),
                 fat: number(raw["fat"]),
                 fiber: number(raw["fiber"]),
                 calories: number(raw["calories"]),
                 details: raw["details"] as? String
-            )
+            ))
         }
+        // Siri can't hand a food to Manual entry the way the app does, so
+        // finding no carb values is the same as finding nothing.
         guard !items.isEmpty else {
             throw IntentError.message("I couldn't find nutrition info for that.")
         }
-        return LookupResult(items: items, citations: result["citations"] as? [String] ?? [])
+        return LookupResult(
+            items: items,
+            citations: result["citations"] as? [String] ?? [],
+            unknownCarbs: unknownCarbs
+        )
     }
 
     /// A finite, non-negative number, or nil. Nutrition values can't be

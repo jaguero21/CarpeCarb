@@ -57,14 +57,43 @@ struct PerplexityClientParseTests {
         ], citations: ["https://example.com"]))
     }
 
-    @Test func nonFiniteOrNegativeNumbersAreDropped() throws {
+    @Test func nonFiniteOrNegativeMacrosAreDropped() throws {
         let data = try body([
             "items": [
-                ["name": "Mystery", "carbs": "nan", "protein": "inf", "fat": -3],
+                ["name": "Mystery", "carbs": 12, "protein": "inf", "fat": -3],
             ],
         ])
         let result = try PerplexityClient.parseResponse(data)
-        #expect(result.items == [LookupItem(name: "Mystery", carbs: 0, protein: nil, fat: nil)])
+        #expect(result.items == [LookupItem(name: "Mystery", carbs: 12, protein: nil, fat: nil)])
+    }
+
+    @Test func aFoodWithNoCarbValueIsSkippedNotZero() throws {
+        let data = try body([
+            "items": [
+                ["name": "Burger", "carbs": 30],
+                ["name": "Fries", "carbs": NSNull()],
+                ["name": "Mystery", "carbs": "nan"],
+            ],
+        ])
+        let result = try PerplexityClient.parseResponse(data)
+        // A confident 0 g is worse than no answer for someone dosing insulin.
+        #expect(result.items == [LookupItem(name: "Burger", carbs: 30)])
+        #expect(result.unknownCarbs == ["Fries", "Mystery"])
+    }
+
+    @Test func aRealZeroIsLogged() throws {
+        let data = try body(["items": [["name": "Water", "carbs": 0]]])
+        #expect(try PerplexityClient.parseResponse(data).items == [LookupItem(name: "Water", carbs: 0)])
+    }
+
+    @Test func noCarbValuesAtAllSaysNothingWasFound() throws {
+        let data = try body(["items": [["name": "Fries", "carbs": NSNull()]]])
+        do {
+            _ = try PerplexityClient.parseResponse(data)
+            Issue.record("expected an error")
+        } catch let IntentError.message(message) {
+            #expect(message == "I couldn't find nutrition info for that.")
+        }
     }
 
     @Test func emptyItemsSaysNothingWasFound() throws {

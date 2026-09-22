@@ -16,15 +16,13 @@ struct LogFoodIntent: AppIntent {
         let idToken = try await SiriAuth.idToken()
         let result = try await PerplexityClient.lookupCarbs(for: foodItem, idToken: idToken)
 
-        let now = Date()
-        let totalToday = await MainActor.run { () -> Double in
-            for item in result.items {
-                CarbDataStore.shared.addFood(LoggedFood(item: item, citations: result.citations), now: now)
-            }
-            return CarbDataStore.shared.snapshot(now: now).totalCarbs
+        let foods = result.items.map { LoggedFood(item: $0, citations: result.citations) }
+        let totalToday = await MainActor.run {
+            CarbDataStore.shared.addFoods(foods, now: Date())
         }
 
-        return .result(dialog: IntentDialog(stringLiteral: LogFoodDialog.text(items: result.items, totalToday: totalToday)))
+        return .result(dialog: IntentDialog(stringLiteral: LogFoodDialog.text(
+            items: result.items, totalToday: totalToday, skipped: result.unknownCarbs)))
     }
 }
 
