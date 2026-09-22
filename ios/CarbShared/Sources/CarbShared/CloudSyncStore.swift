@@ -136,11 +136,12 @@ public final class CloudSyncStore {
             return false
         }
 
-        // Use caller-supplied timestamp if present (so Flutter can track what
-        // was pushed), otherwise generate one.
-        let timestamp = (data[Key.lastModified] as? String)?.isEmpty == false
-            ? data[Key.lastModified] as! String
-            : Self.iso8601.string(from: Date())
+        // Use the caller's timestamp when it sent one (so Flutter can track
+        // what it pushed), otherwise stamp it now.
+        var timestamp = Self.iso8601.string(from: Date())
+        if let supplied = data[Key.lastModified] as? String, !supplied.isEmpty {
+            timestamp = supplied
+        }
 
         logger.info("Pushing \(data.count) keys to iCloud")
 

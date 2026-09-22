@@ -113,4 +113,62 @@ struct CloudSyncStoreTests {
         #expect(!CloudSyncStore.isNewRemoteChange(previous: nil, pulled: nil))
         #expect(!CloudSyncStore.isNewRemoteChange(previous: "2026-09-20T12:00:00Z", pulled: ""))
     }
+
+    // MARK: - The notification path
+
+    /// Holds what the store handed back. A class, so the escaping callback
+    /// doesn't capture a local variable.
+    private final class Delivery {
+        var pulled: [String: Any]?
+        var count = 0
+    }
+
+    /// Posts the notification the way NSUbiquitousKeyValueStore does, then lets
+    /// the store's main-actor hop run before the test looks at the result.
+    private func postRemoteChange() async {
+        NotificationCenter.default.post(
+            name: NSUbiquitousKeyValueStore.didChangeExternallyNotification,
+            object: kvStore
+        )
+        for _ in 0..<100 {
+            await Task.yield()
+        }
+    }
+
+    @Test func aChangeFromAnotherDeviceReachesTheApp() async {
+        kvStore.values = [
+            "cloud_last_modified": "2026-09-20T12:00:00Z",
+            "food_items": "[]",
+        ]
+        let store = self.store()
+        let delivery = Delivery()
+        store.startObserving { pulled in
+            delivery.pulled = pulled
+            delivery.count += 1
+        }
+        defer { store.stopObserving() }
+
+        await postRemoteChange()
+
+        // Comparing the pulled timestamp against one the pull had already
+        // overwritten is what stopped this firing at all.
+        #expect(delivery.count == 1)
+        #expect(delivery.pulled?["cloud_last_modified"] as? String
+            == "2026-09-20T12:00:00Z")
+    }
+
+    @Test func thisDevicesOwnPushDoesNotComeBackAsARemoteChange() async {
+        let store = self.store()
+        let delivery = Delivery()
+        store.startObserving { _ in delivery.count += 1 }
+        defer { store.stopObserving() }
+
+        store.pushToCloud([
+            "food_items": "[]",
+            "cloud_last_modified": "2026-09-20T12:00:00Z",
+        ])
+        await postRemoteChange()
+
+        #expect(delivery.count == 0)
+    }
 }
