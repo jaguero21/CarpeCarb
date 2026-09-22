@@ -55,6 +55,10 @@ class PerplexityFirebaseService {
         'input': sanitizedInput,
         // Lets the server count the free quota per local calendar day.
         'tzOffsetMinutes': DateTime.now().timeZoneOffset.inMinutes,
+        // This build handles a food with no carb value (LookupResult.
+        // unknownCarbs). Without it the server drops such foods, because
+        // older builds would have turned the missing value into 0 g.
+        'acceptsUnknownCarbs': true,
       }
     });
 

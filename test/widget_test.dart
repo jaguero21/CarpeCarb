@@ -8,6 +8,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:carb_tracker/main.dart';
 import 'package:carb_tracker/models/food_item.dart';
+import 'package:carb_tracker/services/lookup_api.dart';
 
 void main() {
   String keyOf(DateTime day) =>
@@ -731,6 +732,90 @@ void main() {
 
       expect(state.foodItems.map((f) => f.name), ['Apple']);
       expect(tester.takeException(), isNull);
+    });
+  });
+
+  group('unknown carbs', () {
+    /// The food-name field: the first TextField on the home screen.
+    String foodFieldText(WidgetTester tester) =>
+        tester.widget<TextField>(find.byType(TextField).first).controller!.text;
+
+    /// Manual entry shows a second field, for the carb number.
+    Finder carbField() => find.byWidgetPredicate((w) =>
+        w is TextField &&
+        w.keyboardType == const TextInputType.numberWithOptions(decimal: true));
+
+    /// Applies [result] while pumping frames, and returns once it's done.
+    ///
+    /// Awaiting it without pumping would stall on work that waits for a frame.
+    /// pumpAndSettle can't be used either: the hand-off focuses the carb field,
+    /// and a focused field's blinking cursor keeps scheduling frames, so it
+    /// would never settle. So pump a bounded number of frames instead.
+    Future<void> applyLookup(
+        WidgetTester tester, CarbTrackerHomeState state, LookupResult result) async {
+      var finished = false;
+      state.applyLookupResultForTest(result).whenComplete(() => finished = true);
+      for (var i = 0; i < 50 && !finished; i++) {
+        await tester.pump(const Duration(milliseconds: 100));
+      }
+      expect(finished, isTrue, reason: 'the lookup result never finished applying');
+      // Past the snackbar's entrance animation.
+      await tester.pump(const Duration(milliseconds: 500));
+    }
+
+    Future<CarbTrackerHomeState> pumpHome(WidgetTester tester) async {
+      stubHomeWidget();
+      // Logging a food saves and pushes to iCloud; an unstubbed channel never
+      // answers in a widget test.
+      stubCloudSync();
+      await tester.pumpWidget(const CarbTrackerApp());
+      await tester.pumpAndSettle();
+      return tester.state<CarbTrackerHomeState>(find.byType(CarbTrackerHome));
+    }
+
+    testWidgets('a food with no carb value hands off to Manual entry, never 0 g',
+        (WidgetTester tester) async {
+      final state = await pumpHome(tester);
+
+      await applyLookup(tester, state, LookupResult(
+        items: [FoodItem(id: 'b', name: 'Burger', carbs: 30)],
+        unknownCarbs: const ['Fries'],
+      ));
+
+      expect(state.foodItems.map((f) => f.name), ['Burger']);
+      expect(find.text("Couldn't find carbs for Fries \u2014 enter it manually."),
+          findsOneWidget);
+      expect(foodFieldText(tester), 'Fries');
+      expect(carbField(), findsOneWidget);
+    });
+
+    testWidgets('when nothing was found, nothing is logged and all are named',
+        (WidgetTester tester) async {
+      final state = await pumpHome(tester);
+
+      await applyLookup(tester, state, const LookupResult(
+        items: [],
+        unknownCarbs: ['Fries', 'Shake'],
+      ));
+
+      expect(state.foodItems, isEmpty);
+      expect(
+          find.text(
+              "Couldn't find carbs for Fries and Shake \u2014 enter them manually."),
+          findsOneWidget);
+      expect(foodFieldText(tester), 'Fries');
+    });
+
+    testWidgets('a lookup where everything was found stays in lookup mode',
+        (WidgetTester tester) async {
+      final state = await pumpHome(tester);
+
+      await applyLookup(tester, state, LookupResult(
+        items: [FoodItem(id: 'b', name: 'Burger', carbs: 30)],
+      ));
+
+      expect(state.foodItems.map((f) => f.name), ['Burger']);
+      expect(carbField(), findsNothing);
     });
   });
 }
