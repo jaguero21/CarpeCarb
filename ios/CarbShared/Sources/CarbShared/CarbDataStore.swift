@@ -131,10 +131,15 @@ public struct CarbDataStore {
     @MainActor
     @discardableResult
     public func addFoods(_ foods: [LoggedFood], now: Date = Date()) -> Double {
+        var last = now
         for (index, food) in foods.enumerated() {
-            addFood(food, now: now.addingTimeInterval(Double(index) / 1000))
+            last = now.addingTimeInterval(Double(index) / 1000)
+            addFood(food, now: last)
         }
-        return snapshot(now: now).totalCarbs
+        // Read the total at the instant of the last write. Reading at `now`
+        // reports 0 when the batch crossed the user's reset hour, because the
+        // day the last food stamped is no longer the day `now` falls in.
+        return snapshot(now: last).totalCarbs
     }
 
     @MainActor

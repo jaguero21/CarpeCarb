@@ -134,4 +134,23 @@ struct CarbDataStoreTests {
         let stamp = try #require(store.siriLoggedItems().first?["loggedAt"] as? String)
         #expect(stamp.contains(".250"))
     }
+
+    @Test func addFoodsReportsTheTotalForTheDayItLastWroteTo() throws {
+        defaults.set(4, forKey: CarbDataStore.Keys.dailyResetHour)
+        // One millisecond before the user's day starts, so the second food
+        // lands on the next day.
+        let beforeTheReset = try #require(Calendar.current.date(
+            from: DateComponents(year: 2026, month: 9, day: 18, hour: 3, minute: 59, second: 59)
+        )).addingTimeInterval(0.999)
+
+        let total = store.addFoods(
+            [LoggedFood(name: "Toast", carbs: 15), LoggedFood(name: "Jam", carbs: 10)],
+            now: beforeTheReset
+        )
+
+        // The jam starts the new day on its own. Reading at the un-shifted
+        // `now` would find a different day stored and report 0 — Siri would
+        // say "your total today is 0.0 grams" right after logging.
+        #expect(total == 10)
+    }
 }
