@@ -59,6 +59,71 @@ void main() {
     });
   });
 
+  group('unknown carb values', () {
+    LookupResult parse(List<Map<String, dynamic>> items, {DateTime? now}) =>
+        parseLookupResponse(callableResult({'items': items}), now: now);
+
+    test('a food with no carb value is reported by name, never as 0 g', () {
+      final result = parse([
+        {'name': 'Burger', 'carbs': 30},
+        {'name': 'Fries', 'carbs': null},
+      ]);
+
+      expect(result.items.map((f) => f.name), ['Burger']);
+      expect(result.unknownCarbs, ['Fries']);
+    });
+
+    test('a real zero is a food, not an unknown', () {
+      final result = parse([
+        {'name': 'Water', 'carbs': 0},
+      ]);
+
+      expect(result.items.single.carbs, 0.0);
+      expect(result.unknownCarbs, isEmpty);
+    });
+
+    test('negative and unreadable values count as unknown', () {
+      final result = parse([
+        {'name': 'Odd', 'carbs': -5},
+        {'name': 'Vague', 'carbs': 'some'},
+      ]);
+
+      expect(result.items, isEmpty);
+      expect(result.unknownCarbs, ['Odd', 'Vague']);
+    });
+
+    test('a lookup where nothing had carbs still parses, for the hand-off', () {
+      final result = parse([
+        {'name': 'Fries', 'carbs': null},
+      ]);
+
+      expect(result.items, isEmpty);
+      expect(result.unknownCarbs, ['Fries']);
+    });
+  });
+
+  group('logging times', () {
+    test('foods from one lookup start 1 ms apart', () {
+      // So deleting one from Apple Health can't take the others with it.
+      final now = DateTime(2026, 9, 22, 12, 30);
+      final result = parseLookupResponse(
+        callableResult({
+          'items': [
+            {'name': 'Burger', 'carbs': 30},
+            {'name': 'Fries', 'carbs': null},
+            {'name': 'Shake', 'carbs': 60},
+          ],
+        }),
+        now: now,
+      );
+
+      expect(result.items.map((f) => f.loggedAt), [
+        now,
+        now.add(const Duration(milliseconds: 1)),
+      ]);
+    });
+  });
+
   group('parseCallableError', () {
     test('daily-quota 429 becomes DailyLimitReachedException', () {
       final e = parseCallableError(
