@@ -81,15 +81,10 @@ public struct PerplexityClient {
         request.timeoutInterval = 30 // Siri users won't wait a minute
 
         let body: [String: Any] = [
-            "data": [
-                "input": foodItem,
-                // Lets the server count the free quota per local calendar day.
-                "tzOffsetMinutes": TimeZone.current.secondsFromGMT() / 60,
-                // This build handles a food with no carb value
-                // (LookupResult.unknownCarbs). Without it the server drops such
-                // foods, because older builds turned the missing value into 0.
-                "acceptsUnknownCarbs": true,
-            ] as [String: Any]
+            "data": requestData(
+                for: foodItem,
+                tzOffsetMinutes: TimeZone.current.secondsFromGMT() / 60
+            )
         ]
 
         request.httpBody = try JSONSerialization.data(withJSONObject: body)
@@ -111,6 +106,19 @@ public struct PerplexityClient {
         }
 
         return try parseResponse(data)
+    }
+
+    /// The `data` payload for one lookup. Separate so it can be tested:
+    /// `acceptsUnknownCarbs` is what tells the server this build can receive a
+    /// food with no carb value, and without it the server drops those foods and
+    /// Siri never says it skipped one.
+    static func requestData(for foodItem: String, tzOffsetMinutes: Int) -> [String: Any] {
+        [
+            "input": foodItem,
+            // Lets the server count the free quota per local calendar day.
+            "tzOffsetMinutes": tzOffsetMinutes,
+            "acceptsUnknownCarbs": true,
+        ]
     }
 
     /// Parses a 200 response. Firebase callable functions wrap it in

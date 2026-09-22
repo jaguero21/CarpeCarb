@@ -135,3 +135,15 @@ UserFacingException parseCallableError(int statusCode, String body) {
   if (message is String && message.isNotEmpty) return UserFacingException(message);
   return const UserFacingException('Failed to get carb count. Please try again.');
 }
+/// The `data` payload for one getMultipleCarbCounts call.
+///
+/// A pure function so the request can be tested: `acceptsUnknownCarbs` is what
+/// tells the server this build can receive a food with no carb value, and
+/// without it the server drops those foods and the user is never asked for the
+/// number.
+Map<String, dynamic> lookupRequestData(String input, {required int tzOffsetMinutes}) => {
+      'input': input,
+      // Lets the server count the free quota per local calendar day.
+      'tzOffsetMinutes': tzOffsetMinutes,
+      'acceptsUnknownCarbs': true,
+    };

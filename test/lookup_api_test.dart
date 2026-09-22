@@ -160,4 +160,15 @@ void main() {
           'Failed to get carb count. Please try again.');
     });
   });
+  group('lookupRequestData', () {
+    test('tells the server this build handles a food with no carb value', () {
+      final data = lookupRequestData('an apple', tzOffsetMinutes: -300);
+
+      // Without this the server drops those foods and the user is never asked
+      // for the number.
+      expect(data['acceptsUnknownCarbs'], isTrue);
+      expect(data['input'], 'an apple');
+      expect(data['tzOffsetMinutes'], -300);
+    });
+  });
 }

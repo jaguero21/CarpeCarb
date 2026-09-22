@@ -109,4 +109,14 @@ struct PerplexityClientParseTests {
     @Test func malformedBodyIsAParseError() {
         #expect(throws: IntentError.self) { try PerplexityClient.parseResponse(Data("oops".utf8)) }
     }
+
+    @Test func requestTellsTheServerThisBuildHandlesUnknownCarbs() throws {
+        let data = PerplexityClient.requestData(for: "an apple", tzOffsetMinutes: -300)
+
+        // Without this the server drops foods with no carb value and Siri
+        // never says it skipped one.
+        #expect(data["acceptsUnknownCarbs"] as? Bool == true)
+        #expect(data["input"] as? String == "an apple")
+        #expect(data["tzOffsetMinutes"] as? Int == -300)
+    }
 }
