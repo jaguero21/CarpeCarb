@@ -43,6 +43,23 @@ void main() {
     return appGroup;
   }
 
+  /// Stands in for `SiriBufferChannel`: hands over the buffer once and
+  /// empties it, the way the native side does. Returns the buffer so a test
+  /// can put items in it.
+  List<Map<String, Object?>> stubSiriBuffer() {
+    const channel = MethodChannel('com.carpecarb/siribuffer');
+    final buffer = <Map<String, Object?>>[];
+    messenger().setMockMethodCallHandler(channel, (call) async {
+      if (call.method != 'takeLoggedItems') return null;
+      if (buffer.isEmpty) return null;
+      final taken = jsonEncode(buffer);
+      buffer.clear();
+      return taken;
+    });
+    addTearDown(() => messenger().setMockMethodCallHandler(channel, null));
+    return buffer;
+  }
+
   /// Makes iCloud pulls return an empty payload, so a resume runs
   /// `_applyCloudData` (and its `_loadSavedData`) alongside the resume's own.
   void stubCloudSync() {
@@ -333,7 +350,8 @@ void main() {
     testWidgets(
         'resume after the day changed, with iCloud sync, imports Siri items into the new day',
         (WidgetTester tester) async {
-      final appGroup = stubHomeWidget();
+      stubHomeWidget();
+      final siriBuffer = stubSiriBuffer();
       stubCloudSync();
 
       SharedPreferences.setMockInitialValues({
@@ -354,13 +372,11 @@ void main() {
       // Overnight the saved list becomes yesterday's, and Siri logs a food.
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString('last_save_date', yesterdayKey());
-      appGroup['siriLoggedItems'] = jsonEncode([
-        {
-          'name': 'Toast',
-          'carbs': 15,
-          'loggedAt': DateTime.now().toUtc().toIso8601String(),
-        },
-      ]);
+      siriBuffer.add({
+        'name': 'Toast',
+        'carbs': 15,
+        'loggedAt': DateTime.now().toUtc().toIso8601String(),
+      });
 
       // Resume starts both the day reload and an iCloud pull, whose
       // _applyCloudData reloads again while the first reload is in flight.
@@ -436,6 +452,285 @@ void main() {
 
       expect(state.totalCarbs, 0.0);
       expect(state.foodItems, isEmpty);
+    });
+  });
+
+  group('iCloud sync', () {
+    /// Three items today, of which the cloud says two were deleted on the
+    /// other device.
+    void seedThreeItemsToday() {
+      SharedPreferences.setMockInitialValues({
+        'food_items': jsonEncode([
+          {
+            'id': 'a',
+            'name': 'Apple',
+            'carbs': 25.0,
+            'loggedAt': '2026-03-09T10:00:00.000',
+            'category': 'snack'
+          },
+          {
+            'id': 'b',
+            'name': 'Bagel',
+            'carbs': 48.0,
+            'loggedAt': '2026-03-09T09:00:00.000',
+            'category': 'breakfast'
+          },
+          {
+            'id': 'c',
+            'name': 'Cereal',
+            'carbs': 30.0,
+            'loggedAt': '2026-03-09T08:00:00.000',
+            'category': 'breakfast'
+          },
+        ]),
+        'last_save_date': todayKey(),
+      });
+    }
+
+    Map<String, Object?> cloudPayloadDeleting(List<String> ids) => {
+          'food_items': jsonEncode([
+            {
+              'id': 'a',
+              'name': 'Apple',
+              'carbs': 25.0,
+              'loggedAt': '2026-03-09T10:00:00.000',
+              'category': 'snack'
+            },
+            {
+              'id': 'b',
+              'name': 'Bagel',
+              'carbs': 48.0,
+              'loggedAt': '2026-03-09T09:00:00.000',
+              'category': 'breakfast'
+            },
+            {
+              'id': 'c',
+              'name': 'Cereal',
+              'carbs': 30.0,
+              'loggedAt': '2026-03-09T08:00:00.000',
+              'category': 'breakfast'
+            },
+          ]),
+          'food_items_deleted': jsonEncode(ids),
+          'last_save_date': todayKey(),
+          'cloud_last_modified': DateTime.now().toIso8601String(),
+        };
+
+    /// Answers pulls with [payload]; pushes report failure, which the app
+    /// shows as a failed sync and is not what these tests are about.
+    void stubCloudSyncReturning(Map<String, Object?>? payload) {
+      const channel = MethodChannel('com.carpecarb/cloudsync');
+      messenger().setMockMethodCallHandler(channel,
+          (call) async => call.method == 'pullFromCloud' ? payload : false);
+      addTearDown(() => messenger().setMockMethodCallHandler(channel, null));
+    }
+
+    /// Delivers a remote change the way the native observer does, so the app
+    /// merges it while the list is on screen.
+    Future<void> sendRemoteChange(
+        WidgetTester tester, Map<String, Object?> payload) async {
+      await messenger().handlePlatformMessage(
+        'com.carpecarb/cloudsync',
+        const StandardMethodCodec()
+            .encodeMethodCall(MethodCall('onRemoteChange', payload)),
+        (_) {},
+      );
+      // The service debounces remote changes by 300ms.
+      await tester.pump(const Duration(milliseconds: 400));
+      await tester.pumpAndSettle();
+    }
+
+    /// Answers pulls with [payload], records what the app pushes, and reports
+    /// [pushSucceeds] back the way the native side does.
+    List<Map<Object?, Object?>> stubCloudSyncRecording({
+      Map<String, Object?>? payload,
+      bool pushSucceeds = true,
+    }) {
+      const channel = MethodChannel('com.carpecarb/cloudsync');
+      final pushes = <Map<Object?, Object?>>[];
+      messenger().setMockMethodCallHandler(channel, (call) async {
+        switch (call.method) {
+          case 'pullFromCloud':
+            return payload;
+          case 'pushToCloud':
+            pushes.add((call.arguments as Map).cast<Object?, Object?>());
+            return pushSucceeds;
+        }
+        return null;
+      });
+      addTearDown(() => messenger().setMockMethodCallHandler(channel, null));
+      return pushes;
+    }
+
+    testWidgets('deleting an item pushes the delete, not just the shorter list',
+        (WidgetTester tester) async {
+      stubHomeWidget();
+      seedThreeItemsToday();
+      final pushes = stubCloudSyncRecording();
+
+      await tester.pumpWidget(const CarbTrackerApp());
+      await tester.pumpAndSettle();
+
+      final state = tester.state<CarbTrackerHomeState>(
+        find.byType(CarbTrackerHome),
+      );
+      state.removeItem(0);
+      await tester.pumpAndSettle();
+
+      // The marker has to be recorded before the save that pushes, or the
+      // other device's copy merges straight back in.
+      expect(pushes, isNotEmpty);
+      expect(pushes.last['food_items_deleted'], contains('a'));
+      await tester.pump(const Duration(seconds: 2));
+    });
+
+    testWidgets('a push iCloud refused does not advance the sync timestamp',
+        (WidgetTester tester) async {
+      stubHomeWidget();
+      seedThreeItemsToday();
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('cloud_last_modified', 'before-the-failed-push');
+      stubCloudSyncRecording(pushSucceeds: false);
+
+      await tester.pumpWidget(const CarbTrackerApp());
+      await tester.pumpAndSettle();
+
+      final state = tester.state<CarbTrackerHomeState>(
+        find.byType(CarbTrackerHome),
+      );
+      state.removeItem(0);
+      await tester.pumpAndSettle();
+
+      // Left alone, so the next change retries instead of assuming the other
+      // device already has this one.
+      expect(
+          (await SharedPreferences.getInstance())
+              .getString('cloud_last_modified'),
+          'before-the-failed-push');
+    });
+
+    testWidgets('a push that landed does advance the sync timestamp',
+        (WidgetTester tester) async {
+      stubHomeWidget();
+      seedThreeItemsToday();
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('cloud_last_modified', 'before-the-push');
+      stubCloudSyncRecording(pushSucceeds: true);
+
+      await tester.pumpWidget(const CarbTrackerApp());
+      await tester.pumpAndSettle();
+
+      final state = tester.state<CarbTrackerHomeState>(
+        find.byType(CarbTrackerHome),
+      );
+      state.removeItem(0);
+      await tester.pumpAndSettle();
+
+      expect(
+          (await SharedPreferences.getInstance())
+              .getString('cloud_last_modified'),
+          isNot('before-the-push'));
+      await tester.pump(const Duration(seconds: 2));
+    });
+
+    testWidgets('a remote favourite change reaches the Favourites screen',
+        (WidgetTester tester) async {
+      stubHomeWidget();
+      SharedPreferences.setMockInitialValues({
+        'saved_foods': jsonEncode([
+          {
+            'id': 'f1',
+            'name': 'Bagel',
+            'carbs': 48.0,
+            'loggedAt': '2026-03-09T09:00:00.000',
+            'category': 'breakfast'
+          },
+        ]),
+        'last_save_date': todayKey(),
+      });
+      stubCloudSyncReturning(null);
+
+      await tester.pumpWidget(const CarbTrackerApp());
+      await tester.pumpAndSettle();
+
+      final state = tester.state<CarbTrackerHomeState>(
+        find.byType(CarbTrackerHome),
+      );
+      state.switchToSettingsForTest();
+      await tester.pumpAndSettle();
+      expect(find.text('Bagel'), findsWidgets);
+
+      final changedAt = DateTime.now().millisecondsSinceEpoch;
+      await sendRemoteChange(tester, {
+        'saved_foods': jsonEncode([
+          {
+            'id': 'f2',
+            'name': 'Oatmeal',
+            'carbs': 27.0,
+            'loggedAt': '2026-03-09T08:00:00.000',
+            'category': 'breakfast'
+          },
+        ]),
+        'saved_foods_changes': jsonEncode({
+          'oatmeal': {'updatedAt': changedAt, 'deleted': false},
+          'bagel': {'updatedAt': changedAt, 'deleted': true},
+        }),
+        'last_save_date': todayKey(),
+        'cloud_last_modified': DateTime.now().toIso8601String(),
+      });
+
+      // The screen keeps its own copy of the list; without being told to
+      // reload it would write the pre-merge one back on the next edit.
+      expect(find.text('Oatmeal'), findsWidgets);
+      expect(find.text('Bagel'), findsNothing);
+    });
+
+    testWidgets(
+        'a remote delete shortens the list on screen without a range error',
+        (WidgetTester tester) async {
+      stubHomeWidget();
+      seedThreeItemsToday();
+      // Nothing in the cloud at launch, so all three items render first —
+      // which is what leaves the AnimatedList counting them.
+      stubCloudSyncReturning(null);
+
+      await tester.pumpWidget(const CarbTrackerApp());
+      await tester.pumpAndSettle();
+
+      final state = tester.state<CarbTrackerHomeState>(
+        find.byType(CarbTrackerHome),
+      );
+      expect(state.foodItems, hasLength(3));
+      expect(find.text('Bagel'), findsOneWidget);
+
+      await sendRemoteChange(tester, cloudPayloadDeleting(['b', 'c']));
+
+      expect(state.foodItems.map((f) => f.name), ['Apple']);
+      expect(find.text('Bagel'), findsNothing);
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('a remote delete survives the next merge',
+        (WidgetTester tester) async {
+      stubHomeWidget();
+      seedThreeItemsToday();
+      stubCloudSyncReturning(cloudPayloadDeleting(['b', 'c']));
+
+      await tester.pumpWidget(const CarbTrackerApp());
+      await tester.pumpAndSettle();
+
+      final state = tester.state<CarbTrackerHomeState>(
+        find.byType(CarbTrackerHome),
+      );
+      expect(state.foodItems, hasLength(1));
+
+      // A second pull of the same payload — the deleted items are still gone
+      // rather than merging back in.
+      state.didChangeAppLifecycleState(AppLifecycleState.resumed);
+      await tester.pumpAndSettle();
+
+      expect(state.foodItems.map((f) => f.name), ['Apple']);
+      expect(tester.takeException(), isNull);
     });
   });
 }

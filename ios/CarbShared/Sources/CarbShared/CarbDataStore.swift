@@ -144,6 +144,23 @@ public struct CarbDataStore {
         #endif
     }
 
+    /// Hands the app the buffered Siri items and empties the buffer in one
+    /// main-actor step, so an `addFood` can't land between the read and the
+    /// clear and be dropped. Returns nil when nothing is waiting.
+    ///
+    /// The buffer is cleared before the app has parsed it: a buffer that can't
+    /// be read, or one taken moments before the app is killed, is lost. That is
+    /// the cost of closing the race, and anything `addFood` wrote parses.
+    @MainActor
+    public func takeSiriLoggedItems() -> String? {
+        guard let json = defaults?.string(forKey: Keys.siriLoggedItems),
+              !json.isEmpty else {
+            return nil
+        }
+        defaults?.removeObject(forKey: Keys.siriLoggedItems)
+        return json
+    }
+
     /// Items waiting for the app to import, as written by `addFood`.
     func siriLoggedItems() -> [[String: Any]] {
         guard let json = defaults?.string(forKey: Keys.siriLoggedItems),

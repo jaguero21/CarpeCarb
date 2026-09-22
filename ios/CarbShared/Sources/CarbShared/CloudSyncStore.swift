@@ -1,6 +1,18 @@
 import Foundation
 import os.log
 
+/// The part of `NSUbiquitousKeyValueStore` that `CloudSyncStore` uses, so tests
+/// can run against an in-memory double — the real store needs a signed-in
+/// iCloud account and a provisioned entitlement.
+public protocol KeyValueStoring: AnyObject {
+    func set(_ value: Any?, forKey key: String)
+    func object(forKey key: String) -> Any?
+    func string(forKey key: String) -> String?
+    @discardableResult func synchronize() -> Bool
+}
+
+extension NSUbiquitousKeyValueStore: KeyValueStoring {}
+
 /// Syncs app data across devices using NSUbiquitousKeyValueStore (iCloud key-value store).
 /// Placed in CarbShared so all targets (app, widget, watch, Siri) can access it.
 ///
@@ -19,7 +31,8 @@ public final class CloudSyncStore {
     
     // MARK: - Properties
 
-    private let kvStore = NSUbiquitousKeyValueStore.default
+    private let kvStore: any KeyValueStoring
+    private let isAvailableCheck: () -> Bool
     private let logger = Logger(subsystem: "com.carpecarb", category: "CloudSyncStore")
     private static let iso8601 = ISO8601DateFormatter()
     
@@ -35,6 +48,9 @@ public final class CloudSyncStore {
         static let fatGoal = "fat_goal"
         static let fiberGoal = "fiber_goal"
         static let caloriesGoal = "calories_goal"
+        static let foodItemsDeleted = "food_items_deleted"
+        static let savedFoodsChanges = "saved_foods_changes"
+        static let settingsUpdatedAt = "settings_updated_at"
     }
 
     /// All data keys (excluding the timestamp)
@@ -42,6 +58,9 @@ public final class CloudSyncStore {
         Key.foodItems, Key.savedFoods, Key.dailyCarbGoal,
         Key.dailyResetHour, Key.lastSaveDate,
         Key.proteinGoal, Key.fatGoal, Key.fiberGoal, Key.caloriesGoal,
+        // What was deleted and when things changed — a pull drops any key not
+        // listed here, so leaving these out would strip the merge's evidence.
+        Key.foodItemsDeleted, Key.savedFoodsChanges, Key.settingsUpdatedAt,
     ]
 
     /// Callback invoked when remote changes are detected
@@ -56,7 +75,20 @@ public final class CloudSyncStore {
     /// Thread-safe: stored on MainActor
     private var lastKnownTimestamp: String?
 
-    private init() {
+    /// - Parameters:
+    ///   - kvStore: where synced values are read and written; iCloud's own
+    ///     store by default.
+    ///   - isAvailable: whether iCloud can be used. The default asks
+    ///     `FileManager` for the ubiquity token, which is nil when the user is
+    ///     signed out of iCloud.
+    public init(
+        kvStore: any KeyValueStoring = NSUbiquitousKeyValueStore.default,
+        isAvailable: @escaping () -> Bool = {
+            FileManager.default.ubiquityIdentityToken != nil
+        }
+    ) {
+        self.kvStore = kvStore
+        self.isAvailableCheck = isAvailable
         logger.info("CloudSyncStore initialized")
     }
     
@@ -77,7 +109,7 @@ public final class CloudSyncStore {
     /// Checks if iCloud is available for this user
     /// Thread-safe: FileManager is thread-safe for this property
     public var isAvailable: Bool {
-        let available = FileManager.default.ubiquityIdentityToken != nil
+        let available = isAvailableCheck()
         logger.debug("iCloud availability checked: \(available)")
         return available
     }
@@ -88,23 +120,28 @@ public final class CloudSyncStore {
     /// Flutter is responsible for providing all syncable keys.
     ///
     /// - Parameter data: Dictionary of key-value pairs to sync
+    /// - Returns: false when iCloud is unavailable, there was nothing to push,
+    ///   or the store refused to synchronize. The app shows a failed sync and
+    ///   retries on the next change, so this must not report success blindly.
     /// - Note: Thread-safe. Can be called from any thread.
-    public func pushToCloud(_ data: [String: Any]) {
+    @discardableResult
+    public func pushToCloud(_ data: [String: Any]) -> Bool {
         guard isAvailable else {
             logger.warning("Push aborted: iCloud not available")
-            return
+            return false
         }
         
         guard !data.isEmpty else {
             logger.warning("Push aborted: Empty data provided")
-            return
+            return false
         }
 
-        // Use caller-supplied timestamp if present (so Flutter can track what
-        // was pushed), otherwise generate one.
-        let timestamp = (data[Key.lastModified] as? String)?.isEmpty == false
-            ? data[Key.lastModified] as! String
-            : Self.iso8601.string(from: Date())
+        // Use the caller's timestamp when it sent one (so Flutter can track
+        // what it pushed), otherwise stamp it now.
+        var timestamp = Self.iso8601.string(from: Date())
+        if let supplied = data[Key.lastModified] as? String, !supplied.isEmpty {
+            timestamp = supplied
+        }
 
         logger.info("Pushing \(data.count) keys to iCloud")
 
@@ -127,6 +164,7 @@ public final class CloudSyncStore {
         } else {
             logger.warning("Push completed but synchronize() returned false")
         }
+        return synced
     }
 
     // MARK: - Pull (iCloud → Flutter)
@@ -232,8 +270,8 @@ public final class CloudSyncStore {
         logger.debug("Received external change notification")
         
         // Verify the notification is from our store
-        guard let store = notification.object as? NSUbiquitousKeyValueStore,
-              store == kvStore else {
+        guard let store = notification.object as AnyObject?,
+              store === (kvStore as AnyObject) else {
             logger.warning("Notification from unexpected store - ignoring")
             return
         }
@@ -251,17 +289,29 @@ public final class CloudSyncStore {
         // Pull the latest data
         // MainActor isolated method called from background thread needs await
         Task { @MainActor in
+            // Capture the timestamp before pulling: `pullFromCloud` overwrites
+            // `lastKnownTimestamp`, so comparing after it always found them
+            // equal — which is why remote changes never reached the app.
+            let previous = self.lastKnownTimestamp
             if let pulled = self.pullFromCloud() {
-                // Only notify if timestamp changed (avoid duplicate notifications)
-                if let newTimestamp = pulled[Key.lastModified] as? String,
-                   newTimestamp != self.lastKnownTimestamp {
-                    logger.info("Notifying of remote change")
+                if Self.isNewRemoteChange(
+                    previous: previous,
+                    pulled: pulled[Key.lastModified] as? String
+                ) {
+                    self.logger.info("Notifying of remote change")
                     self.onChange?(pulled)
                 } else {
-                    logger.debug("Skipping notification - timestamp unchanged")
+                    self.logger.debug("Skipping notification - timestamp unchanged")
                 }
             }
         }
+    }
+
+    /// Whether a pulled timestamp is a change this device hasn't seen yet.
+    /// Pure, so the comparison can be tested without an iCloud account.
+    public static func isNewRemoteChange(previous: String?, pulled: String?) -> Bool {
+        guard let pulled, !pulled.isEmpty else { return false }
+        return pulled != previous
     }
     
     // MARK: - Helpers

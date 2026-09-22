@@ -6,6 +6,7 @@ import os.log
 @main
 @objc class AppDelegate: FlutterAppDelegate, FlutterImplicitEngineDelegate {
   private var cloudSyncChannel: CloudSyncChannel?
+  private var siriBufferChannel: SiriBufferChannel?
   private let logger = Logger(subsystem: "com.carpecarb", category: "AppDelegate")
 
   override func application(
@@ -53,6 +54,9 @@ import os.log
     
     cloudSyncChannel = CloudSyncChannel(messenger: registrar.messenger())
     logger.info("✓ CloudSyncChannel registered successfully")
+
+    siriBufferChannel = SiriBufferChannel(messenger: registrar.messenger())
+    logger.info("✓ SiriBufferChannel registered successfully")
   }
   
   override func applicationWillResignActive(_ application: UIApplication) {

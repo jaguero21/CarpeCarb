@@ -35,10 +35,15 @@ class CloudSyncService {
   }
 
   /// Push [data] to iCloud. Returns true if the push succeeded.
+  ///
+  /// The native side answers false when iCloud is signed out or the write
+  /// didn't go through (CloudSyncChannel.swift), so its answer is what decides
+  /// here — reporting success regardless is what made the app show the synced
+  /// icon after a push that did nothing.
   Future<bool> pushToCloud(Map<String, dynamic> data) async {
     try {
-      await _channel.invokeMethod('pushToCloud', data);
-      return true;
+      final pushed = await _channel.invokeMethod<bool>('pushToCloud', data);
+      return pushed ?? false;
     } catch (e) {
       dev.log('CloudSyncService.pushToCloud error: $e');
       return false;
