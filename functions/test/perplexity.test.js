@@ -260,3 +260,39 @@ test("lookupFoods never logs the food text or the model's output", async () => {
     assert.doesNotMatch(line, /mystery stew|Zanzibar|PRIVATE/, `leaked: ${line}`);
   }
 });
+
+test("a carb value written as a negative string is unknown, not positive", async () => {
+  // Without the sign the regex returns 5 — a number nobody reported.
+  const [item] = await lookUp('[{"name":"Odd","carbs":"-5"}]');
+
+  assert.equal(item.carbs, null);
+});
+
+test("a carb value buried in text is still read", async () => {
+  const [about] = await lookUp('[{"name":"Stew","carbs":"about 12"}]');
+  const [range] = await lookUp('[{"name":"Roll","carbs":"12-15 g"}]');
+
+  assert.equal(about.carbs, 12);
+  assert.equal(range.carbs, 12);
+});
+
+test("a failed Perplexity call does not log its error body", async () => {
+  const leaky = {
+    status: 400,
+    ok: false,
+    json: async () => ({}),
+    text: async () => 'invalid request: {"content":"secret mystery stew"}',
+  };
+
+  const lines = await captureLogs(async () => {
+    await lookupFoods("secret mystery stew", "key", {
+      fetchImpl: stubFetch(leaky),
+      sleep: noSleep,
+    }).catch(() => {});
+  });
+
+  assert.ok(lines.length > 0, "expected some logging to inspect");
+  for (const line of lines) {
+    assert.doesNotMatch(line, /mystery stew|secret/, `leaked: ${line}`);
+  }
+});

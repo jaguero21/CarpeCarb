@@ -134,8 +134,10 @@ async function lookupFoods(sanitized, apiKey, { fetchImpl = fetch, sleep = (ms) 
         throw unbilled(new HttpsError("internal", "Server error. Try again later."));
       }
       if (!response.ok) {
+        // Not the body: an error that echoes the request would carry the food
+        // text with it, and this lands in Cloud Logging.
         const errorBody = await response.text();
-        console.error(`Perplexity API error (${response.status}): ${errorBody}`);
+        console.error(`Perplexity API error (${response.status}), ${errorBody.length} chars`);
         throw unbilled(new HttpsError(
           "internal",
           `API request failed (${response.status})`
@@ -221,8 +223,10 @@ async function lookupFoods(sanitized, apiKey, { fetchImpl = fetch, sleep = (ms) 
       const mapped = items.map((item) => {
         const parseNum = (val) => {
           if (typeof val === "string") {
-            const m = val.match(/(\d+\.?\d*)/);
-            val = m ? parseFloat(m[1]) : null;
+            // Keep the sign: without it "-5" parses as 5, inventing a value
+            // rather than reporting none.
+            const m = val.match(/-?\d+\.?\d*/);
+            val = m ? parseFloat(m[0]) : null;
           }
           // Negative, infinite or NaN is not a nutrition value.
           return Number.isFinite(val) && val >= 0 ? val : null;
