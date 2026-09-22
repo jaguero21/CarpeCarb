@@ -74,15 +74,17 @@ class HealthKitService {
     }
   }
 
-  /// Delete a food item from HealthKit by matching its exact timestamp.
+  /// Delete a food item from HealthKit: only the entry that starts in the
+  /// millisecond [item] was logged (see [healthDeleteWindow]).
   Future<bool> deleteFoodItem(FoodItem item) async {
     if (!Platform.isIOS || !_isAuthorized) return false;
 
     try {
+      final window = healthDeleteWindow(item.loggedAt);
       final success = await _health.delete(
         type: HealthDataType.NUTRITION,
-        startTime: item.loggedAt,
-        endTime: item.loggedAt.add(const Duration(minutes: 1)),
+        startTime: window.start,
+        endTime: window.end,
       );
       return success;
     } catch (e) {
@@ -160,4 +162,21 @@ class HealthKitService {
 
     return grouped;
   }
+}
+
+/// The time range a delete searches for the Health entry of a food logged at
+/// [loggedAt]: exactly the millisecond it starts in.
+///
+/// The plugin's delete matches this app's own entries by start time only, and
+/// the end is exclusive (HealthKit's `.strictStartDate` is `startDate >= start
+/// AND startDate < end`). Every entry the app writes starts in its own
+/// millisecond — foods from one lookup or one Siri log are spaced 1 ms apart —
+/// so this matches one entry. The one-minute range it replaces took every food
+/// logged in that minute, including the rest of a "burger and fries".
+({DateTime start, DateTime end}) healthDeleteWindow(DateTime loggedAt) {
+  // Whole milliseconds, which is what the plugin passes to HealthKit for both
+  // the write and the delete, so the two agree.
+  final start =
+      DateTime.fromMillisecondsSinceEpoch(loggedAt.millisecondsSinceEpoch);
+  return (start: start, end: start.add(const Duration(milliseconds: 1)));
 }
