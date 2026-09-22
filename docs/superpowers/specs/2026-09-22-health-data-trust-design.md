@@ -105,15 +105,23 @@ millisecond:
 - Siri stamps the foods of one utterance 1 ms apart and writes `loggedAt` with
   fractional seconds. The spacing lives in `CarbShared` so `swift test` covers
   it; `LogFoodIntent` (Runner target) only calls it.
-- Single adds (Manual, a saved food) are already distinct.
+- Manual entry builds a new food, so its time is already distinct. Adding a
+  saved food used to re-log the stored favourite object, keeping its original
+  id and timestamp; it now builds a new food too.
 
 The spacing never shows, since times are displayed to the minute.
 
 **Exact delete.** `deleteFoodItem` deletes the window
 `[loggedAt, loggedAt + 1 ms)`. With `.strictStartDate` and distinct starts, that
 matches exactly one entry. Write and delete both go through the plugin's
-millisecond conversion, so they round the same way. No Health read access is
-needed, so users who granted write-only access keep working deletes.
+millisecond conversion, so they round the same way.
+
+An earlier draft of this spec claimed the delete needs no Health *read* access.
+That is wrong: the plugin runs an `HKSampleQuery` to find the entries before
+deleting them, so a user who granted write-only access gets an empty result and
+nothing is deleted. That was equally true of the one-minute delete this
+replaces, so it is not a regression — but the device checklist's write-only step
+is a real check, not a formality.
 
 **Known limit.** Entries written by the old build on update day can still take
 a sibling from the same lookup if they share a millisecond. After that day it
