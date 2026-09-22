@@ -99,20 +99,6 @@ class CarbTrackerHomeState extends State<CarbTrackerHome>
   final CloudSyncService _cloudSyncService = CloudSyncService();
   final SyncStore _syncStore = SyncStore();
 
-  /// Runs the read-modify-write cycles that touch stored state one at a time.
-  /// A merge spans several awaits between reading and writing; a local save
-  /// landing in that gap used to be overwritten by the merge's write, and the
-  /// item the user had just added disappeared from the list until a later
-  /// merge brought it back. Remote changes only started arriving while the app
-  /// is open once live sync was fixed, so this window is new.
-  Future<void> _storeWrites = Future<void>.value();
-
-  Future<T> _serialized<T>(Future<T> Function() action) {
-    final result = _storeWrites.then((_) => action());
-    // Keep the queue alive even if one step fails.
-    _storeWrites = result.then((_) {}, onError: (_) {});
-    return result;
-  }
   final SiriBufferService _siriBuffer = SiriBufferService();
   bool _isManualEntryMode = false;
 
@@ -281,13 +267,13 @@ class CarbTrackerHomeState extends State<CarbTrackerHome>
   Future<void> _applyCloudData(Map<String, dynamic> data) async {
     final prefs = await SharedPreferences.getInstance();
     final cloud = decodeSyncPayload(data);
-    final merged = await _serialized(() async {
-      final local = await _syncStore.read(_todayString());
-      final state =
-          mergeSyncState(local: local, cloud: cloud, now: DateTime.now());
-      await _syncStore.write(state);
-      return state;
-    });
+    // Read, merge and write as one step, so a delete or favourite edit made
+    // while this runs isn't dropped by the write that follows it.
+    final merged = await _syncStore.mergeInto(
+      _todayString(),
+      (local) =>
+          mergeSyncState(local: local, cloud: cloud, now: DateTime.now()),
+    );
 
     // Kept as a record of what this device last saw, for support and for the
     // sync indicator; the decision to pull is the native side's, which holds
@@ -491,7 +477,7 @@ class CarbTrackerHomeState extends State<CarbTrackerHome>
     // Queued behind any merge in flight, so the two can't overwrite each
     // other's writes. The push happens afterwards, outside the queue, so a
     // slow channel call doesn't hold up the next save.
-    await _serialized(() async {
+    await _syncStore.exclusively(() async {
       final prefs = await SharedPreferences.getInstance();
       await prefs.setDouble(StorageKeys.totalCarbs, totalCarbs);
       if (dailyCarbGoal != null) {
@@ -1574,6 +1560,7 @@ class CarbTrackerHomeState extends State<CarbTrackerHome>
                   _buildHomePage(isDark),
                   SettingsPage(
                     key: ValueKey(_settingsInitialTab),
+                    syncStore: _syncStore,
                     favoritesVersion: _favoritesVersion,
                     dailyCarbGoal: dailyCarbGoal,
                     resetHour: resetHour,

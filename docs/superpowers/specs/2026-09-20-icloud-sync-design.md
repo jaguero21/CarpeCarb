@@ -168,10 +168,18 @@ earlier section of this spec says, so the amendment wins.
   surviving on the upgrade path this spec's Migration section claimed to cover.
 - **The resume merge waits for the new-day handling** instead of racing it, as
   Part 3 always intended.
+- **Goals carried over from an older build are stamped just after the epoch,
+  not with the current time.** Stamping "now" meant whichever device upgraded
+  last overwrote a newer, deliberate change on the other — the same loss the
+  migration exists to prevent. The sentinel is real enough to beat a device
+  that never set a goal, and older than any change anyone actually made.
 - **Stored-state read-modify-write cycles are serialized.** A merge spans
   several awaits; a local save landing in the gap was overwritten by the merge's
   write, and the item the user had just added vanished from the list. Live sync
-  is what made this window reachable.
+  is what made this window reachable. The queue lives in `SyncStore`, and the
+  settings screen is handed the home screen's store rather than building its
+  own, so a favourite edit there queues behind a merge here instead of racing
+  it.
 
 ## Testing
 

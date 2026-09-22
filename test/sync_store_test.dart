@@ -21,7 +21,9 @@ void main() {
   String itemsJson(List<FoodItem> items) =>
       jsonEncode(items.map((f) => f.toJson()).toList());
 
-  setUp(() => SharedPreferences.setMockInitialValues({}));
+  setUp(() {
+    SharedPreferences.setMockInitialValues({});
+  });
 
   Future<SharedPreferences> prefs() => SharedPreferences.getInstance();
 
@@ -197,9 +199,9 @@ void main() {
 
       await store.stampExistingSettings();
 
-      // Without this they read as "never set here" and a device with no goals
-      // at all would look newer and wipe them.
-      expect((await store.read(today)).settings.updatedAt, clock);
+      // Real, but older than any deliberate change: a device with no goals
+      // can't wipe these, and a genuine change anywhere still wins.
+      expect((await store.read(today)).settings.updatedAt, migratedSettingsStamp);
     });
 
     test('a device with no goals keeps adopting the cloud\'s', () async {

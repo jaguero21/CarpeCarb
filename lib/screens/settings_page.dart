@@ -62,7 +62,12 @@ class SettingsPage extends StatefulWidget {
     this.onCloudSyncEnabled,
     this.initialTab = 0,
     this.favoritesVersion = 0,
+    this.syncStore,
   });
+
+  /// The home screen's store, so favourite edits here queue behind a merge
+  /// there instead of racing it. A separate instance would have its own queue.
+  final SyncStore? syncStore;
 
   @override
   State<SettingsPage> createState() => _SettingsPageState();
@@ -94,7 +99,7 @@ class _SettingsPageState extends State<SettingsPage> {
 
   // Favorites state
   List<FoodItem> _savedFoods = [];
-  final SyncStore _syncStore = SyncStore();
+  late final SyncStore _syncStore = widget.syncStore ?? SyncStore();
   bool _isFavoritesLoading = true;
 
   // History state

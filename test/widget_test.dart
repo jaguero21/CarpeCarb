@@ -633,6 +633,58 @@ void main() {
       await tester.pump(const Duration(seconds: 2));
     });
 
+    testWidgets('a remote favourite change reaches the Favourites screen',
+        (WidgetTester tester) async {
+      stubHomeWidget();
+      SharedPreferences.setMockInitialValues({
+        'saved_foods': jsonEncode([
+          {
+            'id': 'f1',
+            'name': 'Bagel',
+            'carbs': 48.0,
+            'loggedAt': '2026-03-09T09:00:00.000',
+            'category': 'breakfast'
+          },
+        ]),
+        'last_save_date': todayKey(),
+      });
+      stubCloudSyncReturning(null);
+
+      await tester.pumpWidget(const CarbTrackerApp());
+      await tester.pumpAndSettle();
+
+      final state = tester.state<CarbTrackerHomeState>(
+        find.byType(CarbTrackerHome),
+      );
+      state.switchToSettingsForTest();
+      await tester.pumpAndSettle();
+      expect(find.text('Bagel'), findsWidgets);
+
+      final changedAt = DateTime.now().millisecondsSinceEpoch;
+      await sendRemoteChange(tester, {
+        'saved_foods': jsonEncode([
+          {
+            'id': 'f2',
+            'name': 'Oatmeal',
+            'carbs': 27.0,
+            'loggedAt': '2026-03-09T08:00:00.000',
+            'category': 'breakfast'
+          },
+        ]),
+        'saved_foods_changes': jsonEncode({
+          'oatmeal': {'updatedAt': changedAt, 'deleted': false},
+          'bagel': {'updatedAt': changedAt, 'deleted': true},
+        }),
+        'last_save_date': todayKey(),
+        'cloud_last_modified': DateTime.now().toIso8601String(),
+      });
+
+      // The screen keeps its own copy of the list; without being told to
+      // reload it would write the pre-merge one back on the next edit.
+      expect(find.text('Oatmeal'), findsWidgets);
+      expect(find.text('Bagel'), findsNothing);
+    });
+
     testWidgets(
         'a remote delete shortens the list on screen without a range error',
         (WidgetTester tester) async {

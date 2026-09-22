@@ -10,6 +10,10 @@ import 'sync_payload.dart';
 /// Reads and writes the synced state in SharedPreferences, and records the
 /// local changes that merging needs to know about (what was deleted, when
 /// favourites changed, when settings changed).
+/// The timestamp given to goals carried over from a build that didn't record
+/// when settings changed: real, but older than any deliberate change.
+final DateTime migratedSettingsStamp = DateTime.fromMillisecondsSinceEpoch(1);
+
 class SyncStore {
   SyncStore({DateTime Function()? clock}) : _clock = clock ?? DateTime.now;
 
@@ -17,9 +21,42 @@ class SyncStore {
 
   Future<SharedPreferences> get _prefs => SharedPreferences.getInstance();
 
+  /// Every read-modify-write of the stored state runs through here, one at a
+  /// time. These cycles span awaits, so two of them interleaving loses one
+  /// side's write: a delete marker recorded while a merge was between its read
+  /// and its write would be dropped, and the other device's copy of the item
+  /// would come straight back.
+  ///
+  /// Per instance, so everything that shares this store shares its queue —
+  /// the settings screen is handed the home screen's store rather than making
+  /// its own, which would queue separately and defeat this.
+  Future<void> _queue = Future<void>.value();
+
+  /// Runs [action] with exclusive access to the stored state. Callers that
+  /// write these keys directly can join the queue with this. [action] must not
+  /// call another [SyncStore] method that queues, or it would wait on itself.
+  Future<T> exclusively<T>(Future<T> Function() action) {
+    final result = _queue.then((_) => action());
+    // Keep the queue alive even when one step fails.
+    _queue = result.then((_) {}, onError: (_) {});
+    return result;
+  }
+
+  /// Reads the stored state, hands it to [merge], and writes the result as one
+  /// step, so a change recorded in the middle can't be overwritten.
+  Future<SyncState> mergeInto(
+          String dayKey, SyncState Function(SyncState local) merge) =>
+      exclusively(() async {
+        final merged = merge(await _read(dayKey));
+        await _write(merged);
+        return merged;
+      });
+
   /// This device's state for [dayKey]. Food items are only today's: a stored
   /// list from an earlier day is ignored, the same way the app does on launch.
-  Future<SyncState> read(String dayKey) async {
+  Future<SyncState> read(String dayKey) => _read(dayKey);
+
+  Future<SyncState> _read(String dayKey) async {
     final prefs = await _prefs;
     final storedDay = prefs.getString(StorageKeys.lastSaveDate);
     final isToday = storedDay == dayKey;
@@ -50,7 +87,9 @@ class SyncStore {
 
   /// Saves a merged state: items and favourites, what was deleted, and the
   /// settings that won.
-  Future<void> write(SyncState state) async {
+  Future<void> write(SyncState state) => exclusively(() => _write(state));
+
+  Future<void> _write(SyncState state) async {
     final prefs = await _prefs;
     await prefs.setString(StorageKeys.foodItems,
         jsonEncode(state.items.map((f) => f.toJson()).toList()));
@@ -76,7 +115,10 @@ class SyncStore {
   }
 
   /// Marks items as deleted today so another device's copy doesn't restore them.
-  Future<void> recordItemsDeleted(Iterable<String> ids) async {
+  Future<void> recordItemsDeleted(Iterable<String> ids) =>
+      exclusively(() => _recordItemsDeleted(ids));
+
+  Future<void> _recordItemsDeleted(Iterable<String> ids) async {
     final prefs = await _prefs;
     await _writeIds(prefs, {
       ...parseIdList(prefs.getString(StorageKeys.foodItemsDeleted)),
@@ -85,14 +127,19 @@ class SyncStore {
   }
 
   /// Undo: the item is wanted again, so drop its delete marker.
-  Future<void> recordItemRestored(String id) async {
+  Future<void> recordItemRestored(String id) =>
+      exclusively(() => _recordItemRestored(id));
+
+  Future<void> _recordItemRestored(String id) async {
     final prefs = await _prefs;
     await _writeIds(prefs,
         parseIdList(prefs.getString(StorageKeys.foodItemsDeleted))..remove(id));
   }
 
   /// Clears today's items and their delete markers (a new day starts fresh).
-  Future<void> clearDay() async {
+  Future<void> clearDay() => exclusively(_clearDay);
+
+  Future<void> _clearDay() async {
     final prefs = await _prefs;
     await prefs.remove(StorageKeys.foodItems);
     await prefs.remove(StorageKeys.foodItemsDeleted);
@@ -118,7 +165,9 @@ class SyncStore {
   ///
   /// Does nothing once a timestamp exists, and nothing on a device that has no
   /// goals to protect (which must keep adopting the cloud's on a fresh install).
-  Future<void> stampExistingSettings() async {
+  Future<void> stampExistingSettings() => exclusively(_stampExistingSettings);
+
+  Future<void> _stampExistingSettings() async {
     final prefs = await _prefs;
     if (prefs.containsKey(StorageKeys.settingsUpdatedAt)) return;
     final hasSettings = const [
@@ -130,19 +179,30 @@ class SyncStore {
         ].any((key) => (prefs.getDouble(key) ?? 0) > 0) ||
         (prefs.getInt(StorageKeys.dailyResetHour) ?? 0) > 0;
     if (!hasSettings) return;
-    await prefs.setInt(
-        StorageKeys.settingsUpdatedAt, _clock().millisecondsSinceEpoch);
+    // A moment just after the epoch, not now: these goals are real (so a
+    // device with none can't wipe them, which is the point of this migration)
+    // but older than any change anyone deliberately made. Stamping `now` would
+    // make whichever device upgraded last overwrite a newer real change on the
+    // other — the same loss this is meant to prevent.
+    await prefs.setInt(StorageKeys.settingsUpdatedAt,
+        migratedSettingsStamp.millisecondsSinceEpoch);
   }
 
   /// Records that the user changed goals or the reset hour here, so this
   /// device's settings win over older ones from another device.
-  Future<void> markSettingsChanged() async {
+  Future<void> markSettingsChanged() => exclusively(_markSettingsChanged);
+
+  Future<void> _markSettingsChanged() async {
     final prefs = await _prefs;
     await prefs.setInt(
         StorageKeys.settingsUpdatedAt, _clock().millisecondsSinceEpoch);
   }
 
-  Future<void> _recordFavorite(String name, {required bool deleted}) async {
+  Future<void> _recordFavorite(String name, {required bool deleted}) =>
+      exclusively(() => _recordFavoriteLocked(name, deleted: deleted));
+
+  Future<void> _recordFavoriteLocked(String name,
+      {required bool deleted}) async {
     final prefs = await _prefs;
     final changes = {
       ...parseFavoriteChanges(prefs.getString(StorageKeys.savedFoodsChanges)),

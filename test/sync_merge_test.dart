@@ -1,5 +1,6 @@
 import 'package:carb_tracker/models/food_item.dart';
 import 'package:carb_tracker/services/sync_merge.dart';
+import 'package:carb_tracker/services/sync_store.dart' show migratedSettingsStamp;
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
@@ -242,6 +243,31 @@ void main() {
       );
 
       expect(merged.settings.dailyCarbGoal, 150);
+    });
+
+    test('goals migrated from an older build lose to a real change elsewhere',
+        () {
+      // The stale device upgraded last. Stamping the migration with "now"
+      // would make its old goal win and silently revert the real change.
+      final local = state(
+          settings: SyncSettings(
+              dailyCarbGoal: 80, updatedAt: migratedSettingsStamp));
+      final cloud = state(
+          settings:
+              SyncSettings(dailyCarbGoal: 120, updatedAt: DateTime(2026, 9, 25)));
+
+      expect(merge(local, cloud).settings.dailyCarbGoal, 120);
+    });
+
+    test('migrated goals still beat a device that never set any', () {
+      final local = state(
+          settings: SyncSettings(
+              dailyCarbGoal: 80, updatedAt: migratedSettingsStamp));
+      final cloud = state(
+          settings:
+              SyncSettings(updatedAt: DateTime.fromMillisecondsSinceEpoch(0)));
+
+      expect(merge(local, cloud).settings.dailyCarbGoal, 80);
     });
 
     test('on an exact tie the cloud settings win and nothing is pushed back',
