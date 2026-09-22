@@ -223,10 +223,13 @@ async function lookupFoods(sanitized, apiKey, { fetchImpl = fetch, sleep = (ms) 
       const mapped = items.map((item) => {
         const parseNum = (val) => {
           if (typeof val === "string") {
-            // Keep the sign: without it "-5" parses as 5, inventing a value
-            // rather than reporting none.
-            const m = val.match(/-?\d+\.?\d*/);
-            val = m ? parseFloat(m[0]) : null;
+            // Only a plain number, optionally with a gram unit: "12" or "12 g".
+            // Anything else ("about 12", "1 serving = 45 g", "12-15 g") is a
+            // value nobody stated, and mining a number out of it reports one
+            // the source never gave. Unknown is the honest answer, and the app
+            // asks the user for the number instead.
+            const m = val.match(/^\s*(-?\d+(?:\.\d+)?)\s*(?:g|gram|grams)?\s*$/i);
+            val = m ? parseFloat(m[1]) : null;
           }
           // Negative, infinite or NaN is not a nutrition value.
           return Number.isFinite(val) && val >= 0 ? val : null;

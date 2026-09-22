@@ -268,12 +268,25 @@ test("a carb value written as a negative string is unknown, not positive", async
   assert.equal(item.carbs, null);
 });
 
-test("a carb value buried in text is still read", async () => {
-  const [about] = await lookUp('[{"name":"Stew","carbs":"about 12"}]');
-  const [range] = await lookUp('[{"name":"Roll","carbs":"12-15 g"}]');
+test("a plain number as a string is read, with or without a unit", async () => {
+  const [plain] = await lookUp('[{"name":"Roll","carbs":"12"}]');
+  const [grams] = await lookUp('[{"name":"Bun","carbs":"12 g"}]');
 
-  assert.equal(about.carbs, 12);
-  assert.equal(range.carbs, 12);
+  assert.equal(plain.carbs, 12);
+  assert.equal(grams.carbs, 12);
+});
+
+test("a number mined out of prose is unknown, not a carb count", async () => {
+  // "1 serving = 45 g" used to come back as 1 — a number nobody stated, which
+  // the app would have logged and counted like any other.
+  const items = await lookUp(
+    '[{"name":"Bagel","carbs":"1 serving = 45 g"},' +
+    '{"name":"Rice","carbs":"2/3 cup: 30g"},' +
+    '{"name":"Stew","carbs":"about 12"},' +
+    '{"name":"Roll","carbs":"12-15 g"}]'
+  );
+
+  assert.deepEqual(items.map((i) => i.carbs), [null, null, null, null]);
 });
 
 test("a failed Perplexity call does not log its error body", async () => {
