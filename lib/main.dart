@@ -758,6 +758,7 @@ class CarbTrackerHomeState extends State<CarbTrackerHome>
 
   // Test hooks — allow tests to drive state without relying on off-screen UI.
   void resetTotalForTest() => _resetTotal();
+  void addSavedFoodForTest(FoodItem item) => _addSavedFood(item);
   Future<void> applyLookupResultForTest(LookupResult result) =>
       _applyLookupResult(result);
   void switchToSettingsForTest() => _switchToPage(1);
@@ -1396,7 +1397,21 @@ class CarbTrackerHomeState extends State<CarbTrackerHome>
     );
   }
 
-  void _addSavedFood(FoodItem item) {
+  void _addSavedFood(FoodItem saved) {
+    // A new entry, logged now — not the stored favourite itself. Reusing it
+    // would give two taps the same id and the same millisecond, and deleting
+    // one would take the other out of Apple Health with it.
+    final item = FoodItem(
+      name: saved.name,
+      carbs: saved.carbs,
+      protein: saved.protein,
+      fat: saved.fat,
+      fiber: saved.fiber,
+      calories: saved.calories,
+      details: saved.details,
+      citations: saved.citations,
+      isManualEntry: saved.isManualEntry,
+    );
     setState(() {
       foodItems.insert(0, item);
       showingDailyTotal = false;

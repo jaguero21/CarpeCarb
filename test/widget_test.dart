@@ -818,4 +818,38 @@ void main() {
       expect(carbField(), findsNothing);
     });
   });
+  group('saved foods', () {
+    testWidgets('adding the same favourite twice logs two distinct entries',
+        (WidgetTester tester) async {
+      stubHomeWidget();
+      stubCloudSync();
+      SharedPreferences.setMockInitialValues({'last_save_date': todayKey()});
+
+      await tester.pumpWidget(const CarbTrackerApp());
+      await tester.pumpAndSettle();
+
+      final state = tester.state<CarbTrackerHomeState>(
+        find.byType(CarbTrackerHome),
+      );
+      final favourite = FoodItem(
+        id: 'saved-1',
+        name: 'Bagel',
+        carbs: 48,
+        loggedAt: DateTime(2026, 9, 1, 8),
+      );
+
+      state.addSavedFoodForTest(favourite);
+      await tester.pump(const Duration(milliseconds: 50));
+      state.addSavedFoodForTest(favourite);
+      await tester.pump(const Duration(milliseconds: 50));
+
+      expect(state.foodItems, hasLength(2));
+      // Same id or millisecond would make one delete remove both from Health.
+      expect(state.foodItems[0].id, isNot(state.foodItems[1].id));
+      expect(state.foodItems[0].id, isNot('saved-1'));
+      expect(state.foodItems[0].loggedAt.millisecondsSinceEpoch,
+          isNot(state.foodItems[1].loggedAt.millisecondsSinceEpoch));
+      await tester.pump(const Duration(seconds: 2));
+    });
+  });
 }
