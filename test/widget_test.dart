@@ -43,6 +43,23 @@ void main() {
     return appGroup;
   }
 
+  /// Stands in for `SiriBufferChannel`: hands over the buffer once and
+  /// empties it, the way the native side does. Returns the buffer so a test
+  /// can put items in it.
+  List<Map<String, Object?>> stubSiriBuffer() {
+    const channel = MethodChannel('com.carpecarb/siribuffer');
+    final buffer = <Map<String, Object?>>[];
+    messenger().setMockMethodCallHandler(channel, (call) async {
+      if (call.method != 'takeLoggedItems') return null;
+      if (buffer.isEmpty) return null;
+      final taken = jsonEncode(buffer);
+      buffer.clear();
+      return taken;
+    });
+    addTearDown(() => messenger().setMockMethodCallHandler(channel, null));
+    return buffer;
+  }
+
   /// Makes iCloud pulls return an empty payload, so a resume runs
   /// `_applyCloudData` (and its `_loadSavedData`) alongside the resume's own.
   void stubCloudSync() {
@@ -333,7 +350,8 @@ void main() {
     testWidgets(
         'resume after the day changed, with iCloud sync, imports Siri items into the new day',
         (WidgetTester tester) async {
-      final appGroup = stubHomeWidget();
+      stubHomeWidget();
+      final siriBuffer = stubSiriBuffer();
       stubCloudSync();
 
       SharedPreferences.setMockInitialValues({
@@ -354,13 +372,11 @@ void main() {
       // Overnight the saved list becomes yesterday's, and Siri logs a food.
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString('last_save_date', yesterdayKey());
-      appGroup['siriLoggedItems'] = jsonEncode([
-        {
-          'name': 'Toast',
-          'carbs': 15,
-          'loggedAt': DateTime.now().toUtc().toIso8601String(),
-        },
-      ]);
+      siriBuffer.add({
+        'name': 'Toast',
+        'carbs': 15,
+        'loggedAt': DateTime.now().toUtc().toIso8601String(),
+      });
 
       // Resume starts both the day reload and an iCloud pull, whose
       // _applyCloudData reloads again while the first reload is in flight.

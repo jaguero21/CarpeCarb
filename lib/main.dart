@@ -15,6 +15,7 @@ import 'services/perplexity_firebase_service.dart';
 import 'services/health_kit_service.dart';
 import 'services/premium_service.dart';
 import 'services/cloud_sync_service.dart';
+import 'services/siri_buffer_service.dart';
 import 'services/siri_import.dart';
 import 'services/sync_merge.dart';
 import 'services/sync_payload.dart';
@@ -97,6 +98,7 @@ class CarbTrackerHomeState extends State<CarbTrackerHome>
   final PremiumService _premiumService = PremiumService();
   final CloudSyncService _cloudSyncService = CloudSyncService();
   final SyncStore _syncStore = SyncStore();
+  final SiriBufferService _siriBuffer = SiriBufferService();
   bool _isManualEntryMode = false;
 
   List<FoodItem> foodItems = [];
@@ -414,8 +416,9 @@ class CarbTrackerHomeState extends State<CarbTrackerHome>
     // AnimatedList, which still counts the previous items.
     await WidgetsBinding.instance.endOfFrame;
     if (!mounted || token != _importSiriItemsToken) return;
-    final siriItemsJson = await HomeWidget.getWidgetData<String>(
-        StorageKeys.widgetSiriLoggedItems);
+    // Taken and cleared in one native step: a Siri log that lands while this
+    // runs is kept for the next import instead of being overwritten.
+    final siriItemsJson = await _siriBuffer.takeLoggedItems();
     if (!mounted || token != _importSiriItemsToken) return;
     if (siriItemsJson == null) return;
 
@@ -435,9 +438,6 @@ class CarbTrackerHomeState extends State<CarbTrackerHome>
             ?.insertItem(0, duration: const Duration(milliseconds: 400));
       }
 
-      // Clear the Siri buffer so we don't re-import on next launch
-      await HomeWidget.saveWidgetData<String?>(
-          StorageKeys.widgetSiriLoggedItems, null);
       await _saveData();
       await _updateWidget();
 
