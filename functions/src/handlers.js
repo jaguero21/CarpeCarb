@@ -1,5 +1,5 @@
 const { HttpsError } = require("firebase-functions/v2/https");
-const { sanitizeFoodInput, isNotBilled } = require("./perplexity");
+const { sanitizeFoodInput, isNotBilled, splitUnknownCarbs, listNames } = require("./perplexity");
 const { parseTzOffset } = require("./quota");
 const { PREMIUM_PRODUCT_IDS, isActiveTransaction } = require("./appStore");
 
@@ -31,6 +31,8 @@ function createHandlers(deps) {
     const data = request.data || {};
     const sanitized = sanitizeFoodInput(data.input);
     const tzOffsetMin = parseTzOffset(data.tzOffsetMinutes);
+    // Sent by builds that know a food can come back with no carb value.
+    const acceptsUnknownCarbs = data.acceptsUnknownCarbs === true;
 
     // Fail closed: if premium status or the quota can't be checked, don't
     // spend a Perplexity call.
@@ -61,8 +63,21 @@ function createHandlers(deps) {
       throw err;
     }
 
+    // Older builds turn a missing carb value into 0 g, the very bug this
+    // replaces, so they never see one: they get the foods that were found, or
+    // an error naming the ones that weren't. Thrown after the lookup, outside
+    // the refund above, so it counts like any other call Perplexity billed.
+    let items = result.items;
+    if (!acceptsUnknownCarbs) {
+      const { known, unknownNames } = splitUnknownCarbs(items);
+      if (known.length === 0) {
+        throw new HttpsError("not-found", `Couldn't find carbs for ${listNames(unknownNames)}.`);
+      }
+      items = known;
+    }
+
     return {
-      items: result.items,
+      items,
       citations: result.citations,
       quota: premium
         ? { premium: true, used: null, limit: null, dayKey: null }
