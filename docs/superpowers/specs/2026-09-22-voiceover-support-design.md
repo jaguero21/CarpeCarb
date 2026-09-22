@@ -1,0 +1,128 @@
+# VoiceOver support (review #14) — design
+
+Date: 2026-09-22 · Status: approved design, pending implementation plan
+
+## Problem
+
+From the 2026-09-18 code review, re-checked against the code at `1cc4cc8`:
+
+- **There is no accessibility markup at all.** `grep -rn "Semantics(\|semanticLabel" lib/`
+  returns nothing.
+- **A VoiceOver user cannot delete a logged food or save one as a favourite.**
+  Both actions exist only as swipes on a `Dismissible` (`lib/main.dart:2019-2060`):
+  start-to-end saves to the Food list, end-to-start deletes. Flutter's
+  `Dismissible` does not expose either as an accessibility action, and VoiceOver's
+  own swipe gestures are bound to navigation, so there is no way to reach them.
+  The only other route to a food is a long press, which opens a details dialog
+  whose one action is "Close" (`lib/main.dart:936`).
+- **Custom controls announce as plain text.** The Auto/Manual toggle pills
+  (`lib/main.dart:855`), the "Reset" link (`:1963`) and Settings' "Clear All"
+  (`lib/screens/settings_page.dart:713`) are bare `GestureDetector`s: VoiceOver
+  does not call them buttons, and the toggle never says which mode is selected.
+- **The app's central number is silent.** The daily `LinearProgressIndicator`
+  (`lib/main.dart:1763`) carries no label or value.
+- **Icon-only status is unlabelled.** The cloud sync indicator (`:1470-1490`) is
+  an icon, or a bare spinner while syncing.
+- **The widget's goal ring is undescribed** — two decorative `Circle`s
+  (`ios/CarbWiseWidget/CarbWiseWidget.swift:138-150`).
+
+This matters more here than in most apps: the user base for a carb tracker skews
+toward higher accessibility need, and the two unreachable actions are the two
+that correct a mistake in logged health data.
+
+## Facts the design relies on
+
+- Measured with Flutter's own guideline matchers against the home screen: the app
+  **passes** `iOSTapTargetGuideline` and `labeledTapTargetGuideline` today. No
+  control needs resizing or relabelling for this work.
+- The same probe **fails** `textContrastGuideline`, on the disclaimer dialog's
+  body text. That belongs to the deferred contrast work (see Non-goals).
+- A food row renders `FoodItemCard` (`lib/widgets/food_item_card.dart`), which
+  already takes `onTap`/`onLongPress`; the row's time string comes from
+  `formatTime` (`lib/utils/date_format.dart`).
+- Deleting a food already offers undo through `removeItem`, from any caller.
+
+## Scope
+
+In: VoiceOver correctness — labels, roles and state for the controls above; a
+reachable delete and save; the daily progress value; the sync status; the widget
+ring.
+
+Out: Dynamic Type layout, colour contrast, the Watch app, and any visual change
+to the existing controls.
+
+## Part 1 — the food list
+
+**Each row is one element.** The card's name, time and carb number are merged
+into a single VoiceOver stop reading `"<name>, <carbs> grams of carbs, logged
+<time>"` — e.g. "Apple, 25 grams of carbs, logged 8:30 AM" — with the hint
+"Double tap for details". Today those are three separate stops and the number is
+announced without units.
+
+**The swipes gain equivalents, and keep working.**
+
+- Two custom accessibility actions on the row, "Delete" and "Save to Food list",
+  which is where an iOS user looks for per-row actions (the Actions rotor).
+- The same two as buttons in the long-press details dialog, which currently only
+  offers "Close". That gives a route to anyone who cannot swipe, whether or not
+  they use VoiceOver, and makes the actions discoverable rather than hidden
+  behind a gesture.
+- Swipe behaviour, the confirmation haptics and the existing undo are unchanged,
+  and undo is available from every route.
+
+## Part 2 — controls, numbers and status
+
+- **Auto/Manual toggle** (`lib/main.dart:855`): announced as a mutually exclusive
+  pair of buttons, so VoiceOver reports which is selected. The visible text stays
+  the label, so the two cannot drift apart.
+- **"Reset"** (`:1963`) and **"Clear All"** (`settings_page.dart:713`): announced
+  as buttons. Both already confirm before acting.
+- **Daily progress** (`:1763`): labelled "Carbs today" with the value
+  `"<total> of <goal> grams"`, or `"<total> grams, no goal set"` when no goal is
+  set.
+- **Cloud sync indicator** (`:1470`): "Synced", "Syncing", "Sync failed". The
+  idle state stays silent, as it renders nothing.
+- **Widget goal ring** (`CarbWiseWidget.swift:138`): the ring becomes one element
+  labelled "Carbs today" with the value `"<total> of <goal> grams"`, and the
+  decorative circles are hidden so VoiceOver does not stop on them.
+
+## Part 3 — testing
+
+**In `test/`:**
+
+- The row's announced sentence, its hint, and both custom actions, via
+  `containsSemantics`.
+- The custom actions are **performed** through the semantics owner, not merely
+  asserted to exist: "Delete" must remove the food and "Save to Food list" must
+  save it. An advertised action that does nothing is worse than none.
+- The toggle's selected state moves between the pills; the progress value with a
+  goal and without one; the three sync states.
+- The details dialog's new Delete and Save buttons.
+- `iOSTapTargetGuideline` and `labeledTapTargetGuideline` as regression guards.
+  Both pass today; the point is that they keep passing.
+
+**By hand, on a device, with VoiceOver on** — the parts CI cannot judge:
+
+- Swipe through the home screen: every stop says something useful, in a sensible
+  order, and nothing is announced twice.
+- Delete a food from the Actions rotor; undo from the snackbar.
+- Save a food to the Food list from the rotor.
+- The toggle announces the selected mode; the progress bar announces the total.
+- The Home Screen widget's ring is reachable and reads its value.
+
+The widget's ring cannot be covered by `swift test` — SwiftUI accessibility isn't
+reachable from the test target — so it is verified only on the device.
+
+## Non-goals, recorded
+
+- **Dynamic Type**: layouts are not audited at accessibility text sizes here.
+- **Contrast**: the probe's `textContrastGuideline` failure on the disclaimer
+  dialog's body text is real and is left for that batch, rather than being fixed
+  quietly under a VoiceOver heading.
+- **The Watch app** is untouched, as in every batch since it was found broken.
+
+## Risk
+
+Nothing here changes data, storage or sync; it is labels, roles and two new
+buttons. The one real risk is over-merging a row's semantics and hiding content
+that used to be reachable, which the announced-sentence tests pin down.
