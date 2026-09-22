@@ -540,6 +540,99 @@ void main() {
       await tester.pumpAndSettle();
     }
 
+    /// Answers pulls with [payload], records what the app pushes, and reports
+    /// [pushSucceeds] back the way the native side does.
+    List<Map<Object?, Object?>> stubCloudSyncRecording({
+      Map<String, Object?>? payload,
+      bool pushSucceeds = true,
+    }) {
+      const channel = MethodChannel('com.carpecarb/cloudsync');
+      final pushes = <Map<Object?, Object?>>[];
+      messenger().setMockMethodCallHandler(channel, (call) async {
+        switch (call.method) {
+          case 'pullFromCloud':
+            return payload;
+          case 'pushToCloud':
+            pushes.add((call.arguments as Map).cast<Object?, Object?>());
+            return pushSucceeds;
+        }
+        return null;
+      });
+      addTearDown(() => messenger().setMockMethodCallHandler(channel, null));
+      return pushes;
+    }
+
+    testWidgets('deleting an item pushes the delete, not just the shorter list',
+        (WidgetTester tester) async {
+      stubHomeWidget();
+      seedThreeItemsToday();
+      final pushes = stubCloudSyncRecording();
+
+      await tester.pumpWidget(const CarbTrackerApp());
+      await tester.pumpAndSettle();
+
+      final state = tester.state<CarbTrackerHomeState>(
+        find.byType(CarbTrackerHome),
+      );
+      state.removeItem(0);
+      await tester.pumpAndSettle();
+
+      // The marker has to be recorded before the save that pushes, or the
+      // other device's copy merges straight back in.
+      expect(pushes, isNotEmpty);
+      expect(pushes.last['food_items_deleted'], contains('a'));
+      await tester.pump(const Duration(seconds: 2));
+    });
+
+    testWidgets('a push iCloud refused does not advance the sync timestamp',
+        (WidgetTester tester) async {
+      stubHomeWidget();
+      seedThreeItemsToday();
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('cloud_last_modified', 'before-the-failed-push');
+      stubCloudSyncRecording(pushSucceeds: false);
+
+      await tester.pumpWidget(const CarbTrackerApp());
+      await tester.pumpAndSettle();
+
+      final state = tester.state<CarbTrackerHomeState>(
+        find.byType(CarbTrackerHome),
+      );
+      state.removeItem(0);
+      await tester.pumpAndSettle();
+
+      // Left alone, so the next change retries instead of assuming the other
+      // device already has this one.
+      expect(
+          (await SharedPreferences.getInstance())
+              .getString('cloud_last_modified'),
+          'before-the-failed-push');
+    });
+
+    testWidgets('a push that landed does advance the sync timestamp',
+        (WidgetTester tester) async {
+      stubHomeWidget();
+      seedThreeItemsToday();
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('cloud_last_modified', 'before-the-push');
+      stubCloudSyncRecording(pushSucceeds: true);
+
+      await tester.pumpWidget(const CarbTrackerApp());
+      await tester.pumpAndSettle();
+
+      final state = tester.state<CarbTrackerHomeState>(
+        find.byType(CarbTrackerHome),
+      );
+      state.removeItem(0);
+      await tester.pumpAndSettle();
+
+      expect(
+          (await SharedPreferences.getInstance())
+              .getString('cloud_last_modified'),
+          isNot('before-the-push'));
+      await tester.pump(const Duration(seconds: 2));
+    });
+
     testWidgets(
         'a remote delete shortens the list on screen without a range error',
         (WidgetTester tester) async {

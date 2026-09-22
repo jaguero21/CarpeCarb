@@ -98,6 +98,21 @@ class CarbTrackerHomeState extends State<CarbTrackerHome>
   final PremiumService _premiumService = PremiumService();
   final CloudSyncService _cloudSyncService = CloudSyncService();
   final SyncStore _syncStore = SyncStore();
+
+  /// Runs the read-modify-write cycles that touch stored state one at a time.
+  /// A merge spans several awaits between reading and writing; a local save
+  /// landing in that gap used to be overwritten by the merge's write, and the
+  /// item the user had just added disappeared from the list until a later
+  /// merge brought it back. Remote changes only started arriving while the app
+  /// is open once live sync was fixed, so this window is new.
+  Future<void> _storeWrites = Future<void>.value();
+
+  Future<T> _serialized<T>(Future<T> Function() action) {
+    final result = _storeWrites.then((_) => action());
+    // Keep the queue alive even if one step fails.
+    _storeWrites = result.then((_) {}, onError: (_) {});
+    return result;
+  }
   final SiriBufferService _siriBuffer = SiriBufferService();
   bool _isManualEntryMode = false;
 
@@ -220,6 +235,9 @@ class CarbTrackerHomeState extends State<CarbTrackerHome>
   }
 
   Future<void> _initCloudSync() async {
+    // Before the first merge: goals set on an older build have no timestamp,
+    // which reads as "never set here" and loses to a device that has none.
+    await _syncStore.stampExistingSettings();
     await _cloudSyncService.startListening(_onRemoteCloudChange);
     final pulled = await _cloudSyncService.pullFromCloud();
     // Merged unconditionally: merging is safe to repeat, and the timestamp
@@ -263,16 +281,25 @@ class CarbTrackerHomeState extends State<CarbTrackerHome>
   Future<void> _applyCloudData(Map<String, dynamic> data) async {
     final prefs = await SharedPreferences.getInstance();
     final cloud = decodeSyncPayload(data);
-    final local = await _syncStore.read(_todayString());
-    final merged =
-        mergeSyncState(local: local, cloud: cloud, now: DateTime.now());
-    await _syncStore.write(merged);
+    final merged = await _serialized(() async {
+      final local = await _syncStore.read(_todayString());
+      final state =
+          mergeSyncState(local: local, cloud: cloud, now: DateTime.now());
+      await _syncStore.write(state);
+      return state;
+    });
 
+    // Kept as a record of what this device last saw, for support and for the
+    // sync indicator; the decision to pull is the native side's, which holds
+    // its own copy. Nothing in Dart reads this back.
     if (data[StorageKeys.cloudLastModified] is String) {
       await prefs.setString(StorageKeys.cloudLastModified,
           data[StorageKeys.cloudLastModified] as String);
     }
 
+    // The Favourites screen keeps its own copy; without this it would write
+    // its pre-merge list back over the merged one when the user edits there.
+    if (mounted) setState(() => _favoritesVersion++);
     if (mounted) await _loadSavedData();
 
     // Push back only what the cloud is missing. When both sides already agree
@@ -285,14 +312,21 @@ class CarbTrackerHomeState extends State<CarbTrackerHome>
   void didChangeAppLifecycleState(AppLifecycleState state) {
     super.didChangeAppLifecycleState(state);
     if (state == AppLifecycleState.resumed) {
-      _onResumed();
-      if (_premiumService.isCloudSyncEnabled) {
+      if (!_premiumService.isCloudSyncEnabled) {
+        _onResumed();
+        _cloudSyncService.stopListening();
+        return;
+      }
+      // Merge only once the resume has dealt with a new day. The other way
+      // round, the merge's write can land before the new-day branch clears
+      // yesterday, taking today's merged items with it — and the push-back
+      // then sends an empty today to the other device.
+      _onResumed().then((_) {
+        if (!mounted) return;
         _cloudSyncService.pullFromCloud().then((pulled) {
           if (pulled != null && mounted) _applyCloudData(pulled);
         });
-      } else {
-        _cloudSyncService.stopListening();
-      }
+      });
     }
   }
 
@@ -454,16 +488,21 @@ class CarbTrackerHomeState extends State<CarbTrackerHome>
   }
 
   Future<void> _saveData() async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setDouble(StorageKeys.totalCarbs, totalCarbs);
-    if (dailyCarbGoal != null) {
-      await prefs.setDouble(StorageKeys.dailyCarbGoal, dailyCarbGoal!);
-    } else {
-      await prefs.remove(StorageKeys.dailyCarbGoal);
-    }
-    final itemsJson = jsonEncode(foodItems.map((f) => f.toJson()).toList());
-    await prefs.setString(StorageKeys.foodItems, itemsJson);
-    await prefs.setString(StorageKeys.lastSaveDate, _todayString());
+    // Queued behind any merge in flight, so the two can't overwrite each
+    // other's writes. The push happens afterwards, outside the queue, so a
+    // slow channel call doesn't hold up the next save.
+    await _serialized(() async {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setDouble(StorageKeys.totalCarbs, totalCarbs);
+      if (dailyCarbGoal != null) {
+        await prefs.setDouble(StorageKeys.dailyCarbGoal, dailyCarbGoal!);
+      } else {
+        await prefs.remove(StorageKeys.dailyCarbGoal);
+      }
+      final itemsJson = jsonEncode(foodItems.map((f) => f.toJson()).toList());
+      await prefs.setString(StorageKeys.foodItems, itemsJson);
+      await prefs.setString(StorageKeys.lastSaveDate, _todayString());
+    });
 
     await _pushLocalState();
   }

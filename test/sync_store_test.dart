@@ -192,6 +192,33 @@ void main() {
       expect(changes['apple']!.deleted, isTrue);
     });
 
+    test('upgrading stamps goals this device already had', () async {
+      SharedPreferences.setMockInitialValues({StorageKeys.dailyCarbGoal: 100.0});
+
+      await store.stampExistingSettings();
+
+      // Without this they read as "never set here" and a device with no goals
+      // at all would look newer and wipe them.
+      expect((await store.read(today)).settings.updatedAt, clock);
+    });
+
+    test('a device with no goals keeps adopting the cloud\'s', () async {
+      await store.stampExistingSettings();
+
+      expect((await store.read(today)).settings.updatedAt, isNull);
+    });
+
+    test('a real change is never overwritten by the migration', () async {
+      SharedPreferences.setMockInitialValues({
+        StorageKeys.dailyCarbGoal: 100.0,
+        StorageKeys.settingsUpdatedAt: loggedAt.millisecondsSinceEpoch,
+      });
+
+      await store.stampExistingSettings();
+
+      expect((await store.read(today)).settings.updatedAt, loggedAt);
+    });
+
     test('markSettingsChanged stamps now', () async {
       await store.markSettingsChanged();
       expect((await store.read(today)).settings.updatedAt, clock);

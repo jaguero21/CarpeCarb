@@ -71,13 +71,20 @@ void main() {
       expect(second.items.map((i) => i.id), ['a']);
     });
 
-    test('undo (dropping the marker) lets the item come back', () {
-      final merged = merge(
-        state(items: [item('a', 'Apple'), item('b', 'Bagel')]),
-        state(items: [item('a', 'Apple'), item('b', 'Bagel')]),
+    test('a marker keeps the item out; dropping it on undo lets it back', () {
+      final deleted = merge(
+        state(items: [item('a', 'Apple')], deleted: {'a'}),
+        state(items: [item('a', 'Apple')]),
       );
+      expect(deleted.items, isEmpty, reason: 'the marker should win');
 
-      expect(merged.items.map((i) => i.id), ['a', 'b']);
+      // Undo drops the marker here and pushes, so the cloud copy stops
+      // carrying it too.
+      final restored = merge(
+        state(items: [item('a', 'Apple')]),
+        state(items: [item('a', 'Apple')]),
+      );
+      expect(restored.items.map((i) => i.id), ['a']);
     });
 
     test('reset-today clears both devices', () {
@@ -251,6 +258,46 @@ void main() {
   });
 
   group('convergence', () {
+    test('an expired delete marker does not resurrect the favourite', () {
+      // The other device has been away long enough for the marker to expire
+      // and still carries its copy.
+      final local = state(changes: {
+        'bagel': change(now.subtract(const Duration(days: 61)), deleted: true)
+      });
+      final cloud = state(favorites: [item('f1', 'Bagel')]);
+
+      final once = merge(local, cloud);
+      final twice = merge(once, cloud);
+
+      expect(once.favorites, isEmpty);
+      expect(twice.favorites, isEmpty,
+          reason: 'dropping the marker while a copy is still around undoes the delete');
+    });
+
+    test('a day-key mismatch alone is not worth pushing', () {
+      // One device has rolled over to a new day (or is in another time zone).
+      // Each device would otherwise read the other's day as a difference and
+      // answer its push forever.
+      final local = state(items: [item('a', 'Apple')]);
+      final cloud = state(dayKey: '2026-09-19', items: [item('b', 'Bagel')]);
+
+      final merged = merge(local, cloud);
+
+      expect(syncStateDiffers(merged, cloud), isFalse);
+    });
+
+    test('a favourite change still pushes when the days differ', () {
+      final local = state(
+        favorites: [item('f1', 'Bagel')],
+        changes: {'bagel': change(now)},
+      );
+      final cloud = state(dayKey: '2026-09-19');
+
+      final merged = merge(local, cloud);
+
+      expect(syncStateDiffers(merged, cloud), isTrue);
+    });
+
     test('merging again changes nothing, so devices stop pushing', () {
       final local = state(
         items: [item('a', 'Apple')],
@@ -261,8 +308,10 @@ void main() {
       );
       final cloud = state(items: [item('b', 'Bagel', at: DateTime(2026, 9, 20, 9))]);
 
+      // Merge the same cloud payload again — merging the result with itself
+      // would pass no matter what the merge did.
       final first = merge(local, cloud);
-      final second = merge(first, first);
+      final second = merge(first, cloud);
 
       expect(syncStateDiffers(second, first), isFalse);
     });

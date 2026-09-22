@@ -146,6 +146,33 @@ no I/O so it can be tested directly. `main.dart` calls it.
   read is skipped rather than wiping its local counterpart.
 - A Siri buffer that can't be parsed is logged and dropped.
 
+## Post-review amendments
+
+Found by the whole-branch review and fixed before merge; each changes what an
+earlier section of this spec says, so the amendment wins.
+
+- **A favourite's delete marker is kept while either side still holds the
+  favourite**, not pruned purely on age. Dropping it at 60 days while the other
+  device's copy is still in the payload let that copy win the next merge, so the
+  delete undid itself — merging the same payload twice differed from merging it
+  once.
+- **A day-key mismatch is not a reason to push back.** `syncStateDiffers`
+  compares only the day-independent sections when the two sides are on different
+  days. Otherwise each device reads the other's day as a difference and answers
+  its push forever — two devices in different time zones, or one that hasn't
+  rolled over yet. Local changes still push on their own.
+- **Goals from an older build are stamped once on upgrade**
+  (`SyncStore.stampExistingSettings`). "Never changed here" and "changed before
+  this build existed" were indistinguishable, so a device that had never set a
+  goal could look newer and wipe a device that had — the third bullet of #5,
+  surviving on the upgrade path this spec's Migration section claimed to cover.
+- **The resume merge waits for the new-day handling** instead of racing it, as
+  Part 3 always intended.
+- **Stored-state read-modify-write cycles are serialized.** A merge spans
+  several awaits; a local save landing in the gap was overwritten by the merge's
+  write, and the item the user had just added vanished from the list. Live sync
+  is what made this window reachable.
+
 ## Testing
 
 - **`test/sync_merge_test.dart`** (the pure module, where the risk is): a delete

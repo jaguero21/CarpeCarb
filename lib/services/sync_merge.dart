@@ -211,10 +211,16 @@ SyncState mergeSyncState({
     }
 
     if (winner.deleted) {
-      // Keep the delete around long enough for a device that has been away to
-      // see it, then forget it. At exactly the TTL it is not yet older than
+      // Keep the delete around long enough for a device that has been away
+      // to see it, then forget it. At exactly the TTL it is not yet older than
       // the TTL, so it survives one more merge.
-      if (now.difference(winner.updatedAt) <= tombstoneTtl) {
+      //
+      // Never forget it while either side still holds the favourite, though:
+      // dropping the marker with a copy still in the payload lets that copy
+      // win the next merge and the delete undoes itself.
+      if (now.difference(winner.updatedAt) <= tombstoneTtl ||
+          localItems.containsKey(key) ||
+          cloudItems.containsKey(key)) {
         changes[key] = winner;
       }
       continue;
@@ -272,5 +278,24 @@ String canonicalSyncJson(SyncState state) {
 }
 
 /// True when [a] holds anything [b] doesn't (so the merge is worth pushing).
-bool syncStateDiffers(SyncState a, SyncState b) =>
-    canonicalSyncJson(a) != canonicalSyncJson(b);
+bool syncStateDiffers(SyncState a, SyncState b) {
+  if (a.dayKey != b.dayKey) {
+    // Today's items aren't comparable across two different days: each device
+    // would read the other's day as something to push, and answering each
+    // other's pushes never ends (two devices in different time zones, or one
+    // that hasn't rolled over yet). Only what doesn't belong to a day counts.
+    // A local change still pushes on its own.
+    return canonicalSyncJson(_withoutDay(a)) != canonicalSyncJson(_withoutDay(b));
+  }
+  return canonicalSyncJson(a) != canonicalSyncJson(b);
+}
+
+/// The parts of [state] that don't belong to a particular day.
+SyncState _withoutDay(SyncState state) => SyncState(
+      dayKey: '',
+      items: const [],
+      deletedItemIds: const {},
+      favorites: state.favorites,
+      favoriteChanges: state.favoriteChanges,
+      settings: state.settings,
+    );

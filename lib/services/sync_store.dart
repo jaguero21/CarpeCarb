@@ -110,6 +110,30 @@ class SyncStore {
     }
   }
 
+  /// One-time migration for a device upgrading to this build: it already has
+  /// goals but no record of when they were set, which reads as "never set
+  /// here" and loses to any other device — including one that has no goals at
+  /// all, whose empty settings would then wipe these. Stamp them once so they
+  /// count as real.
+  ///
+  /// Does nothing once a timestamp exists, and nothing on a device that has no
+  /// goals to protect (which must keep adopting the cloud's on a fresh install).
+  Future<void> stampExistingSettings() async {
+    final prefs = await _prefs;
+    if (prefs.containsKey(StorageKeys.settingsUpdatedAt)) return;
+    final hasSettings = const [
+          StorageKeys.dailyCarbGoal,
+          StorageKeys.proteinGoal,
+          StorageKeys.fatGoal,
+          StorageKeys.fiberGoal,
+          StorageKeys.caloriesGoal,
+        ].any((key) => (prefs.getDouble(key) ?? 0) > 0) ||
+        (prefs.getInt(StorageKeys.dailyResetHour) ?? 0) > 0;
+    if (!hasSettings) return;
+    await prefs.setInt(
+        StorageKeys.settingsUpdatedAt, _clock().millisecondsSinceEpoch);
+  }
+
   /// Records that the user changed goals or the reset hour here, so this
   /// device's settings win over older ones from another device.
   Future<void> markSettingsChanged() async {
