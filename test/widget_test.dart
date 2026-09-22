@@ -438,4 +438,138 @@ void main() {
       expect(state.foodItems, isEmpty);
     });
   });
+
+  group('iCloud sync', () {
+    /// Three items today, of which the cloud says two were deleted on the
+    /// other device.
+    void seedThreeItemsToday() {
+      SharedPreferences.setMockInitialValues({
+        'food_items': jsonEncode([
+          {
+            'id': 'a',
+            'name': 'Apple',
+            'carbs': 25.0,
+            'loggedAt': '2026-03-09T10:00:00.000',
+            'category': 'snack'
+          },
+          {
+            'id': 'b',
+            'name': 'Bagel',
+            'carbs': 48.0,
+            'loggedAt': '2026-03-09T09:00:00.000',
+            'category': 'breakfast'
+          },
+          {
+            'id': 'c',
+            'name': 'Cereal',
+            'carbs': 30.0,
+            'loggedAt': '2026-03-09T08:00:00.000',
+            'category': 'breakfast'
+          },
+        ]),
+        'last_save_date': todayKey(),
+      });
+    }
+
+    Map<String, Object?> cloudPayloadDeleting(List<String> ids) => {
+          'food_items': jsonEncode([
+            {
+              'id': 'a',
+              'name': 'Apple',
+              'carbs': 25.0,
+              'loggedAt': '2026-03-09T10:00:00.000',
+              'category': 'snack'
+            },
+            {
+              'id': 'b',
+              'name': 'Bagel',
+              'carbs': 48.0,
+              'loggedAt': '2026-03-09T09:00:00.000',
+              'category': 'breakfast'
+            },
+            {
+              'id': 'c',
+              'name': 'Cereal',
+              'carbs': 30.0,
+              'loggedAt': '2026-03-09T08:00:00.000',
+              'category': 'breakfast'
+            },
+          ]),
+          'food_items_deleted': jsonEncode(ids),
+          'last_save_date': todayKey(),
+          'cloud_last_modified': DateTime.now().toIso8601String(),
+        };
+
+    /// Answers pulls with [payload]; pushes report failure, which the app
+    /// shows as a failed sync and is not what these tests are about.
+    void stubCloudSyncReturning(Map<String, Object?>? payload) {
+      const channel = MethodChannel('com.carpecarb/cloudsync');
+      messenger().setMockMethodCallHandler(channel,
+          (call) async => call.method == 'pullFromCloud' ? payload : false);
+      addTearDown(() => messenger().setMockMethodCallHandler(channel, null));
+    }
+
+    /// Delivers a remote change the way the native observer does, so the app
+    /// merges it while the list is on screen.
+    Future<void> sendRemoteChange(
+        WidgetTester tester, Map<String, Object?> payload) async {
+      await messenger().handlePlatformMessage(
+        'com.carpecarb/cloudsync',
+        const StandardMethodCodec()
+            .encodeMethodCall(MethodCall('onRemoteChange', payload)),
+        (_) {},
+      );
+      // The service debounces remote changes by 300ms.
+      await tester.pump(const Duration(milliseconds: 400));
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets(
+        'a remote delete shortens the list on screen without a range error',
+        (WidgetTester tester) async {
+      stubHomeWidget();
+      seedThreeItemsToday();
+      // Nothing in the cloud at launch, so all three items render first —
+      // which is what leaves the AnimatedList counting them.
+      stubCloudSyncReturning(null);
+
+      await tester.pumpWidget(const CarbTrackerApp());
+      await tester.pumpAndSettle();
+
+      final state = tester.state<CarbTrackerHomeState>(
+        find.byType(CarbTrackerHome),
+      );
+      expect(state.foodItems, hasLength(3));
+      expect(find.text('Bagel'), findsOneWidget);
+
+      await sendRemoteChange(tester, cloudPayloadDeleting(['b', 'c']));
+
+      expect(state.foodItems.map((f) => f.name), ['Apple']);
+      expect(find.text('Bagel'), findsNothing);
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('a remote delete survives the next merge',
+        (WidgetTester tester) async {
+      stubHomeWidget();
+      seedThreeItemsToday();
+      stubCloudSyncReturning(cloudPayloadDeleting(['b', 'c']));
+
+      await tester.pumpWidget(const CarbTrackerApp());
+      await tester.pumpAndSettle();
+
+      final state = tester.state<CarbTrackerHomeState>(
+        find.byType(CarbTrackerHome),
+      );
+      expect(state.foodItems, hasLength(1));
+
+      // A second pull of the same payload — the deleted items are still gone
+      // rather than merging back in.
+      state.didChangeAppLifecycleState(AppLifecycleState.resumed);
+      await tester.pumpAndSettle();
+
+      expect(state.foodItems.map((f) => f.name), ['Apple']);
+      expect(tester.takeException(), isNull);
+    });
+  });
 }

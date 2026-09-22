@@ -16,6 +16,9 @@ import 'services/health_kit_service.dart';
 import 'services/premium_service.dart';
 import 'services/cloud_sync_service.dart';
 import 'services/siri_import.dart';
+import 'services/sync_merge.dart';
+import 'services/sync_payload.dart';
+import 'services/sync_store.dart';
 import 'models/food_item.dart';
 import 'models/server_quota.dart';
 import 'screens/settings_page.dart';
@@ -87,12 +90,13 @@ class CarbTrackerHomeState extends State<CarbTrackerHome>
   final TextEditingController _carbController = TextEditingController();
   final FocusNode _foodFocusNode = FocusNode();
   final FocusNode _carbFocusNode = FocusNode();
-  final GlobalKey<AnimatedListState> _listKey = GlobalKey<AnimatedListState>();
+  GlobalKey<AnimatedListState> _listKey = GlobalKey<AnimatedListState>();
   final PerplexityFirebaseService _perplexityService =
       PerplexityFirebaseService();
   final HealthKitService _healthKitService = HealthKitService();
   final PremiumService _premiumService = PremiumService();
   final CloudSyncService _cloudSyncService = CloudSyncService();
+  final SyncStore _syncStore = SyncStore();
   bool _isManualEntryMode = false;
 
   List<FoodItem> foodItems = [];
@@ -216,151 +220,63 @@ class CarbTrackerHomeState extends State<CarbTrackerHome>
   Future<void> _initCloudSync() async {
     await _cloudSyncService.startListening(_onRemoteCloudChange);
     final pulled = await _cloudSyncService.pullFromCloud();
-    if (pulled != null && mounted) {
-      final prefs = await SharedPreferences.getInstance();
-      final cloudTs = pulled[StorageKeys.cloudLastModified] as String? ?? '';
-      final localTs = prefs.getString(StorageKeys.cloudLastModified) ?? '';
-      final cloudDt = DateTime.tryParse(cloudTs);
-      final localDt = DateTime.tryParse(localTs);
-      if (cloudDt != null && (localDt == null || cloudDt.isAfter(localDt))) {
-        await _applyCloudData(pulled);
-      }
-    }
+    // Merged unconditionally: merging is safe to repeat, and the timestamp
+    // gate this replaced skipped remote changes whenever this device had
+    // pushed more recently than the change it was ignoring.
+    if (pulled != null && mounted) await _applyCloudData(pulled);
   }
 
   void _onRemoteCloudChange(Map<String, dynamic>? data) {
     if (data != null && mounted) _applyCloudData(data);
   }
 
-  /// Builds the payload of all syncable data for a cloud push.
-  /// [timestamp] is written as [StorageKeys.cloudLastModified] so the caller
-  /// can save it locally after a successful push.
-  Map<String, dynamic> _buildSyncPayload(SharedPreferences prefs,
-      {String? timestamp}) {
-    return {
-      StorageKeys.foodItems:
-          jsonEncode(foodItems.map((f) => f.toJson()).toList()),
-      StorageKeys.savedFoods: prefs.getString(StorageKeys.savedFoods) ?? '',
-      StorageKeys.dailyCarbGoal: dailyCarbGoal ?? 0.0,
-      StorageKeys.dailyResetHour: resetHour,
-      StorageKeys.lastSaveDate: _todayString(),
-      StorageKeys.proteinGoal: proteinGoal ?? 0.0,
-      StorageKeys.fatGoal: fatGoal ?? 0.0,
-      StorageKeys.fiberGoal: fiberGoal ?? 0.0,
-      StorageKeys.caloriesGoal: caloriesGoal ?? 0.0,
-      StorageKeys.cloudLastModified:
-          timestamp ?? DateTime.now().toIso8601String(),
-    };
-  }
-
-  /// Parses a JSON string into a list of FoodItems, returning [] on any error.
-  List<FoodItem> _parseFoodItemJson(String? json) {
-    if (json == null || json.isEmpty) return [];
-    try {
-      final decoded = jsonDecode(json) as List<dynamic>;
-      return decoded
-          .map((e) => FoodItem.fromJson(e as Map<String, dynamic>))
-          .toList();
-    } catch (_) {
-      return [];
+  /// Pushes this device's state to iCloud: today's items and what was deleted
+  /// today, the favourites and when each last changed, and the settings with
+  /// the time they were last changed here. The other device needs all of it to
+  /// merge instead of resurrecting what this one deleted.
+  ///
+  /// Call after the local change has been written to SharedPreferences —
+  /// the payload is built from what is stored, not from in-memory state.
+  Future<void> _pushLocalState() async {
+    if (!_premiumService.isCloudSyncEnabled) return;
+    final prefs = await SharedPreferences.getInstance();
+    final state = await _syncStore.read(_todayString());
+    final timestamp = DateTime.now();
+    final pushed =
+        await _pushToCloud(encodeSyncPayload(state, timestamp: timestamp));
+    // Only advance the local timestamp when the push really landed, so a push
+    // that failed (iCloud signed out) is retried on the next change.
+    if (pushed) {
+      await prefs.setString(
+          StorageKeys.cloudLastModified, timestamp.toIso8601String());
     }
   }
 
-  /// Applies a cloud data payload to SharedPreferences then reloads state.
-  /// Food items and favorites are merged with local data (not replaced) so that
-  /// neither device loses its own data when syncing.
+  /// Merges a cloud payload into local data, then reloads the UI.
+  ///
+  /// The merge keeps both devices' items and favourites, honours deletes from
+  /// either side, and takes the newer settings — see
+  /// `lib/services/sync_merge.dart`. Launch, resume and a live remote change
+  /// all come through here.
   Future<void> _applyCloudData(Map<String, dynamic> data) async {
     final prefs = await SharedPreferences.getInstance();
+    final cloud = decodeSyncPayload(data);
+    final local = await _syncStore.read(_todayString());
+    final merged =
+        mergeSyncState(local: local, cloud: cloud, now: DateTime.now());
+    await _syncStore.write(merged);
 
-    // ── Goals: await each write so _loadSavedData reads current values ──
-    Future<void> applyGoal(String key, dynamic val) async {
-      if (val is num && val.toDouble() > 0) {
-        await prefs.setDouble(key, val.toDouble());
-      } else if (val is num) {
-        await prefs.remove(key);
-      }
-    }
-
-    await Future.wait([
-      applyGoal(StorageKeys.dailyCarbGoal, data[StorageKeys.dailyCarbGoal]),
-      applyGoal(StorageKeys.proteinGoal, data[StorageKeys.proteinGoal]),
-      applyGoal(StorageKeys.fatGoal, data[StorageKeys.fatGoal]),
-      applyGoal(StorageKeys.fiberGoal, data[StorageKeys.fiberGoal]),
-      applyGoal(StorageKeys.caloriesGoal, data[StorageKeys.caloriesGoal]),
-    ]);
-
-    final resetHourVal = data[StorageKeys.dailyResetHour];
-    if (resetHourVal is num) {
-      await prefs.setInt(StorageKeys.dailyResetHour, resetHourVal.toInt());
-    }
-
-    // ── Favorites: merge by name so neither device loses saved foods ──
-    if (data[StorageKeys.savedFoods] is String) {
-      final localFavs =
-          _parseFoodItemJson(prefs.getString(StorageKeys.savedFoods));
-      final cloudFavs =
-          _parseFoodItemJson(data[StorageKeys.savedFoods] as String);
-      final seen = <String>{};
-      final mergedFavs = <FoodItem>[];
-      for (final item in [...cloudFavs, ...localFavs]) {
-        if (seen.add(item.name.toLowerCase())) mergedFavs.add(item);
-      }
-      await prefs.setString(StorageKeys.savedFoods,
-          jsonEncode(mergedFavs.map((f) => f.toJson()).toList()));
-    }
-
-    // ── Food items: merge by loggedAt so both devices' logs are preserved ──
-    bool pushedMergedList = false;
-    final cloudSaveDate = data[StorageKeys.lastSaveDate] is String
-        ? data[StorageKeys.lastSaveDate] as String
-        : null;
-    final today = _todayString();
-    if (cloudSaveDate == today && data[StorageKeys.foodItems] is String) {
-      final localItems =
-          _parseFoodItemJson(prefs.getString(StorageKeys.foodItems));
-      final cloudItems =
-          _parseFoodItemJson(data[StorageKeys.foodItems] as String);
-
-      // Combine, dedup by stable item ID, sort newest-first.
-      // Cloud items take priority so the remote version wins on ID collision.
-      final seen = <String>{};
-      final merged = <FoodItem>[];
-      for (final item in [...cloudItems, ...localItems]) {
-        if (seen.add(item.id)) merged.add(item);
-      }
-      merged.sort((a, b) => b.loggedAt.compareTo(a.loggedAt));
-
-      final mergedJson = jsonEncode(merged.map((f) => f.toJson()).toList());
-      await prefs.setString(StorageKeys.foodItems, mergedJson);
-      await prefs.setString(StorageKeys.lastSaveDate, today);
-
-      // If we contributed local items the cloud didn't have, push the merged
-      // list back so the other device also receives them.
-      if (merged.length > cloudItems.length &&
-          _premiumService.isCloudSyncEnabled) {
-        final newTs = DateTime.now().toIso8601String();
-        // Build push from current local state (not incoming data) so we don't
-        // propagate stale goal/settings values that may have changed locally.
-        final pushed = await _pushToCloud({
-          ..._buildSyncPayload(prefs),
-          StorageKeys.foodItems: mergedJson,
-          StorageKeys.cloudLastModified: newTs,
-        });
-        // Only advance the local timestamp if the push succeeded. If it failed,
-        // keep the old timestamp so we retry on next sync.
-        if (pushed) {
-          await prefs.setString(StorageKeys.cloudLastModified, newTs);
-          pushedMergedList = true;
-        }
-      }
-    }
-
-    if (!pushedMergedList && data[StorageKeys.cloudLastModified] is String) {
+    if (data[StorageKeys.cloudLastModified] is String) {
       await prefs.setString(StorageKeys.cloudLastModified,
           data[StorageKeys.cloudLastModified] as String);
     }
 
     if (mounted) await _loadSavedData();
+
+    // Push back only what the cloud is missing. When both sides already agree
+    // the merge changes nothing, neither device pushes, and the pair settles
+    // instead of answering each other's pushes forever.
+    if (syncStateDiffers(merged, cloud)) await _pushLocalState();
   }
 
   @override
@@ -440,8 +356,9 @@ class CarbTrackerHomeState extends State<CarbTrackerHome>
     final isNewDay = lastSaveDate != null && lastSaveDate != _todayString();
 
     if (isNewDay) {
-      // New day — reset everything
-      await prefs.remove(StorageKeys.foodItems);
+      // New day — reset everything. The delete markers go with the items
+      // they belong to; yesterday's cloud payload is ignored by the merge.
+      await _syncStore.clearDay();
       await prefs.remove(StorageKeys.lastSaveDate);
       await prefs.setDouble(StorageKeys.totalCarbs, 0.0);
       await HomeWidget.saveWidgetData<double>(
@@ -480,6 +397,10 @@ class CarbTrackerHomeState extends State<CarbTrackerHome>
     setState(() {
       foodItems = loadedItems;
       dailyCarbGoal = savedGoal;
+      // The list is replaced wholesale, so give the AnimatedList a new key:
+      // its state still counts the items it had, and a merge that leaves
+      // fewer would make it build rows that no longer exist (RangeError).
+      _listKey = GlobalKey<AnimatedListState>();
     });
 
     // Pick up any food items logged via Siri while the app was closed
@@ -544,12 +465,7 @@ class CarbTrackerHomeState extends State<CarbTrackerHome>
     await prefs.setString(StorageKeys.foodItems, itemsJson);
     await prefs.setString(StorageKeys.lastSaveDate, _todayString());
 
-    // Push to iCloud if cloud sync is enabled
-    if (_premiumService.isCloudSyncEnabled) {
-      final ts = DateTime.now().toIso8601String();
-      final pushed = await _pushToCloud(_buildSyncPayload(prefs, timestamp: ts));
-      if (pushed) await prefs.setString(StorageKeys.cloudLastModified, ts);
-    }
+    await _pushLocalState();
   }
 
   String _todayString() => dayKey(DateTime.now(), resetHour);
@@ -798,8 +714,22 @@ class CarbTrackerHomeState extends State<CarbTrackerHome>
         _deleteFromHealthKit(item);
       }
     }
-    _saveData();
+    _saveAfterDeleting(snapshot.map((item) => item.id).toList());
     _updateWidget();
+  }
+
+  /// Records [ids] as deleted today, then saves and pushes. The marker has to
+  /// be written before the push so the payload carries it; without it the
+  /// other device's copy of the item merges straight back in.
+  Future<void> _saveAfterDeleting(List<String> ids) async {
+    await _syncStore.recordItemsDeleted(ids);
+    await _saveData();
+  }
+
+  /// Undo: the item is wanted again, so its delete marker goes.
+  Future<void> _saveAfterRestoring(String id) async {
+    await _syncStore.recordItemRestored(id);
+    await _saveData();
   }
 
   void removeItem(int index) {
@@ -812,7 +742,7 @@ class CarbTrackerHomeState extends State<CarbTrackerHome>
       (context, animation) => _buildAnimatedItem(removedItem, animation),
       duration: const Duration(milliseconds: 300),
     );
-    _saveData();
+    _saveAfterDeleting([removedItem.id]);
     _updateWidget();
     if (_premiumService.isHealthSyncEnabled) {
       _deleteFromHealthKit(removedItem);
@@ -835,7 +765,7 @@ class CarbTrackerHomeState extends State<CarbTrackerHome>
                 index.clamp(0, foodItems.length - 1),
                 duration: const Duration(milliseconds: 400),
               );
-              _saveData();
+              _saveAfterRestoring(removedItem.id);
               _updateWidget();
               if (_premiumService.isHealthSyncEnabled) {
                 _writeToHealthKit(removedItem);
@@ -1285,18 +1215,15 @@ class CarbTrackerHomeState extends State<CarbTrackerHome>
     });
     final prefs = await SharedPreferences.getInstance();
     await prefs.setInt(StorageKeys.dailyResetHour, resetHour);
+    // Stamp the change so these settings win over an older device's.
+    await _syncStore.markSettingsChanged();
     await _saveData();
     await _updateWidget();
   }
 
-  /// Called by SettingsPage when favorites are added/removed, so we can push
-  /// the full sync payload (which includes saved_foods) to iCloud.
-  Future<void> _onFavoritesChanged() async {
-    final prefs = await SharedPreferences.getInstance();
-    final ts = DateTime.now().toIso8601String();
-    final pushed = await _pushToCloud(_buildSyncPayload(prefs, timestamp: ts));
-    if (pushed) await prefs.setString(StorageKeys.cloudLastModified, ts);
-  }
+  /// Called by SettingsPage after it has written the favourites and recorded
+  /// the change, so the new list reaches the other device.
+  Future<void> _onFavoritesChanged() => _pushLocalState();
 
   Widget _buildFoodTile(FoodItem item) {
     return FoodItemCard(
@@ -1435,11 +1362,8 @@ class CarbTrackerHomeState extends State<CarbTrackerHome>
       await prefs.setString(StorageKeys.savedFoods, encoded);
       setState(() => _favoritesVersion++);
 
-      if (_premiumService.isCloudSyncEnabled) {
-        final ts = DateTime.now().toIso8601String();
-        final pushed = await _pushToCloud(_buildSyncPayload(prefs, timestamp: ts));
-        if (pushed) await prefs.setString(StorageKeys.cloudLastModified, ts);
-      }
+      await _syncStore.recordFavoriteAdded(item.name);
+      await _pushLocalState();
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(

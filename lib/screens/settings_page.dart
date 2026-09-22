@@ -13,6 +13,7 @@ import '../services/health_kit_service.dart';
 import '../services/premium_service.dart';
 import '../services/purchase_service.dart';
 import '../services/cloud_sync_service.dart';
+import '../services/sync_store.dart';
 import '../utils/date_format.dart';
 import '../widgets/food_item_card.dart';
 
@@ -93,6 +94,7 @@ class _SettingsPageState extends State<SettingsPage> {
 
   // Favorites state
   List<FoodItem> _savedFoods = [];
+  final SyncStore _syncStore = SyncStore();
   bool _isFavoritesLoading = true;
 
   // History state
@@ -210,6 +212,8 @@ class _SettingsPageState extends State<SettingsPage> {
     if (confirmed == true) {
       final prefs = await SharedPreferences.getInstance();
       await prefs.remove(StorageKeys.savedFoods);
+      // Record each one as deleted, or the other device's copies merge back in.
+      await _syncStore.recordFavoritesCleared(_savedFoods);
       setState(() => _savedFoods.clear());
       widget.onFavoritesChanged?.call();
     }
@@ -223,6 +227,7 @@ class _SettingsPageState extends State<SettingsPage> {
     final prefs = await SharedPreferences.getInstance();
     final encoded = jsonEncode(_savedFoods.map((f) => f.toJson()).toList());
     await prefs.setString(StorageKeys.savedFoods, encoded);
+    await _syncStore.recordFavoriteRemoved(removed.name);
     widget.onFavoritesChanged?.call();
 
     if (!mounted) return;
@@ -240,10 +245,9 @@ class _SettingsPageState extends State<SettingsPage> {
                   index.clamp(0, _savedFoods.length), removed);
             });
             final p = await SharedPreferences.getInstance();
-            await p.setString(
-                StorageKeys.savedFoods,
-                jsonEncode(
-                    _savedFoods.map((f) => f.toJson()).toList()));
+            await p.setString(StorageKeys.savedFoods,
+                jsonEncode(_savedFoods.map((f) => f.toJson()).toList()));
+            await _syncStore.recordFavoriteAdded(removed.name);
             widget.onFavoritesChanged?.call();
           },
         ),
