@@ -265,7 +265,7 @@ void main() {
           .byLabel('Apple, 25 grams of carbs, logged 8:30 AM')
           .evaluate()
           .single,
-      containsSemantics(
+      isSemantics(
         hint: 'Double tap for details',
         customActions: const [
           CustomSemanticsAction(label: 'Delete'),
@@ -632,7 +632,7 @@ In `test/a11y_food_row_test.dart`:
           .byLabel('Apple, 25 grams of carbs, logged 8:30 AM')
           .evaluate()
           .single,
-      containsSemantics(
+      isSemantics(
         hint: 'Double tap for details',
         customActions: const [
           CustomSemanticsAction(label: 'Delete'),
