@@ -439,4 +439,67 @@ void main() {
     expect(outcomes, isNotEmpty);
     expect(outcomes.first.isGranted, isFalse);
   });
+
+  test('a held transaction that later succeeds is not granted again',
+      () async {
+    // The transaction is held while the validator is unreachable, then
+    // succeeds through the ordinary listener path. Nothing pruned it from the
+    // held list, so the next auth event granted it a second time — a second
+    // completePurchase on a finished transaction, and a second "your purchase
+    // went through" for something the user already saw confirmed.
+    var reachable = false;
+    final service = build(
+      validator: (p, {required idToken, expectedProductId}) async {
+        if (!reachable) throw Exception('connection failed');
+        return p.productID;
+      },
+    );
+    final outcomes = <PurchaseOutcome>[];
+    service.outcomes.listen(outcomes.add);
+
+    iap.controller.add([purchase(PurchaseService.monthlyProductId)]);
+    await pumpEventQueue();
+    expect(iap.completed, isEmpty, reason: 'held while unreachable');
+
+    reachable = true;
+    iap.controller.add([purchase(PurchaseService.monthlyProductId)]);
+    await pumpEventQueue();
+    expect(iap.completed, hasLength(1));
+
+    // Any later sign-in drains the held list.
+    auth.signIn();
+    await pumpEventQueue();
+
+    expect(iap.completed, hasLength(1),
+        reason: 'the finished transaction must not be completed twice');
+    expect(outcomes.where((o) => o.isGranted), hasLength(1),
+        reason: 'and must not be granted twice');
+  });
+
+  test('the same transaction arriving twice at once is handled once', () async {
+    // `listen` does not await its handler, so two events overlap freely. The
+    // same transaction in both means two validations of one receipt against a
+    // rate-limited endpoint, and two grants.
+    var calls = 0;
+    final service = build(
+      validator: (p, {required idToken, expectedProductId}) async {
+        calls++;
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+        return p.productID;
+      },
+    );
+    final outcomes = <PurchaseOutcome>[];
+    service.outcomes.listen(outcomes.add);
+
+    final tx = purchase(PurchaseService.monthlyProductId);
+    iap.controller.add([tx]);
+    iap.controller.add([tx]);
+    await pumpEventQueue();
+    await Future<void>.delayed(const Duration(milliseconds: 60));
+    await pumpEventQueue();
+
+    expect(calls, 1, reason: 'one receipt, one validation');
+    expect(iap.completed, hasLength(1));
+    expect(outcomes.where((o) => o.isGranted), hasLength(1));
+  });
 }

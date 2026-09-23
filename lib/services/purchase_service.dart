@@ -114,6 +114,10 @@ class PurchaseService {
   /// launch; this list is the in-session retry.
   final List<PurchaseDetails> _held = <PurchaseDetails>[];
 
+  /// Transactions being handled right now, so overlapping stream events
+  /// cannot process the same one twice.
+  final Set<String> _inFlight = <String>{};
+
   Completer<String>? _waiter;
   String? _waitingForProductId;
   bool _flowInProgress = false;
@@ -246,6 +250,11 @@ class PurchaseService {
 
   Future<void> _handlePurchases(List<PurchaseDetails> purchases) async {
     for (final purchase in purchases) {
+      // `listen` does not await its handler, so two stream events overlap
+      // freely. The same transaction in both would be validated twice against
+      // a rate-limited endpoint and granted twice.
+      final key = _keyFor(purchase);
+      if (!_inFlight.add(key)) continue;
       try {
         await _handlePurchase(purchase);
       } catch (e) {
@@ -257,6 +266,8 @@ class PurchaseService {
           PurchaseOutcome.failed('Could not finish the App Store purchase.'),
           productId: purchase.productID,
         );
+      } finally {
+        _inFlight.remove(key);
       }
     }
   }
@@ -312,6 +323,7 @@ class PurchaseService {
       );
     } on ReceiptRejected catch (e) {
       // The receipt is not going to become valid, so let the transaction go.
+      _unhold(purchase);
       await _complete(purchase);
       _report(PurchaseOutcome.failed(e.message), productId: purchase.productID);
       return;
@@ -350,16 +362,27 @@ class PurchaseService {
     // and this runs again harmlessly; if granting fails after completing, the
     // purchase is gone with nothing to show for it.
     await _premium.setPremiumEnabled(true, plan: plan);
+    // Finished: drop any earlier hold, or the next auth change would grant it
+    // again and complete a transaction StoreKit has already closed.
+    _unhold(purchase);
     await _complete(purchase);
     _report(PurchaseOutcome.granted(plan), productId: purchase.productID);
   }
 
+  /// Identifies a transaction across re-deliveries of the same purchase.
+  String _keyFor(PurchaseDetails purchase) =>
+      '${purchase.purchaseID ?? ''}:${purchase.productID}';
+
   /// Keeps a transaction for a later attempt without completing it.
   void _hold(PurchaseDetails purchase) {
-    final already = _held.any((p) =>
-        p.purchaseID == purchase.purchaseID &&
-        p.productID == purchase.productID);
-    if (!already) _held.add(purchase);
+    final key = _keyFor(purchase);
+    if (!_held.any((p) => _keyFor(p) == key)) _held.add(purchase);
+  }
+
+  /// Forgets a hold once the transaction has been finished for good.
+  void _unhold(PurchaseDetails purchase) {
+    final key = _keyFor(purchase);
+    _held.removeWhere((p) => _keyFor(p) == key);
   }
 
   Future<void> _retryHeld() async {
