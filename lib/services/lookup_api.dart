@@ -6,9 +6,20 @@ import '../utils/user_facing_exception.dart';
 
 /// Result of one getMultipleCarbCounts call.
 class LookupResult {
-  const LookupResult({required this.items, this.quota});
+  const LookupResult({
+    required this.items,
+    this.unknownCarbs = const [],
+    this.quota,
+  });
 
+  /// The foods the lookup found a carb value for, ready to log.
   final List<FoodItem> items;
+
+  /// Names of foods the lookup couldn't find a reliable carb value for. They
+  /// never become [FoodItem]s — a FoodItem always has a number, so nothing
+  /// downstream can count an unknown as 0 g. The app hands them to Manual
+  /// entry instead.
+  final List<String> unknownCarbs;
 
   /// Null when the server response has no `quota` (older deployment).
   final ServerQuota? quota;
@@ -16,7 +27,9 @@ class LookupResult {
 
 /// Parses a 200 response body from the getMultipleCarbCounts callable.
 /// Throws [UserFacingException] when the body has no usable items.
-LookupResult parseLookupResponse(String body) {
+///
+/// [now] is when the foods are logged; tests pass a fixed time.
+LookupResult parseLookupResponse(String body, {DateTime? now}) {
   final Object? decoded;
   try {
     decoded = jsonDecode(body);
@@ -44,14 +57,26 @@ LookupResult parseLookupResponse(String body) {
     return double.tryParse(v.toString());
   }
 
-  final foods = items.whereType<Map>().map((item) {
-    final carbsRaw = item['carbs'];
-    final carbs = carbsRaw is num
-        ? carbsRaw.toDouble()
-        : double.tryParse(carbsRaw.toString()) ?? 0.0;
+  // A missing, unreadable, negative or infinite value means the lookup has no
+  // carb number for this food. It is never read as 0: a confident 0 g is worse
+  // than no answer for someone dosing insulin.
+  double? parseCarbs(dynamic v) {
+    final value = v is num ? v.toDouble() : double.tryParse('${v ?? ''}');
+    return value != null && value.isFinite && value >= 0 ? value : null;
+  }
 
-    return FoodItem(
-      name: (item['name'] as String?) ?? 'Unknown',
+  final base = now ?? DateTime.now();
+  final foods = <FoodItem>[];
+  final unknownCarbs = <String>[];
+  for (final item in items.whereType<Map>()) {
+    final name = (item['name'] as String?) ?? 'Unknown';
+    final carbs = parseCarbs(item['carbs']);
+    if (carbs == null) {
+      unknownCarbs.add(name);
+      continue;
+    }
+    foods.add(FoodItem(
+      name: name,
       carbs: carbs,
       protein: parseOptional(item['protein']),
       fat: parseOptional(item['fat']),
@@ -59,10 +84,23 @@ LookupResult parseLookupResponse(String body) {
       calories: parseOptional(item['calories']),
       details: item['details'] as String?,
       citations: citations,
-    );
-  }).toList();
+      // Each food from one lookup starts in its own millisecond, so deleting
+      // one from Apple Health can't take the others with it: the delete
+      // matches a single millisecond (HealthKitService.deleteFoodItem).
+      loggedAt: base.add(Duration(milliseconds: foods.length)),
+    ));
+  }
 
-  return LookupResult(items: foods, quota: ServerQuota.fromJson(result['quota']));
+  if (foods.isEmpty && unknownCarbs.isEmpty) {
+    throw const UserFacingException(
+        'No food items found. Please try a different description.');
+  }
+
+  return LookupResult(
+    items: foods,
+    unknownCarbs: unknownCarbs,
+    quota: ServerQuota.fromJson(result['quota']),
+  );
 }
 
 /// Maps a non-200 callable response to the exception the UI should show.
@@ -97,3 +135,15 @@ UserFacingException parseCallableError(int statusCode, String body) {
   if (message is String && message.isNotEmpty) return UserFacingException(message);
   return const UserFacingException('Failed to get carb count. Please try again.');
 }
+/// The `data` payload for one getMultipleCarbCounts call.
+///
+/// A pure function so the request can be tested: `acceptsUnknownCarbs` is what
+/// tells the server this build can receive a food with no carb value, and
+/// without it the server drops those foods and the user is never asked for the
+/// number.
+Map<String, dynamic> lookupRequestData(String input, {required int tzOffsetMinutes}) => {
+      'input': input,
+      // Lets the server count the free quota per local calendar day.
+      'tzOffsetMinutes': tzOffsetMinutes,
+      'acceptsUnknownCarbs': true,
+    };

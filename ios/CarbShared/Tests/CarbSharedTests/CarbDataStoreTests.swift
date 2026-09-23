@@ -74,7 +74,7 @@ struct CarbDataStoreTests {
         #expect(store.snapshot(now: noon) == CarbSnapshot(totalCarbs: 73, lastFoodName: "Fries", lastFoodCarbs: 48, dailyGoal: nil))
     }
 
-    @Test func addFoodBuffersItemsWithMacrosForTheApp() {
+    @Test func addFoodBuffersItemsWithMacrosForTheApp() throws {
         store.addFood(LoggedFood(name: "Big Mac", carbs: 45, protein: 25, fat: 30, fiber: 3, calories: 590,
                                  details: "McDonald's", citations: ["https://example.com"]), now: noon)
         store.addFood(LoggedFood(name: "Water", carbs: 0), now: noon)
@@ -84,7 +84,13 @@ struct CarbDataStoreTests {
         #expect(buffer[0]["protein"] as? Double == 25)
         #expect(buffer[0]["calories"] as? Double == 590)
         #expect(buffer[0]["citations"] as? [String] == ["https://example.com"])
-        #expect(buffer[0]["loggedAt"] as? String == ISO8601DateFormatter().string(from: noon))
+        // The time the food was logged, with milliseconds, so foods from one
+        // lookup stay apart.
+        let stamp = try #require(buffer[0]["loggedAt"] as? String)
+        let withMilliseconds = ISO8601DateFormatter()
+        withMilliseconds.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        #expect(withMilliseconds.date(from: stamp) == noon)
+        #expect(stamp.hasSuffix(".000Z"))
         #expect(buffer[1]["protein"] == nil)
     }
 
@@ -101,5 +107,50 @@ struct CarbDataStoreTests {
 
     @Test func takeSiriLoggedItemsReturnsNilWhenNothingIsWaiting() {
         #expect(store.takeSiriLoggedItems() == nil)
+    }
+
+    @Test func foodsFromOneLookupAreLoggedOneMillisecondApart() throws {
+        let total = store.addFoods(
+            [LoggedFood(name: "Burger", carbs: 30), LoggedFood(name: "Fries", carbs: 48)],
+            now: noon
+        )
+
+        #expect(total == 78)
+        // Each gets its own Apple Health entry when the app imports them, and
+        // the app deletes an entry by the millisecond it starts in.
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        let times = try store.siriLoggedItems().map { entry -> Date in
+            let stamp = try #require(entry["loggedAt"] as? String)
+            return try #require(formatter.date(from: stamp))
+        }
+        #expect(times.count == 2)
+        #expect(abs(times[1].timeIntervalSince(times[0]) - 0.001) < 0.0001)
+    }
+
+    @Test func siriTimestampsKeepMilliseconds() throws {
+        store.addFood(LoggedFood(name: "Toast", carbs: 15), now: noon.addingTimeInterval(0.25))
+
+        let stamp = try #require(store.siriLoggedItems().first?["loggedAt"] as? String)
+        #expect(stamp.contains(".250"))
+    }
+
+    @Test func addFoodsReportsTheTotalForTheDayItLastWroteTo() throws {
+        defaults.set(4, forKey: CarbDataStore.Keys.dailyResetHour)
+        // One millisecond before the user's day starts, so the second food
+        // lands on the next day.
+        let beforeTheReset = try #require(Calendar.current.date(
+            from: DateComponents(year: 2026, month: 9, day: 18, hour: 3, minute: 59, second: 59)
+        )).addingTimeInterval(0.999)
+
+        let total = store.addFoods(
+            [LoggedFood(name: "Toast", carbs: 15), LoggedFood(name: "Jam", carbs: 10)],
+            now: beforeTheReset
+        )
+
+        // The jam starts the new day on its own. Reading at the un-shifted
+        // `now` would find a different day stored and report 0 — Siri would
+        // say "your total today is 0.0 grams" right after logging.
+        #expect(total == 10)
     }
 }

@@ -51,11 +51,10 @@ class PerplexityFirebaseService {
     }
 
     final body = jsonEncode({
-      'data': {
-        'input': sanitizedInput,
-        // Lets the server count the free quota per local calendar day.
-        'tzOffsetMinutes': DateTime.now().timeZoneOffset.inMinutes,
-      }
+      'data': lookupRequestData(
+        sanitizedInput,
+        tzOffsetMinutes: DateTime.now().timeZoneOffset.inMinutes,
+      ),
     });
 
     try {

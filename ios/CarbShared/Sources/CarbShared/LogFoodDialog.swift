@@ -2,7 +2,16 @@ import Foundation
 
 /// What Siri says after logging food.
 public enum LogFoodDialog {
-    public static func text(items: [LookupItem], totalToday: Double) -> String {
+    /// - Parameter skipped: foods the lookup had no carb value for. They weren't
+    ///   logged, and Siri says so rather than leaving the user to wonder.
+    public static func text(items: [LookupItem], totalToday: Double, skipped: [String] = []) -> String {
+        let logged = loggedText(items: items, totalToday: totalToday)
+        guard !skipped.isEmpty else { return logged }
+        let them = skipped.count == 1 ? "it" : "them"
+        return "\(logged) I couldn't find carbs for \(names(skipped)), so I didn't log \(them)."
+    }
+
+    private static func loggedText(items: [LookupItem], totalToday: Double) -> String {
         let total = "Your total today is \(grams(totalToday)) grams."
         let sum = items.reduce(0) { $0 + $1.carbs }
         switch items.count {
@@ -16,6 +25,16 @@ public enum LogFoodDialog {
             return "Logged \(part(items[0])), \(part(items[1])), and \(part(items[2])): \(grams(sum)) grams. \(total)"
         default:
             return "Logged \(items.count) items, \(grams(sum)) grams. \(total)"
+        }
+    }
+
+    /// "fries", "fries and shake", "fries, shake, and cake" — the same serial
+    /// comma the logged-items list uses when spoken.
+    private static func names(_ names: [String]) -> String {
+        switch names.count {
+        case 0, 1: return names.joined()
+        case 2: return "\(names[0]) and \(names[1])"
+        default: return names.dropLast().joined(separator: ", ") + ", and \(names[names.count - 1])"
         }
     }
 

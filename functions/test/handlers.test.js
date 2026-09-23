@@ -193,3 +193,52 @@ test("unknown expectedProductId is rejected", async () => {
     (err) => err.code === "invalid-argument"
   );
 });
+
+// ── Unknown carb values (review #12) ──
+
+const burgerAndUnknownFries = async () => ({
+  items: [{ name: "Burger", carbs: 30 }, { name: "Fries", carbs: null }],
+  citations: [],
+});
+
+test("a client that accepts unknown carbs gets them as null", async () => {
+  const { deps } = makeDeps({ lookupFoods: burgerAndUnknownFries });
+  const { getMultipleCarbCounts } = createHandlers(deps);
+
+  const res = await getMultipleCarbCounts({
+    auth, data: { input: "burger and fries", acceptsUnknownCarbs: true },
+  });
+
+  assert.deepEqual(res.items.map((i) => [i.name, i.carbs]), [["Burger", 30], ["Fries", null]]);
+});
+
+test("an older client never sees a null: foods with unknown carbs are dropped", async () => {
+  // Those builds turn null into 0 g, which is the bug being fixed.
+  const { deps } = makeDeps({ lookupFoods: burgerAndUnknownFries });
+  const { getMultipleCarbCounts } = createHandlers(deps);
+
+  const res = await getMultipleCarbCounts({ auth, data: { input: "burger and fries" } });
+
+  assert.deepEqual(res.items.map((i) => i.name), ["Burger"]);
+});
+
+test("an older client gets a named error when nothing was found, and it still counts", async () => {
+  const { deps, calls } = makeDeps({
+    lookupFoods: async () => ({
+      items: [{ name: "Fries", carbs: null }, { name: "Shake", carbs: null }],
+      citations: [],
+    }),
+  });
+  const { getMultipleCarbCounts } = createHandlers(deps);
+
+  await assert.rejects(
+    getMultipleCarbCounts({ auth, data: { input: "fries and shake" } }),
+    (err) => {
+      assert.equal(err.code, "not-found");
+      assert.equal(err.message, "Couldn't find carbs for Fries and Shake.");
+      return true;
+    }
+  );
+  // Perplexity billed the call, so the lookup is not given back.
+  assert.equal(calls.some(([kind]) => kind === "release"), false);
+});

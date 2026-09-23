@@ -1,6 +1,8 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const { sanitizeFoodInput, lookupFoods, isNotBilled } = require("../src/perplexity");
+const {
+  sanitizeFoodInput, lookupFoods, isNotBilled, splitUnknownCarbs, listNames,
+} = require("../src/perplexity");
 
 const isInvalidArgument = (err) => err.code === "invalid-argument";
 
@@ -146,4 +148,170 @@ test("lookupFoods maps a valid completion", async () => {
     citations: [],
   });
   assert.equal(fetchImpl.calls, 1);
+});
+
+// ── Unknown carb values (review #12) ──
+
+/** Runs one lookup of a single completion and returns the mapped items. */
+async function lookUp(content) {
+  const fetchImpl = stubFetch(completion(content));
+  const res = await lookupFoods("some food", "key", { fetchImpl, sleep: noSleep });
+  return res.items;
+}
+
+test("lookupFoods keeps a missing carb value as null, never 0", async () => {
+  const [item] = await lookUp('[{"name":"Mystery stew","carbs":null,"details":"No reliable source"}]');
+
+  // A confident 0 g is worse than no answer for someone dosing insulin.
+  assert.equal(item.carbs, null);
+});
+
+test("lookupFoods keeps a real zero as zero", async () => {
+  const [item] = await lookUp('[{"name":"Water","carbs":0}]');
+
+  assert.equal(item.carbs, 0);
+});
+
+test("lookupFoods treats negative and infinite numbers as no value", async () => {
+  // 1e999 parses to Infinity.
+  const [item] = await lookUp('[{"name":"Odd","carbs":-5,"protein":1e999,"fat":2}]');
+
+  assert.equal(item.carbs, null);
+  assert.equal(item.protein, null);
+  assert.equal(item.fat, 2);
+});
+
+test("the prompt lets the model say a carb value is unknown", async () => {
+  let body;
+  const fetchImpl = async (_url, init) => {
+    body = JSON.parse(init.body);
+    return completion('[{"name":"Apple","carbs":25}]');
+  };
+
+  await lookupFoods("an apple", "key", { fetchImpl, sleep: noSleep });
+
+  const system = body.messages.find((m) => m.role === "system").content;
+  assert.match(system, /set "carbs" to null/);
+  assert.match(system, /Never estimate or guess/);
+  assert.doesNotMatch(system, /never refuse/i);
+});
+
+test("splitUnknownCarbs separates foods with no carb value from the rest", () => {
+  const { known, unknownNames } = splitUnknownCarbs([
+    { name: "Burger", carbs: 30 },
+    { name: "Fries", carbs: null },
+    { name: "Water", carbs: 0 },
+  ]);
+
+  assert.deepEqual(known.map((i) => i.name), ["Burger", "Water"]);
+  assert.deepEqual(unknownNames, ["Fries"]);
+});
+
+test("listNames joins names the way a sentence would", () => {
+  assert.equal(listNames(["fries"]), "fries");
+  assert.equal(listNames(["fries", "shake"]), "fries and shake");
+  assert.equal(listNames(["fries", "shake", "cake"]), "fries, shake and cake");
+});
+
+// ── Logging (health data must not reach Cloud Logging) ──
+
+/** Captures every console line written while [run] executes. */
+async function captureLogs(run) {
+  const lines = [];
+  const originals = { log: console.log, error: console.error, warn: console.warn };
+  for (const level of Object.keys(originals)) {
+    console[level] = (...args) => lines.push(args.map(String).join(" "));
+  }
+  try {
+    await run();
+  } finally {
+    Object.assign(console, originals);
+  }
+  return lines;
+}
+
+test("lookupFoods never logs the food text or the model's output", async () => {
+  const lines = await captureLogs(async () => {
+    // A successful lookup.
+    await lookupFoods("secret mystery stew", "key", {
+      fetchImpl: stubFetch(completion(
+        '[{"name":"Zanzibar pudding","carbs":null,"details":"PRIVATE-DETAIL"}]'
+      )),
+      sleep: noSleep,
+    });
+    // Output that never parses, on every attempt.
+    await lookupFoods("secret mystery stew", "key", {
+      fetchImpl: stubFetch(completion("PRIVATE-GARBAGE with no array")),
+      sleep: noSleep,
+    }).catch(() => {});
+    // An array that looks parseable and isn't: this reaches JSON.parse, whose
+    // error message quotes the text it choked on.
+    await lookupFoods("secret mystery stew", "key", {
+      fetchImpl: stubFetch(completion('[PRIVATE-GARBAGE not json]')),
+      sleep: noSleep,
+    }).catch(() => {});
+    // A malformed API response.
+    const malformed = {
+      status: 200, ok: true,
+      json: async () => ({ choices: [], note: "PRIVATE-STRUCT" }),
+      text: async () => "",
+    };
+    await lookupFoods("secret mystery stew", "key", {
+      fetchImpl: stubFetch(malformed), sleep: noSleep,
+    }).catch(() => {});
+  });
+
+  assert.ok(lines.length > 0, "expected some logging to inspect");
+  for (const line of lines) {
+    assert.doesNotMatch(line, /mystery stew|Zanzibar|PRIVATE/, `leaked: ${line}`);
+  }
+});
+
+test("a carb value written as a negative string is unknown, not positive", async () => {
+  // Without the sign the regex returns 5 — a number nobody reported.
+  const [item] = await lookUp('[{"name":"Odd","carbs":"-5"}]');
+
+  assert.equal(item.carbs, null);
+});
+
+test("a plain number as a string is read, with or without a unit", async () => {
+  const [plain] = await lookUp('[{"name":"Roll","carbs":"12"}]');
+  const [grams] = await lookUp('[{"name":"Bun","carbs":"12 g"}]');
+
+  assert.equal(plain.carbs, 12);
+  assert.equal(grams.carbs, 12);
+});
+
+test("a number mined out of prose is unknown, not a carb count", async () => {
+  // "1 serving = 45 g" used to come back as 1 — a number nobody stated, which
+  // the app would have logged and counted like any other.
+  const items = await lookUp(
+    '[{"name":"Bagel","carbs":"1 serving = 45 g"},' +
+    '{"name":"Rice","carbs":"2/3 cup: 30g"},' +
+    '{"name":"Stew","carbs":"about 12"},' +
+    '{"name":"Roll","carbs":"12-15 g"}]'
+  );
+
+  assert.deepEqual(items.map((i) => i.carbs), [null, null, null, null]);
+});
+
+test("a failed Perplexity call does not log its error body", async () => {
+  const leaky = {
+    status: 400,
+    ok: false,
+    json: async () => ({}),
+    text: async () => 'invalid request: {"content":"secret mystery stew"}',
+  };
+
+  const lines = await captureLogs(async () => {
+    await lookupFoods("secret mystery stew", "key", {
+      fetchImpl: stubFetch(leaky),
+      sleep: noSleep,
+    }).catch(() => {});
+  });
+
+  assert.ok(lines.length > 0, "expected some logging to inspect");
+  for (const line of lines) {
+    assert.doesNotMatch(line, /mystery stew|secret/, `leaked: ${line}`);
+  }
 });

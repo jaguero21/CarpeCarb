@@ -112,6 +112,36 @@ public struct CarbDataStore {
     /// read-modify-write is serialized with them. That covers one call only:
     /// callers adding several items should add the batch and read the total in
     /// one main-actor hop, as `LogFoodIntent` does, so no app write lands between.
+    /// Siri's timestamps keep milliseconds. Foods from one utterance are
+    /// logged 1 ms apart (`addFoods`); whole seconds would collapse them back
+    /// together, and deleting one from Apple Health would take the others.
+    private static let timestampFormatter: ISO8601DateFormatter = {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return formatter
+    }()
+
+    /// Adds the foods from one lookup, each 1 ms after the one before, so each
+    /// gets an Apple Health entry of its own when the app imports them — the
+    /// app deletes a Health entry by the millisecond it starts in.
+    ///
+    /// One main-actor step, so no app write lands between the foods.
+    ///
+    /// - Returns: today's total afterwards.
+    @MainActor
+    @discardableResult
+    public func addFoods(_ foods: [LoggedFood], now: Date = Date()) -> Double {
+        var last = now
+        for (index, food) in foods.enumerated() {
+            last = now.addingTimeInterval(Double(index) / 1000)
+            addFood(food, now: last)
+        }
+        // Read the total at the instant of the last write. Reading at `now`
+        // reports 0 when the batch crossed the user's reset hour, because the
+        // day the last food stamped is no longer the day `now` falls in.
+        return snapshot(now: last).totalCarbs
+    }
+
     @MainActor
     public func addFood(_ food: LoggedFood, now: Date = Date()) {
         let newTotal = snapshot(now: now).totalCarbs + food.carbs
@@ -125,7 +155,7 @@ public struct CarbDataStore {
         var entry: [String: Any] = [
             "name": food.name,
             "carbs": food.carbs,
-            "loggedAt": ISO8601DateFormatter().string(from: now),
+            "loggedAt": Self.timestampFormatter.string(from: now),
         ]
         if let protein = food.protein { entry["protein"] = protein }
         if let fat = food.fat { entry["fat"] = fat }

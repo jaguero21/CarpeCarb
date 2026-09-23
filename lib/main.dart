@@ -11,6 +11,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'firebase_options.dart';
 import 'dart:convert';
 import 'dart:io';
+import 'services/lookup_api.dart';
 import 'services/perplexity_firebase_service.dart';
 import 'services/health_kit_service.dart';
 import 'services/premium_service.dart';
@@ -538,32 +539,7 @@ class CarbTrackerHomeState extends State<CarbTrackerHome>
       if (quota != null) await _premiumService.applyServerQuota(quota);
 
       if (!mounted) return;
-
-      final items = result.items;
-
-      setState(() {
-        isLoading = false;
-        showingDailyTotal = false;
-        _foodController.clear();
-      });
-
-      // Insert one at a time so AnimatedList and foodItems stay in sync
-      // and every item gets its own entrance animation
-      for (final item in items.reversed) {
-        foodItems.insert(0, item);
-        _listKey.currentState
-            ?.insertItem(0, duration: const Duration(milliseconds: 400));
-      }
-
-      HapticFeedback.lightImpact();
-
-      await _saveData();
-      await _updateWidget();
-
-      // Write each item to HealthKit
-      for (final item in items) {
-        _writeToHealthKit(item);
-      }
+      await _applyLookupResult(result);
     } on DailyLimitReachedException catch (e) {
       final limit = e.limit ?? _premiumService.dailyLookupLimit;
       await _premiumService.applyServerQuota(ServerQuota(
@@ -599,6 +575,71 @@ class CarbTrackerHomeState extends State<CarbTrackerHome>
       }
     }
   }
+
+  /// Logs the foods a lookup found and hands any it couldn't find a carb value
+  /// for to Manual entry, so they're never logged as a guess.
+  Future<void> _applyLookupResult(LookupResult result) async {
+    final items = result.items;
+
+    setState(() {
+      isLoading = false;
+      showingDailyTotal = false;
+      _foodController.clear();
+    });
+
+    if (items.isNotEmpty) {
+      // Insert one at a time so AnimatedList and foodItems stay in sync
+      // and every item gets its own entrance animation
+      for (final item in items.reversed) {
+        foodItems.insert(0, item);
+        _listKey.currentState
+            ?.insertItem(0, duration: const Duration(milliseconds: 400));
+      }
+
+      HapticFeedback.lightImpact();
+
+      await _saveData();
+      await _updateWidget();
+
+      // Write each item to HealthKit
+      for (final item in items) {
+        _writeToHealthKit(item);
+      }
+    }
+
+    if (result.unknownCarbs.isNotEmpty && mounted) {
+      _handOffUnknownCarbs(result.unknownCarbs);
+    }
+  }
+
+  /// The lookup had no reliable carb value for [names]. Rather than log a
+  /// number nobody could source, switch to Manual entry with the first one
+  /// filled in so the user types it. Manual entry is open to every user
+  /// (PremiumService.isManualEntryEnabled); if that ever changes, this needs
+  /// another way out.
+  void _handOffUnknownCarbs(List<String> names) {
+    setState(() {
+      _isManualEntryMode = true;
+      _foodController.text = names.first;
+      _carbController.clear();
+    });
+    _carbFocusNode.requestFocus();
+
+    final them = names.length == 1 ? 'it' : 'them';
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+            "Couldn't find carbs for ${_listNames(names)} \u2014 enter $them manually."),
+        backgroundColor: AppColors.honey.withValues(alpha: 0.9),
+        duration: const Duration(seconds: 6),
+      ),
+    );
+  }
+
+  /// "fries", "fries and shake", "fries, shake and cake".
+  static String _listNames(List<String> names) => names.length <= 1
+      ? names.join()
+      : '${names.sublist(0, names.length - 1).join(', ')} and ${names.last}';
 
   void _addManualFood() {
     if (!_premiumService.isManualEntryEnabled) return;
@@ -717,6 +758,9 @@ class CarbTrackerHomeState extends State<CarbTrackerHome>
 
   // Test hooks — allow tests to drive state without relying on off-screen UI.
   void resetTotalForTest() => _resetTotal();
+  void addSavedFoodForTest(FoodItem item) => _addSavedFood(item);
+  Future<void> applyLookupResultForTest(LookupResult result) =>
+      _applyLookupResult(result);
   void switchToSettingsForTest() => _switchToPage(1);
 
   void _resetTotal() {
@@ -1353,7 +1397,21 @@ class CarbTrackerHomeState extends State<CarbTrackerHome>
     );
   }
 
-  void _addSavedFood(FoodItem item) {
+  void _addSavedFood(FoodItem saved) {
+    // A new entry, logged now — not the stored favourite itself. Reusing it
+    // would give two taps the same id and the same millisecond, and deleting
+    // one would take the other out of Apple Health with it.
+    final item = FoodItem(
+      name: saved.name,
+      carbs: saved.carbs,
+      protein: saved.protein,
+      fat: saved.fat,
+      fiber: saved.fiber,
+      calories: saved.calories,
+      details: saved.details,
+      citations: saved.citations,
+      isManualEntry: saved.isManualEntry,
+    );
     setState(() {
       foodItems.insert(0, item);
       showingDailyTotal = false;
