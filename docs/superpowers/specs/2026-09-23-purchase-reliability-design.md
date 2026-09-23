@@ -110,7 +110,7 @@ app using Perplexity API`, and `android/app/src/main/AndroidManifest.xml:3` sets
 
 ### Hardcoded colours
 
-48 `Color(0x...)` literals in `lib/`, against a comprehensive palette in
+8 `Color(0x...)` literals sit in view code, against a comprehensive palette in
 `lib/config/app_colors.dart`. Some literals are exactly a constant that already
 exists — `0xFFE8A93C` is `AppColors.honey`, `0xFFD4714E` is `AppColors.terracotta`
 — while three category colours match nothing:
