@@ -1523,21 +1523,32 @@ class CarbTrackerHomeState extends State<CarbTrackerHome>
 
   Widget _buildCloudSyncIndicator() {
     switch (_cloudSyncState) {
+      // Icon-only status: without a label VoiceOver announces nothing, or
+      // stops on an unnamed image.
       case _CloudSyncState.syncing:
-        return SizedBox(
-          width: 14,
-          height: 14,
-          child: CircularProgressIndicator(
-            strokeWidth: 1.5,
-            color: AppColors.sage,
+        return Semantics(
+          label: 'Syncing',
+          child: SizedBox(
+            width: 14,
+            height: 14,
+            child: CircularProgressIndicator(
+              strokeWidth: 1.5,
+              color: AppColors.sage,
+            ),
           ),
         );
       case _CloudSyncState.synced:
-        return Icon(Icons.cloud_done, size: 16, color: AppColors.sage);
+        return Semantics(
+          label: 'Synced',
+          child: Icon(Icons.cloud_done, size: 16, color: AppColors.sage),
+        );
       case _CloudSyncState.error:
-        return Tooltip(
-          message: 'Cloud sync failed',
-          child: Icon(Icons.cloud_off, size: 16, color: AppColors.terracotta),
+        return Semantics(
+          label: 'Sync failed',
+          child: Tooltip(
+            message: 'Cloud sync failed',
+            child: Icon(Icons.cloud_off, size: 16, color: AppColors.terracotta),
+          ),
         );
       case _CloudSyncState.idle:
         return const SizedBox.shrink();
@@ -1744,91 +1755,106 @@ class CarbTrackerHomeState extends State<CarbTrackerHome>
                         ),
                       ],
                     ),
-                    child: Column(
-                      children: [
-                        // "Today's Total" badge
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 16, vertical: 6),
-                          decoration: BoxDecoration(
-                            color: AppColors.sage.withValues(alpha: 0.1),
-                            borderRadius: BorderRadius.circular(999),
-                          ),
-                          child: Text(
-                            showingDailyTotal || foodItems.isEmpty
-                                ? "Today's Total"
-                                : foodItems.first.name,
-                            style: TextStyle(
-                              fontSize: 14,
-                              fontWeight: FontWeight.w500,
-                              color: AppColors.sage,
+                    // One deliberate stop. Left alone these merge into
+                    // "Apple 25.0g of 100g daily goal, 25" — the raw number,
+                    // the goal line, and a bare percentage the progress bar
+                    // contributes as its value.
+                    child: Semantics(
+                      label: showingDailyTotal || foodItems.isEmpty
+                          ? "Today's total"
+                          : foodItems.first.name,
+                      value: showingDailyTotal || foodItems.isEmpty
+                          ? carbProgressValue(
+                              total: totalCarbs, goal: dailyCarbGoal)
+                          : spokenGrams(foodItems.first.carbs),
+                      excludeSemantics: true,
+                      child: Column(
+                        children: [
+                          // "Today's Total" badge
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 16, vertical: 6),
+                            decoration: BoxDecoration(
+                              color: AppColors.sage.withValues(alpha: 0.1),
+                              borderRadius: BorderRadius.circular(999),
                             ),
-                          ),
-                        ),
-                        const SizedBox(height: 16),
-                        // Large carb number
-                        RichText(
-                          text: TextSpan(
-                            children: [
-                              TextSpan(
-                                text: showingDailyTotal || foodItems.isEmpty
-                                    ? totalCarbs.toStringAsFixed(1)
-                                    : foodItems.first.carbs.toStringAsFixed(1),
-                                style: TextStyle(
-                                  fontSize: 64,
-                                  fontWeight: FontWeight.w300,
-                                  color:
-                                      Theme.of(context).colorScheme.onSurface,
-                                ),
+                            child: Text(
+                              showingDailyTotal || foodItems.isEmpty
+                                  ? "Today's Total"
+                                  : foodItems.first.name,
+                              style: TextStyle(
+                                fontSize: 14,
+                                fontWeight: FontWeight.w500,
+                                color: AppColors.sage,
                               ),
-                              TextSpan(
-                                text: 'g',
-                                style: TextStyle(
-                                  fontSize: 30,
-                                  fontWeight: FontWeight.w300,
-                                  color: Theme.of(context)
-                                      .colorScheme
-                                      .onSurfaceVariant,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                        if (dailyCarbGoal != null) ...[
-                          const SizedBox(height: 8),
-                          Text(
-                            totalCarbs > dailyCarbGoal!
-                                ? '${(totalCarbs - dailyCarbGoal!).toStringAsFixed(0)}g over goal'
-                                : 'of ${dailyCarbGoal!.toStringAsFixed(0)}g daily goal',
-                            style: TextStyle(
-                              fontSize: 14,
-                              color: totalCarbs > dailyCarbGoal!
-                                  ? AppColors.terracotta
-                                  : Theme.of(context)
-                                      .colorScheme
-                                      .onSurfaceVariant,
                             ),
                           ),
                           const SizedBox(height: 16),
-                          // Linear progress bar
-                          ClipRRect(
-                            borderRadius: BorderRadius.circular(4),
-                            child: LinearProgressIndicator(
-                              value:
-                                  (totalCarbs / dailyCarbGoal!).clamp(0.0, 1.0),
-                              minHeight: 8,
-                              backgroundColor: isDark
-                                  ? AppColors.darkBorderMedium
-                                  : const Color(0xFFE5E7EB),
-                              valueColor: AlwaysStoppedAnimation<Color>(
-                                totalCarbs > dailyCarbGoal!
-                                    ? AppColors.terracotta
-                                    : AppColors.sage,
-                              ),
+                          // Large carb number
+                          RichText(
+                            text: TextSpan(
+                              children: [
+                                TextSpan(
+                                  text: showingDailyTotal || foodItems.isEmpty
+                                      ? totalCarbs.toStringAsFixed(1)
+                                      : foodItems.first.carbs
+                                          .toStringAsFixed(1),
+                                  style: TextStyle(
+                                    fontSize: 64,
+                                    fontWeight: FontWeight.w300,
+                                    color:
+                                        Theme.of(context).colorScheme.onSurface,
+                                  ),
+                                ),
+                                TextSpan(
+                                  text: 'g',
+                                  style: TextStyle(
+                                    fontSize: 30,
+                                    fontWeight: FontWeight.w300,
+                                    color: Theme.of(context)
+                                        .colorScheme
+                                        .onSurfaceVariant,
+                                  ),
+                                ),
+                              ],
                             ),
                           ),
+                          if (dailyCarbGoal != null) ...[
+                            const SizedBox(height: 8),
+                            Text(
+                              totalCarbs > dailyCarbGoal!
+                                  ? '${(totalCarbs - dailyCarbGoal!).toStringAsFixed(0)}g over goal'
+                                  : 'of ${dailyCarbGoal!.toStringAsFixed(0)}g daily goal',
+                              style: TextStyle(
+                                fontSize: 14,
+                                color: totalCarbs > dailyCarbGoal!
+                                    ? AppColors.terracotta
+                                    : Theme.of(context)
+                                        .colorScheme
+                                        .onSurfaceVariant,
+                              ),
+                            ),
+                            const SizedBox(height: 16),
+                            // Linear progress bar
+                            ClipRRect(
+                              borderRadius: BorderRadius.circular(4),
+                              child: LinearProgressIndicator(
+                                value: (totalCarbs / dailyCarbGoal!)
+                                    .clamp(0.0, 1.0),
+                                minHeight: 8,
+                                backgroundColor: isDark
+                                    ? AppColors.darkBorderMedium
+                                    : const Color(0xFFE5E7EB),
+                                valueColor: AlwaysStoppedAnimation<Color>(
+                                  totalCarbs > dailyCarbGoal!
+                                      ? AppColors.terracotta
+                                      : AppColors.sage,
+                                ),
+                              ),
+                            ),
+                          ],
                         ],
-                      ],
+                      ),
                     ),
                   ),
                 ),
