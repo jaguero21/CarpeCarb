@@ -191,9 +191,13 @@ test("the prompt lets the model say a carb value is unknown", async () => {
   await lookupFoods("an apple", "key", { fetchImpl, sleep: noSleep });
 
   const system = body.messages.find((m) => m.role === "system").content;
-  assert.match(system, /set "carbs" to null/);
-  assert.match(system, /Never estimate or guess/);
+  assert.match(system, /[Ss]et "carbs" to null/);
+  assert.match(system, /Never invent a number you cannot source/);
   assert.doesNotMatch(system, /never refuse/i);
+  // A generic food like "pizza" is answerable from a standard serving. Without
+  // this the model reads "don't invent" as "refuse", and everyday lookups fail.
+  assert.match(system, /A food named generically/);
+  assert.match(system, /standard reference serving/);
 });
 
 test("splitUnknownCarbs separates foods with no carb value from the rest", () => {
