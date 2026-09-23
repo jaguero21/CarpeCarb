@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/semantics.dart';
@@ -16,6 +17,7 @@ import 'services/lookup_api.dart';
 import 'services/perplexity_firebase_service.dart';
 import 'services/health_kit_service.dart';
 import 'services/premium_service.dart';
+import 'services/purchase_service.dart';
 import 'services/cloud_sync_service.dart';
 import 'services/siri_buffer_service.dart';
 import 'services/siri_import.dart';
@@ -55,6 +57,12 @@ Future<void> main() async {
       if (kDebugMode) debugPrint('Anonymous sign-in failed: $e');
     }
   }
+
+  // Listen for App Store transactions for as long as the app runs. Started
+  // here rather than from a screen because the transactions that matter most
+  // are the ones that arrive when no screen is waiting: an Ask to Buy approved
+  // hours later, or one StoreKit re-delivers after a crash.
+  PurchaseService.instance.start();
 
   // Initialize HomeWidget for iOS widget data sharing
   HomeWidget.setAppGroupId(StorageKeys.appGroupId);
@@ -99,6 +107,7 @@ class CarbTrackerHomeState extends State<CarbTrackerHome>
       PerplexityFirebaseService();
   final HealthKitService _healthKitService = HealthKitService();
   final PremiumService _premiumService = PremiumService();
+  StreamSubscription<PurchaseOutcome>? _purchaseOutcomes;
   final CloudSyncService _cloudSyncService = CloudSyncService();
   final SyncStore _syncStore = SyncStore();
 
@@ -136,8 +145,29 @@ class CarbTrackerHomeState extends State<CarbTrackerHome>
     });
     _loadSavedData();
     _checkWidgetLaunch();
+    _watchForLatePurchases();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _maybeShowDisclaimer();
+    });
+  }
+
+  /// Tells the user about a purchase that unlocked itself.
+  ///
+  /// A transaction can land with nothing waiting on it — Ask to Buy approved
+  /// later, or StoreKit re-delivering one after a crash. PurchaseService has
+  /// already granted premium by this point; without this the paywall would
+  /// just silently disappear for someone who was charged days ago.
+  void _watchForLatePurchases() {
+    _purchaseOutcomes = PurchaseService.instance.outcomes.listen((outcome) {
+      if (!outcome.isGranted || !outcome.unattended || !mounted) return;
+      setState(() {});
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Your App Store purchase went through — premium is '
+              'now active.'),
+          duration: Duration(seconds: 4),
+        ),
+      );
     });
   }
 
@@ -2223,6 +2253,7 @@ class CarbTrackerHomeState extends State<CarbTrackerHome>
     _importSiriItemsToken++;
     WidgetsBinding.instance.removeObserver(this);
     _cloudSyncService.stopListening();
+    _purchaseOutcomes?.cancel();
     _foodController.dispose();
     _carbController.dispose();
     _foodFocusNode.dispose();
