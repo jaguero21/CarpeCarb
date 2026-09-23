@@ -53,7 +53,9 @@ public struct LoggedFood: Equatable, Sendable {
 /// The app writes the totals together with the day they belong to (`dayKey`)
 /// and the user's reset hour, so readers can tell when the stored totals are
 /// from a previous day.
-public struct CarbDataStore {
+/// Sendable by hand: the only stored property is a `UserDefaults`, which
+/// Apple documents as thread-safe, and nothing else here is mutable.
+public struct CarbDataStore: @unchecked Sendable {
     public static let appGroupID = "group.com.carpecarb.shared"
 
     /// UserDefaults key constants — must match StorageKeys in Dart.
@@ -115,7 +117,12 @@ public struct CarbDataStore {
     /// Siri's timestamps keep milliseconds. Foods from one utterance are
     /// logged 1 ms apart (`addFoods`); whole seconds would collapse them back
     /// together, and deleting one from Apple Health would take the others.
-    private static let timestampFormatter: ISO8601DateFormatter = {
+    // Main-actor isolated rather than `nonisolated(unsafe)`: its only caller,
+    // `addFood`, is already on the main actor, so the compiler can enforce
+    // single-actor access instead of a comment asserting it. Apple documents
+    // thread safety for `NSDateFormatter` but not for this type, so leaning on
+    // the checker is the safer of the two.
+    @MainActor private static let timestampFormatter: ISO8601DateFormatter = {
         let formatter = ISO8601DateFormatter()
         formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
         return formatter

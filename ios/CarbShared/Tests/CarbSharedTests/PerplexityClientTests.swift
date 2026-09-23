@@ -120,3 +120,48 @@ struct PerplexityClientParseTests {
         #expect(data["tzOffsetMinutes"] as? Int == -300)
     }
 }
+
+@Suite("RequestPacer")
+struct RequestPacerTests {
+    /// A monotonic instant the test moves by hand.
+    ///
+    /// A box rather than a captured `var`: the pacer's clock is a Sendable
+    /// closure, and Swift 6 rightly refuses to let one capture mutable local
+    /// state. Only this test's single task touches it, and every access is
+    /// ordered by an `await`.
+    final class Clock: @unchecked Sendable {
+        var now = ContinuousClock.now
+    }
+
+    /// Two callers overlapping must not be given the same moment.
+    ///
+    /// The bug this guards: an actor releases isolation at `await`, so a pacer
+    /// that sleeps before writing lets the second caller read the first's
+    /// stale timestamp. Both then wait the same amount, wake together, and hit
+    /// the server back to back — the floor the limiter exists for is not
+    /// applied, and the second request comes back 429 with the food unlogged.
+    @Test func concurrentCallersAreSpacedRatherThanCollapsed() async {
+        let clock = Clock()
+        let pacer = RequestPacer(minInterval: .milliseconds(1500), now: { clock.now })
+
+        // Reserved without any sleeping, so the ordering is what is asserted,
+        // not the timing.
+        let first = await pacer.reserveSlot()
+        let second = await pacer.reserveSlot()
+        let third = await pacer.reserveSlot()
+
+        #expect(first == .zero)
+        #expect(second == .milliseconds(1500))
+        #expect(third == .milliseconds(3000))
+    }
+
+    @Test func aCallerAfterTheGapHasAlreadyPassedWaitsNoTime() async {
+        let clock = Clock()
+        let pacer = RequestPacer(minInterval: .milliseconds(1500), now: { clock.now })
+
+        _ = await pacer.reserveSlot()
+        clock.now = clock.now.advanced(by: .seconds(10))
+
+        #expect(await pacer.reserveSlot() == .zero)
+    }
+}

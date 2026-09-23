@@ -4,7 +4,11 @@ import CarbShared
 import os.log
 
 @main
-@objc class AppDelegate: FlutterAppDelegate, FlutterImplicitEngineDelegate {
+// `@preconcurrency` on the conformance: FlutterAppDelegate is main-actor
+// isolated (it is a UIKit delegate), while Flutter's protocol is not annotated,
+// so Swift 6 sees the conformance crossing an isolation boundary. The protocol's
+// callbacks arrive on the main thread in practice.
+@objc class AppDelegate: FlutterAppDelegate, @preconcurrency FlutterImplicitEngineDelegate {
   private var cloudSyncChannel: CloudSyncChannel?
   private var siriBufferChannel: SiriBufferChannel?
   private let logger = Logger(subsystem: "com.carpecarb", category: "AppDelegate")

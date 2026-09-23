@@ -94,11 +94,15 @@ public final class CloudSyncStore {
     
     deinit {
         if observing {
-            // Note: deinit is not async, so we do synchronous cleanup
+            // Note: deinit is not async, so we do synchronous cleanup.
+            // `object: nil` rather than `kvStore`: a nonisolated deinit may not
+            // touch a non-Sendable stored property, and since this instance
+            // registered exactly one observer for this notification, removing
+            // it by observer and name alone removes the same registration.
             NotificationCenter.default.removeObserver(
                 self,
                 name: NSUbiquitousKeyValueStore.didChangeExternallyNotification,
-                object: kvStore
+                object: nil
             )
             logger.info("CloudSyncStore deallocated - cleaned up observers")
         }

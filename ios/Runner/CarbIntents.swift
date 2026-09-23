@@ -4,10 +4,10 @@ import CarbShared
 // MARK: - Log Food Intent
 
 struct LogFoodIntent: AppIntent {
-    static var title: LocalizedStringResource = "Log Food in CarpeCarb"
-    static var description = IntentDescription("Look up carbs for a food item and add it to today's total.")
+    static let title: LocalizedStringResource = "Log Food in CarpeCarb"
+    static let description = IntentDescription("Look up carbs for a food item and add it to today's total.")
 
-    static var openAppWhenRun: Bool = false
+    static let openAppWhenRun: Bool = false
 
     @Parameter(title: "Food Item", requestValueDialog: "What food would you like to log?")
     var foodItem: String
@@ -29,10 +29,10 @@ struct LogFoodIntent: AppIntent {
 // MARK: - Check Carbs Intent
 
 struct CheckCarbsIntent: AppIntent {
-    static var title: LocalizedStringResource = "Check Today's Carbs"
-    static var description = IntentDescription("Check how many carbs you've eaten today.")
+    static let title: LocalizedStringResource = "Check Today's Carbs"
+    static let description = IntentDescription("Check how many carbs you've eaten today.")
 
-    static var openAppWhenRun: Bool = false
+    static let openAppWhenRun: Bool = false
 
     func perform() async throws -> some IntentResult & ProvidesDialog {
         let today = CarbDataStore.shared.snapshot()
@@ -72,10 +72,10 @@ struct CheckCarbsIntent: AppIntent {
 // MARK: - Open App Intent
 
 struct OpenCarpeCarbIntent: AppIntent {
-    static var title: LocalizedStringResource = "Open CarpeCarb"
-    static var description = IntentDescription("Open the CarpeCarb app.")
+    static let title: LocalizedStringResource = "Open CarpeCarb"
+    static let description = IntentDescription("Open the CarpeCarb app.")
 
-    static var openAppWhenRun: Bool = true
+    static let openAppWhenRun: Bool = true
 
     func perform() async throws -> some IntentResult {
         return .result()
