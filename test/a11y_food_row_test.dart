@@ -137,6 +137,59 @@ void main() {
     await tester.pump(const Duration(seconds: 4));
   });
 
+  testWidgets('the Delete rotor action removes the food it was offered on',
+      (WidgetTester tester) async {
+    // Deleting only ever the first row can't tell `removeItem(index)` from
+    // `removeItem(0)`. Bagel is at index 1, so position has to be right.
+    stubChannels();
+    seedTwoFoods();
+    final handle = tester.ensureSemantics();
+
+    await tester.pumpWidget(const CarbTrackerApp());
+    await tester.pumpAndSettle();
+    final state =
+        tester.state<CarbTrackerHomeState>(find.byType(CarbTrackerHome));
+
+    performRotorAction(
+        tester, 'Bagel, 48 grams of carbs, logged 8:00 AM', 'Delete');
+    await tester.pump(const Duration(milliseconds: 400));
+
+    expect(state.foodItems.map((f) => f.name), ['Apple']);
+    handle.dispose();
+    await tester.pump(const Duration(seconds: 4));
+  });
+
+  testWidgets('the row hides the raw numbers it draws',
+      (WidgetTester tester) async {
+    // Without `excludeSemantics` the sentence label is still there and every
+    // row test still passes, while VoiceOver also reads "25.0g" — the exact
+    // "point zero" the label exists to avoid.
+    stubChannels();
+    seedTwoFoods();
+    final handle = tester.ensureSemantics();
+
+    await tester.pumpWidget(const CarbTrackerApp());
+    await tester.pumpAndSettle();
+
+    final row = find.semantics
+        .byLabel('Apple, 25 grams of carbs, logged 8:30 AM')
+        .evaluate()
+        .single;
+    final descendants = <String>[];
+    void visit(SemanticsNode node) {
+      node.visitChildren((child) {
+        descendants.add(child.getSemanticsData().label);
+        visit(child);
+        return true;
+      });
+    }
+
+    visit(row);
+    expect(descendants.join(' | '), isNot(contains('25.0')));
+
+    handle.dispose();
+  });
+
   testWidgets('the Save rotor action saves the food to the Food list',
       (WidgetTester tester) async {
     stubChannels();

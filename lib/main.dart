@@ -1340,9 +1340,17 @@ class CarbTrackerHomeState extends State<CarbTrackerHome>
       // Deleting and saving are swipes, which VoiceOver can't reach: its own
       // swipes move between elements. These put both in the Actions rotor.
       customSemanticsActions: {
+        // Resolved by id, not by the position captured at build time: a
+        // semantics action can be dispatched against a config from before a
+        // rebuild — an iCloud merge replacing `foodItems`, say — and by then
+        // the index would point at a different food, or past the end. Same
+        // lookup and guard the details dialog's Delete uses.
         if (index != null)
-          const CustomSemanticsAction(label: 'Delete'): () =>
-              removeItem(index),
+          const CustomSemanticsAction(label: 'Delete'): () {
+            final at = foodItems.indexWhere((f) => f.id == item.id);
+            // Gone already if the list changed under the action.
+            if (at != -1) removeItem(at);
+          },
         const CustomSemanticsAction(label: 'Save to Food list'): () =>
             _saveToSavedFoods(item),
       },
