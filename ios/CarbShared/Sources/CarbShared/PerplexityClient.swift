@@ -56,33 +56,41 @@ extension LoggedFood {
 /// which moving to an actor does not by itself fix. Reserving first also
 /// queues N concurrent callers one interval apart instead of collapsing them
 /// onto the same instant.
+///
+/// Paced on a monotonic clock, not `Date`. A wall clock can step backwards on
+/// a manual date change or an NTP correction, and an hour-long step back would
+/// otherwise make the next lookup sleep for an hour — Siri would simply appear
+/// to hang.
 actor RequestPacer {
     static let shared = RequestPacer()
 
-    private let minInterval: TimeInterval
-    private let now: @Sendable () -> Date
-    private var nextSlot: Date?
+    private let minInterval: Duration
+    private let now: @Sendable () -> ContinuousClock.Instant
+    private var nextSlot: ContinuousClock.Instant?
 
-    init(minInterval: TimeInterval = 1.5, now: @escaping @Sendable () -> Date = { Date() }) {
+    init(
+        minInterval: Duration = .milliseconds(1500),
+        now: @escaping @Sendable () -> ContinuousClock.Instant = { ContinuousClock.now }
+    ) {
         self.minInterval = minInterval
         self.now = now
     }
 
-    /// The delay this caller must wait, reserved atomically.
+    /// How long this caller must wait, reserved atomically.
     ///
     /// Separated from the sleeping so a test can observe the reservation
     /// without waiting in real time.
-    func reserveSlot() -> TimeInterval {
+    func reserveSlot() -> Duration {
         let current = now()
         let slot = max(current, nextSlot ?? current)
-        nextSlot = slot.addingTimeInterval(minInterval)
-        return slot.timeIntervalSince(current)
+        nextSlot = slot.advanced(by: minInterval)
+        return current.duration(to: slot)
     }
 
     func waitForTurn() async {
         let delay = reserveSlot()
-        if delay > 0 {
-            try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
+        if delay > .zero {
+            try? await Task.sleep(for: delay)
         }
     }
 }

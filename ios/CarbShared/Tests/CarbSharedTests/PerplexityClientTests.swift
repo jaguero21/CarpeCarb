@@ -123,6 +123,16 @@ struct PerplexityClientParseTests {
 
 @Suite("RequestPacer")
 struct RequestPacerTests {
+    /// A monotonic instant the test moves by hand.
+    ///
+    /// A box rather than a captured `var`: the pacer's clock is a Sendable
+    /// closure, and Swift 6 rightly refuses to let one capture mutable local
+    /// state. Only this test's single task touches it, and every access is
+    /// ordered by an `await`.
+    final class Clock: @unchecked Sendable {
+        var now = ContinuousClock.now
+    }
+
     /// Two callers overlapping must not be given the same moment.
     ///
     /// The bug this guards: an actor releases isolation at `await`, so a pacer
@@ -131,8 +141,8 @@ struct RequestPacerTests {
     /// the server back to back — the floor the limiter exists for is not
     /// applied, and the second request comes back 429 with the food unlogged.
     @Test func concurrentCallersAreSpacedRatherThanCollapsed() async {
-        let fixed = Date(timeIntervalSince1970: 1_000)
-        let pacer = RequestPacer(minInterval: 1.5, now: { fixed })
+        let clock = Clock()
+        let pacer = RequestPacer(minInterval: .milliseconds(1500), now: { clock.now })
 
         // Reserved without any sleeping, so the ordering is what is asserted,
         // not the timing.
@@ -140,24 +150,18 @@ struct RequestPacerTests {
         let second = await pacer.reserveSlot()
         let third = await pacer.reserveSlot()
 
-        #expect(first == 0)
-        #expect(second == 1.5)
-        #expect(third == 3.0)
+        #expect(first == .zero)
+        #expect(second == .milliseconds(1500))
+        #expect(third == .milliseconds(3000))
     }
 
     @Test func aCallerAfterTheGapHasAlreadyPassedWaitsNoTime() async {
-        // A box rather than a captured `var`: the pacer's clock is a Sendable
-        // closure, and Swift 6 rightly refuses to let one capture mutable
-        // local state. Only this test's single task touches it.
-        final class Clock: @unchecked Sendable {
-            var now = Date(timeIntervalSince1970: 1_000)
-        }
         let clock = Clock()
-        let pacer = RequestPacer(minInterval: 1.5, now: { clock.now })
+        let pacer = RequestPacer(minInterval: .milliseconds(1500), now: { clock.now })
 
         _ = await pacer.reserveSlot()
-        clock.now = clock.now.addingTimeInterval(10)
+        clock.now = clock.now.advanced(by: .seconds(10))
 
-        #expect(await pacer.reserveSlot() == 0)
+        #expect(await pacer.reserveSlot() == .zero)
     }
 }
