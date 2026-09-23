@@ -105,7 +105,12 @@ announced without units.
     food* state (`showingDailyTotal` starts `false` and every add path resets
     it). That state still draws the goal line and the bar, so it must speak them
     too: it reads `"<food>"` with the value
-    `"<carbs> grams, <total> of <goal> grams today"`. Speaking only the food's
+    `"<carbs> grams. Today, <total> of <goal> grams"`. The day is *introduced*
+    rather than having a word appended to it, because the no-goal form already
+    ends in "no goal set" — appending gave "25 grams, 25 grams, no goal set
+    today", which stutters and implies a goal exists that simply wasn't set for
+    today. Out of the box no goal is set, so that was the first thing a new
+    user would hear. Speaking only the food's
     own carbs — the first implementation — left today-against-goal unspoken in
     the app's default state, which was worse than before the batch.
   - Over the goal, the value gains `", <n> grams over goal"`, matching the
