@@ -47,7 +47,13 @@ that correct a mistake in logged health data.
     also makes the guideline pass and worth keeping as a guard.
   - `iOSTapTargetGuideline` **fails** in two places: the Home and Settings icons
     are 40pt (`_buildNavIcon`), and the Auto/Manual pills are 37pt. The icons'
-    hit area is widened to 44 without moving anything on screen. The pills would
+    hit area is widened to 44. **Correction, measured after implementation:**
+    this does move the header slightly — the 44pt box is a fixed-width child of
+    a `Row` with a `Spacer`, so the Home circle lands 6pt left of where it was,
+    Settings 2pt left, and the 4pt-taller row drops the title and the content
+    below it by about 2pt. Reviewed and accepted rather than compensated, since
+    restoring the old pixels would take three interdependent padding
+    adjustments that would break the next time this row changes. The pills would
     need to get taller, which is a visual change this batch excludes, so they
     stay — and the guideline is therefore *not* asserted.
   - `textContrastGuideline` **fails** on the disclaimer dialog's body text, which

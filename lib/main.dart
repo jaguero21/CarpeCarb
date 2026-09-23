@@ -1567,9 +1567,14 @@ class CarbTrackerHomeState extends State<CarbTrackerHome>
       behavior: HitTestBehavior.opaque,
       child: Tooltip(
         message: tooltip,
-        // 44x44 is the smallest hit area iOS asks for; the circle stays 40, so
-        // nothing moves on screen. At 40 these two were the only controls in
-        // the app below the minimum.
+        // 44x44 is the smallest hit area iOS asks for. At 40 these two were the
+        // only controls in the app below that minimum. The circle itself stays
+        // 40, but the wider box is a fixed-width child of a Row with a Spacer,
+        // so it does move the header a little: the Home circle sits 6pt left of
+        // where it used to, Settings 2pt left, and the taller row drops the
+        // title and the content below it by a couple of points. Measured and
+        // accepted — restoring the old pixels would mean three compensating
+        // paddings that silently break the next time this row changes.
         child: SizedBox(
           width: 44,
           height: 44,
