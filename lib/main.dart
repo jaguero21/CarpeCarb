@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/semantics.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/services.dart';
 import 'package:keyboard_actions/keyboard_actions.dart';
@@ -27,6 +28,7 @@ import 'screens/settings_page.dart';
 import 'config/app_colors.dart';
 import 'config/app_theme.dart';
 import 'config/storage_keys.dart';
+import 'utils/a11y_labels.dart';
 import 'utils/date_format.dart';
 import 'utils/day_key.dart';
 import 'utils/input_validation.dart';
@@ -1294,13 +1296,37 @@ class CarbTrackerHomeState extends State<CarbTrackerHome>
   /// the change, so the new list reaches the other device.
   Future<void> _onFavoritesChanged() => _pushLocalState();
 
-  Widget _buildFoodTile(FoodItem item) {
-    return FoodItemCard(
-      name: item.name,
-      subtitle: formatTime(item.loggedAt),
-      carbs: item.carbs,
-      category: item.category,
-      onLongPress: () => _showFoodDetails(item),
+  /// [index] is the row's place in today's list, which the Delete action
+  /// needs. It is null while a row animates out, where the actions would have
+  /// nothing to act on.
+  Widget _buildFoodTile(FoodItem item, {int? index}) {
+    return Semantics(
+      // One stop that reads like a sentence. Without this the name, the time
+      // and the number are three separate stops, and the number has no unit.
+      label: foodRowLabel(
+        name: item.name,
+        carbs: item.carbs,
+        time: formatTime(item.loggedAt),
+      ),
+      hint: 'Double tap for details',
+      onTap: () => _showFoodDetails(item),
+      // Deleting and saving are swipes, which VoiceOver can't reach: its own
+      // swipes move between elements. These put both in the Actions rotor.
+      customSemanticsActions: {
+        if (index != null)
+          const CustomSemanticsAction(label: 'Delete'): () =>
+              removeItem(index),
+        const CustomSemanticsAction(label: 'Save to Food list'): () =>
+            _saveToSavedFoods(item),
+      },
+      excludeSemantics: true,
+      child: FoodItemCard(
+        name: item.name,
+        subtitle: formatTime(item.loggedAt),
+        carbs: item.carbs,
+        category: item.category,
+        onLongPress: () => _showFoodDetails(item),
+      ),
     );
   }
 
@@ -2057,7 +2083,7 @@ class CarbTrackerHomeState extends State<CarbTrackerHome>
                                     color: Colors.white,
                                   ),
                                 ),
-                                child: _buildFoodTile(item),
+                                child: _buildFoodTile(item, index: index),
                               ),
                             ),
                           );
