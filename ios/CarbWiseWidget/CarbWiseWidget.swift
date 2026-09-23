@@ -205,6 +205,15 @@ struct CarbWiseSmallView: View {
                             .minimumScaleFactor(0.6)
                             .lineLimit(1)
                     }
+                    // One element: the ring is two undescribed circles, and
+                    // the number alone reads as "45g" with no context.
+                    .accessibilityElement(children: .ignore)
+                    .accessibilityLabel("Carbs today")
+                    .accessibilityValue(
+                        CarbAccessibility.carbsValue(
+                            total: entry.data.totalCarbs, goal: goal
+                        )
+                    )
 
                     if isOver {
                         Text(String(format: "+%.0fg over", entry.data.totalCarbs - goal))
@@ -216,15 +225,24 @@ struct CarbWiseSmallView: View {
                             .foregroundStyle(.secondary)
                     }
                 } else {
-                    Text(String(format: "%.1fg", entry.data.totalCarbs))
-                        .font(.system(size: 52, weight: .light, design: .rounded))
-                        .foregroundStyle(.primary)
-                        .minimumScaleFactor(0.7)
-                        .lineLimit(1)
+                    VStack(spacing: 0) {
+                        Text(String(format: "%.1fg", entry.data.totalCarbs))
+                            .font(.system(size: 52, weight: .light, design: .rounded))
+                            .foregroundStyle(.primary)
+                            .minimumScaleFactor(0.7)
+                            .lineLimit(1)
 
-                    Text("total carbs")
-                        .font(.system(size: 15))
-                        .foregroundStyle(.secondary)
+                        Text("total carbs")
+                            .font(.system(size: 15))
+                            .foregroundStyle(.secondary)
+                    }
+                    .accessibilityElement(children: .ignore)
+                    .accessibilityLabel("Carbs today")
+                    .accessibilityValue(
+                        CarbAccessibility.carbsValue(
+                            total: entry.data.totalCarbs, goal: nil
+                        )
+                    )
                 }
 
                 if !entry.data.lastFoodName.isEmpty {
