@@ -83,6 +83,12 @@ void main() {
         .performAction(finder, SemanticsAction.customAction, args: id);
   }
 
+  /// Activates the row the way VoiceOver does, opening its details dialog.
+  void openDetails(WidgetTester tester, String label) {
+    tester.semantics
+        .performAction(find.semantics.byLabel(label), SemanticsAction.tap);
+  }
+
   testWidgets('a food row reads as one sentence with both actions',
       (WidgetTester tester) async {
     stubChannels();
@@ -143,6 +149,56 @@ void main() {
     performRotorAction(tester, 'Apple, 25 grams of carbs, logged 8:30 AM',
         'Save to Food list');
     await tester.pump(const Duration(milliseconds: 400));
+
+    final saved =
+        (await SharedPreferences.getInstance()).getString('saved_foods');
+    expect(saved, contains('Apple'));
+    handle.dispose();
+    await tester.pump(const Duration(seconds: 4));
+  });
+
+  testWidgets('the details dialog offers Delete and Save without a swipe',
+      (WidgetTester tester) async {
+    stubChannels();
+    seedTwoFoods();
+    final handle = tester.ensureSemantics();
+
+    await tester.pumpWidget(const CarbTrackerApp());
+    await tester.pumpAndSettle();
+    final state =
+        tester.state<CarbTrackerHomeState>(find.byType(CarbTrackerHome));
+
+    // VoiceOver's double tap. A long press opens the same dialog for a
+    // sighted user, but the row's swipe recogniser swallows it in tests, so
+    // that path is on the device checklist instead.
+    openDetails(tester, 'Apple, 25 grams of carbs, logged 8:30 AM');
+    await tester.pumpAndSettle();
+    expect(find.text('Save to Food list'), findsOneWidget);
+
+    await tester.tap(find.text('Delete'));
+    await tester.pumpAndSettle();
+
+    expect(state.foodItems.map((f) => f.name), ['Bagel']);
+    handle.dispose();
+    await tester.pump(const Duration(seconds: 4));
+  });
+
+  testWidgets('the details dialog can save a food to the Food list',
+      (WidgetTester tester) async {
+    stubChannels();
+    seedTwoFoods();
+    final handle = tester.ensureSemantics();
+
+    await tester.pumpWidget(const CarbTrackerApp());
+    await tester.pumpAndSettle();
+
+    // VoiceOver's double tap. A long press opens the same dialog for a
+    // sighted user, but the row's swipe recogniser swallows it in tests, so
+    // that path is on the device checklist instead.
+    openDetails(tester, 'Apple, 25 grams of carbs, logged 8:30 AM');
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Save to Food list'));
+    await tester.pumpAndSettle();
 
     final saved =
         (await SharedPreferences.getInstance()).getString('saved_foods');

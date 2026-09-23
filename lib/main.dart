@@ -966,6 +966,25 @@ class CarbTrackerHomeState extends State<CarbTrackerHome>
           ),
         ),
         actions: [
+          // The same two actions the row offers by swipe, for anyone who can't
+          // swipe — with or without VoiceOver.
+          TextButton(
+            onPressed: () {
+              Navigator.pop(context);
+              _saveToSavedFoods(item);
+            },
+            child: const Text('Save to Food list'),
+          ),
+          TextButton(
+            onPressed: () {
+              Navigator.pop(context);
+              final index = foodItems.indexWhere((f) => f.id == item.id);
+              // Gone already if the list changed while the dialog was open.
+              if (index != -1) removeItem(index);
+            },
+            style: TextButton.styleFrom(foregroundColor: AppColors.terracotta),
+            child: const Text('Delete'),
+          ),
           TextButton(
             onPressed: () => Navigator.pop(context),
             child: const Text('Close'),
