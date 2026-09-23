@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/semantics.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/services.dart';
 import 'package:keyboard_actions/keyboard_actions.dart';
@@ -27,6 +28,7 @@ import 'screens/settings_page.dart';
 import 'config/app_colors.dart';
 import 'config/app_theme.dart';
 import 'config/storage_keys.dart';
+import 'utils/a11y_labels.dart';
 import 'utils/date_format.dart';
 import 'utils/day_key.dart';
 import 'utils/input_validation.dart';
@@ -852,38 +854,46 @@ class CarbTrackerHomeState extends State<CarbTrackerHome>
         required bool selected,
         required VoidCallback onTap}) {
       return Expanded(
-        child: GestureDetector(
-          onTap: () {
-            _dismissKeyboard();
-            onTap();
-          },
-          child: AnimatedContainer(
-            duration: const Duration(milliseconds: 180),
-            curve: Curves.easeOut,
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-            decoration: BoxDecoration(
-              color: selected
-                  ? AppColors.sage
-                  : Theme.of(context).colorScheme.surface,
-              borderRadius: BorderRadius.circular(999),
-              border: Border.all(
+        // A pair of buttons, one of them selected — otherwise VoiceOver reads
+        // two bare words and never says which mode is on. The visible Text is
+        // the label, so the two can't drift apart.
+        child: Semantics(
+          button: true,
+          selected: selected,
+          inMutuallyExclusiveGroup: true,
+          child: GestureDetector(
+            onTap: () {
+              _dismissKeyboard();
+              onTap();
+            },
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 180),
+              curve: Curves.easeOut,
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              decoration: BoxDecoration(
                 color: selected
                     ? AppColors.sage
-                    : Theme.of(context)
-                        .colorScheme
-                        .onSurfaceVariant
-                        .withValues(alpha: 0.2),
-              ),
-            ),
-            child: Center(
-              child: Text(
-                label,
-                style: TextStyle(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w600,
+                    : Theme.of(context).colorScheme.surface,
+                borderRadius: BorderRadius.circular(999),
+                border: Border.all(
                   color: selected
-                      ? Colors.white
-                      : Theme.of(context).colorScheme.onSurfaceVariant,
+                      ? AppColors.sage
+                      : Theme.of(context)
+                          .colorScheme
+                          .onSurfaceVariant
+                          .withValues(alpha: 0.2),
+                ),
+              ),
+              child: Center(
+                child: Text(
+                  label,
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    color: selected
+                        ? Colors.white
+                        : Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
                 ),
               ),
             ),
@@ -964,6 +974,25 @@ class CarbTrackerHomeState extends State<CarbTrackerHome>
           ),
         ),
         actions: [
+          // The same two actions the row offers by swipe, for anyone who can't
+          // swipe — with or without VoiceOver.
+          TextButton(
+            onPressed: () {
+              Navigator.pop(context);
+              _saveToSavedFoods(item);
+            },
+            child: const Text('Save to Food list'),
+          ),
+          TextButton(
+            onPressed: () {
+              Navigator.pop(context);
+              final index = foodItems.indexWhere((f) => f.id == item.id);
+              // Gone already if the list changed while the dialog was open.
+              if (index != -1) removeItem(index);
+            },
+            style: TextButton.styleFrom(foregroundColor: AppColors.terracotta),
+            child: const Text('Delete'),
+          ),
           TextButton(
             onPressed: () => Navigator.pop(context),
             child: const Text('Close'),
@@ -1294,13 +1323,45 @@ class CarbTrackerHomeState extends State<CarbTrackerHome>
   /// the change, so the new list reaches the other device.
   Future<void> _onFavoritesChanged() => _pushLocalState();
 
-  Widget _buildFoodTile(FoodItem item) {
-    return FoodItemCard(
-      name: item.name,
-      subtitle: formatTime(item.loggedAt),
-      carbs: item.carbs,
-      category: item.category,
-      onLongPress: () => _showFoodDetails(item),
+  /// [index] is the row's place in today's list, which the Delete action
+  /// needs. It is null while a row animates out, where the actions would have
+  /// nothing to act on.
+  Widget _buildFoodTile(FoodItem item, {int? index}) {
+    return Semantics(
+      // One stop that reads like a sentence. Without this the name, the time
+      // and the number are three separate stops, and the number has no unit.
+      label: foodRowLabel(
+        name: item.name,
+        carbs: item.carbs,
+        time: formatTime(item.loggedAt),
+      ),
+      hint: 'Double tap for details',
+      onTap: () => _showFoodDetails(item),
+      // Deleting and saving are swipes, which VoiceOver can't reach: its own
+      // swipes move between elements. These put both in the Actions rotor.
+      customSemanticsActions: {
+        // Resolved by id, not by the position captured at build time: a
+        // semantics action can be dispatched against a config from before a
+        // rebuild — an iCloud merge replacing `foodItems`, say — and by then
+        // the index would point at a different food, or past the end. Same
+        // lookup and guard the details dialog's Delete uses.
+        if (index != null)
+          const CustomSemanticsAction(label: 'Delete'): () {
+            final at = foodItems.indexWhere((f) => f.id == item.id);
+            // Gone already if the list changed under the action.
+            if (at != -1) removeItem(at);
+          },
+        const CustomSemanticsAction(label: 'Save to Food list'): () =>
+            _saveToSavedFoods(item),
+      },
+      excludeSemantics: true,
+      child: FoodItemCard(
+        name: item.name,
+        subtitle: formatTime(item.loggedAt),
+        carbs: item.carbs,
+        category: item.category,
+        onLongPress: () => _showFoodDetails(item),
+      ),
     );
   }
 
@@ -1470,21 +1531,32 @@ class CarbTrackerHomeState extends State<CarbTrackerHome>
 
   Widget _buildCloudSyncIndicator() {
     switch (_cloudSyncState) {
+      // Icon-only status: without a label VoiceOver announces nothing, or
+      // stops on an unnamed image.
       case _CloudSyncState.syncing:
-        return SizedBox(
-          width: 14,
-          height: 14,
-          child: CircularProgressIndicator(
-            strokeWidth: 1.5,
-            color: AppColors.sage,
+        return Semantics(
+          label: 'Syncing',
+          child: SizedBox(
+            width: 14,
+            height: 14,
+            child: CircularProgressIndicator(
+              strokeWidth: 1.5,
+              color: AppColors.sage,
+            ),
           ),
         );
       case _CloudSyncState.synced:
-        return Icon(Icons.cloud_done, size: 16, color: AppColors.sage);
+        return Semantics(
+          label: 'Synced',
+          child: Icon(Icons.cloud_done, size: 16, color: AppColors.sage),
+        );
       case _CloudSyncState.error:
-        return Tooltip(
-          message: 'Cloud sync failed',
-          child: Icon(Icons.cloud_off, size: 16, color: AppColors.terracotta),
+        return Semantics(
+          label: 'Sync failed',
+          child: Tooltip(
+            message: 'Cloud sync failed',
+            child: Icon(Icons.cloud_off, size: 16, color: AppColors.terracotta),
+          ),
         );
       case _CloudSyncState.idle:
         return const SizedBox.shrink();
@@ -1498,20 +1570,44 @@ class CarbTrackerHomeState extends State<CarbTrackerHome>
   }) {
     final isActive = _currentPage == page;
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    return GestureDetector(
-      onTap: () => _switchToPage(page),
-      child: Tooltip(
-        message: tooltip,
-        child: Container(
-          width: 40,
-          height: 40,
-          decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            color: isActive
-                ? (isDark ? AppColors.lightInk : AppColors.charcoal)
-                : Colors.transparent,
+    // The icon is the only thing drawn, so the label has to be given. A
+    // tooltip alone satisfies `labeledTapTargetGuideline` and the iOS engine
+    // does fold it into the label, but nothing holds it there — and with the
+    // label given, the tooltip has to leave the tree or it is spoken twice.
+    return Semantics(
+      label: tooltip,
+      child: GestureDetector(
+        onTap: () => _switchToPage(page),
+        behavior: HitTestBehavior.opaque,
+        child: Tooltip(
+          message: tooltip,
+          excludeFromSemantics: true,
+          // 44x44 is the smallest hit area iOS asks for. At 40 these two were
+          // the only controls in the app below that minimum. The circle itself
+          // stays 40, but the wider box is a fixed-width child of a Row with a
+          // Spacer, so it does move the header a little: the Home circle sits
+          // 6pt left of where it used to, Settings 2pt left, and the taller row
+          // drops the title and the content below it by a couple of points.
+          // Measured and accepted — restoring the old pixels would mean three
+          // compensating paddings that silently break the next time this row
+          // changes.
+          child: SizedBox(
+            width: 44,
+            height: 44,
+            child: Center(
+              child: Container(
+                width: 40,
+                height: 40,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: isActive
+                      ? (isDark ? AppColors.lightInk : AppColors.charcoal)
+                      : Colors.transparent,
+                ),
+                child: Center(child: icon),
+              ),
+            ),
           ),
-          child: Center(child: icon),
         ),
       ),
     );
@@ -1646,6 +1742,9 @@ class CarbTrackerHomeState extends State<CarbTrackerHome>
   Widget _buildHomePage(bool isDark) {
     return GestureDetector(
       behavior: HitTestBehavior.translucent,
+      // Tapping anywhere dismisses the keyboard. Without this, VoiceOver saw
+      // an unlabelled button the size of the whole screen.
+      excludeFromSemantics: true,
       onTap: _dismissKeyboard,
       child: AnimatedPadding(
         duration: const Duration(milliseconds: 300),
@@ -1691,91 +1790,132 @@ class CarbTrackerHomeState extends State<CarbTrackerHome>
                         ),
                       ],
                     ),
-                    child: Column(
-                      children: [
-                        // "Today's Total" badge
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 16, vertical: 6),
-                          decoration: BoxDecoration(
-                            color: AppColors.sage.withValues(alpha: 0.1),
-                            borderRadius: BorderRadius.circular(999),
-                          ),
-                          child: Text(
-                            showingDailyTotal || foodItems.isEmpty
-                                ? "Today's Total"
-                                : foodItems.first.name,
-                            style: TextStyle(
-                              fontSize: 14,
-                              fontWeight: FontWeight.w500,
-                              color: AppColors.sage,
+                    // One deliberate stop. Left alone these merge into
+                    // "Apple 25.0g of 100g daily goal, 25" — the raw number,
+                    // the goal line, and a bare percentage the progress bar
+                    // contributes as its value.
+                    child: Semantics(
+                      label: showingDailyTotal || foodItems.isEmpty
+                          ? "Today's total"
+                          : foodItems.first.name,
+                      // The card still draws the goal line and the progress
+                      // bar in the single-food state, and `excludeSemantics`
+                      // hides both — so the day has to be spoken here too or
+                      // it is not spoken at all, which is the state the app
+                      // is in after every add.
+                      value: showingDailyTotal || foodItems.isEmpty
+                          ? carbProgressValue(
+                              total: totalCarbs, goal: dailyCarbGoal)
+                          : '${spokenGrams(foodItems.first.carbs)}. Today, '
+                              '${carbProgressValue(total: totalCarbs, goal: dailyCarbGoal)}',
+                      // The card is a control, not a caption: tapping it
+                      // toggles the two states above. The role and the hint
+                      // are what make that — and the value above — reachable.
+                      // Both are gated on the same condition as the
+                      // GestureDetector's onTap, so an empty day doesn't
+                      // announce a button with nothing to do.
+                      button: foodItems.isNotEmpty,
+                      hint: foodItems.isNotEmpty
+                          ? "Double tap to switch between today's total and "
+                              'the last food logged'
+                          : null,
+                      // The long press has no VoiceOver equivalent, so the
+                      // page it opens is offered as a named action instead.
+                      customSemanticsActions: {
+                        const CustomSemanticsAction(label: 'Open settings'):
+                            () {
+                          HapticFeedback.mediumImpact();
+                          _switchToPage(1);
+                        },
+                      },
+                      excludeSemantics: true,
+                      child: Column(
+                        children: [
+                          // "Today's Total" badge
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 16, vertical: 6),
+                            decoration: BoxDecoration(
+                              color: AppColors.sage.withValues(alpha: 0.1),
+                              borderRadius: BorderRadius.circular(999),
                             ),
-                          ),
-                        ),
-                        const SizedBox(height: 16),
-                        // Large carb number
-                        RichText(
-                          text: TextSpan(
-                            children: [
-                              TextSpan(
-                                text: showingDailyTotal || foodItems.isEmpty
-                                    ? totalCarbs.toStringAsFixed(1)
-                                    : foodItems.first.carbs.toStringAsFixed(1),
-                                style: TextStyle(
-                                  fontSize: 64,
-                                  fontWeight: FontWeight.w300,
-                                  color:
-                                      Theme.of(context).colorScheme.onSurface,
-                                ),
+                            child: Text(
+                              showingDailyTotal || foodItems.isEmpty
+                                  ? "Today's Total"
+                                  : foodItems.first.name,
+                              style: TextStyle(
+                                fontSize: 14,
+                                fontWeight: FontWeight.w500,
+                                color: AppColors.sage,
                               ),
-                              TextSpan(
-                                text: 'g',
-                                style: TextStyle(
-                                  fontSize: 30,
-                                  fontWeight: FontWeight.w300,
-                                  color: Theme.of(context)
-                                      .colorScheme
-                                      .onSurfaceVariant,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                        if (dailyCarbGoal != null) ...[
-                          const SizedBox(height: 8),
-                          Text(
-                            totalCarbs > dailyCarbGoal!
-                                ? '${(totalCarbs - dailyCarbGoal!).toStringAsFixed(0)}g over goal'
-                                : 'of ${dailyCarbGoal!.toStringAsFixed(0)}g daily goal',
-                            style: TextStyle(
-                              fontSize: 14,
-                              color: totalCarbs > dailyCarbGoal!
-                                  ? AppColors.terracotta
-                                  : Theme.of(context)
-                                      .colorScheme
-                                      .onSurfaceVariant,
                             ),
                           ),
                           const SizedBox(height: 16),
-                          // Linear progress bar
-                          ClipRRect(
-                            borderRadius: BorderRadius.circular(4),
-                            child: LinearProgressIndicator(
-                              value:
-                                  (totalCarbs / dailyCarbGoal!).clamp(0.0, 1.0),
-                              minHeight: 8,
-                              backgroundColor: isDark
-                                  ? AppColors.darkBorderMedium
-                                  : const Color(0xFFE5E7EB),
-                              valueColor: AlwaysStoppedAnimation<Color>(
-                                totalCarbs > dailyCarbGoal!
-                                    ? AppColors.terracotta
-                                    : AppColors.sage,
-                              ),
+                          // Large carb number
+                          RichText(
+                            text: TextSpan(
+                              children: [
+                                TextSpan(
+                                  text: showingDailyTotal || foodItems.isEmpty
+                                      ? totalCarbs.toStringAsFixed(1)
+                                      : foodItems.first.carbs
+                                          .toStringAsFixed(1),
+                                  style: TextStyle(
+                                    fontSize: 64,
+                                    fontWeight: FontWeight.w300,
+                                    color:
+                                        Theme.of(context).colorScheme.onSurface,
+                                  ),
+                                ),
+                                TextSpan(
+                                  text: 'g',
+                                  style: TextStyle(
+                                    fontSize: 30,
+                                    fontWeight: FontWeight.w300,
+                                    color: Theme.of(context)
+                                        .colorScheme
+                                        .onSurfaceVariant,
+                                  ),
+                                ),
+                              ],
                             ),
                           ),
+                          if (dailyCarbGoal != null) ...[
+                            const SizedBox(height: 8),
+                            Text(
+                              totalCarbs > dailyCarbGoal!
+                                  ? '${(totalCarbs - dailyCarbGoal!).toStringAsFixed(0)}g over goal'
+                                  : 'of ${dailyCarbGoal!.toStringAsFixed(0)}g daily goal',
+                              style: TextStyle(
+                                fontSize: 14,
+                                color: totalCarbs > dailyCarbGoal!
+                                    ? AppColors.terracotta
+                                    : Theme.of(context)
+                                        .colorScheme
+                                        .onSurfaceVariant,
+                              ),
+                            ),
+                            const SizedBox(height: 16),
+                            // Linear progress bar
+                            ClipRRect(
+                              borderRadius: BorderRadius.circular(4),
+                              child: LinearProgressIndicator(
+                                value: (totalCarbs / dailyCarbGoal!)
+                                    .clamp(0.0, 1.0),
+                                minHeight: 8,
+                                backgroundColor: isDark
+                                    ? AppColors.darkBorderMedium
+                                    : const Color(0xFFE5E7EB),
+                                valueColor: AlwaysStoppedAnimation<Color>(
+                                  totalCarbs > dailyCarbGoal!
+                                      ? AppColors.terracotta
+                                      : AppColors.sage,
+                                ),
+                              ),
+                            ),
+                          ],
                         ],
-                      ],
+                      ),
                     ),
                   ),
                 ),
@@ -1960,28 +2100,34 @@ class CarbTrackerHomeState extends State<CarbTrackerHome>
                           ),
                         ),
                         const Spacer(),
-                        GestureDetector(
-                          onTap: _confirmReset,
-                          child: Row(
-                            children: [
-                              Icon(
-                                Icons.refresh,
-                                size: 16,
-                                color: Theme.of(context)
-                                    .colorScheme
-                                    .onSurfaceVariant,
-                              ),
-                              const SizedBox(width: 4),
-                              Text(
-                                'Reset',
-                                style: TextStyle(
-                                  fontSize: 14,
+                        // Announced as a button; the icon and the word
+                        // "Reset" alone told VoiceOver nothing about what it
+                        // was. It already asks for confirmation.
+                        Semantics(
+                          button: true,
+                          child: GestureDetector(
+                            onTap: _confirmReset,
+                            child: Row(
+                              children: [
+                                Icon(
+                                  Icons.refresh,
+                                  size: 16,
                                   color: Theme.of(context)
                                       .colorScheme
                                       .onSurfaceVariant,
                                 ),
-                              ),
-                            ],
+                                const SizedBox(width: 4),
+                                Text(
+                                  'Reset',
+                                  style: TextStyle(
+                                    fontSize: 14,
+                                    color: Theme.of(context)
+                                        .colorScheme
+                                        .onSurfaceVariant,
+                                  ),
+                                ),
+                              ],
+                            ),
                           ),
                         ),
                       ],
@@ -2057,7 +2203,7 @@ class CarbTrackerHomeState extends State<CarbTrackerHome>
                                     color: Colors.white,
                                   ),
                                 ),
-                                child: _buildFoodTile(item),
+                                child: _buildFoodTile(item, index: index),
                               ),
                             ),
                           );
