@@ -78,7 +78,9 @@ class _SettingsPageState extends State<SettingsPage> {
   int _savedFoodsLoadToken = 0;
   int _historyLoadToken = 0;
   int _macroGoalsLoadToken = 0;
-  final PurchaseService _purchaseService = PurchaseService();
+  // The singleton, not a new one: a second instance would mean a second
+  // listener completing the same transactions, and a lock guarding nothing.
+  final PurchaseService _purchaseService = PurchaseService.instance;
   Map<String, dynamic> _premiumProducts = {};
 
   // Goal state
@@ -1665,7 +1667,8 @@ class _SettingsPageState extends State<SettingsPage> {
         return;
       }
 
-      await ps?.setPremiumEnabled(true, plan: plan);
+      // PurchaseService granted this before it answered — it is the only
+      // thing that sees transactions arriving with no screen waiting.
       await widget.onCloudSyncEnabled?.call();
       if (!mounted) return;
       setState(() {});
@@ -1705,7 +1708,6 @@ class _SettingsPageState extends State<SettingsPage> {
         );
         return;
       }
-      await ps?.setPremiumEnabled(true, plan: restoredPlan);
       await widget.onCloudSyncEnabled?.call();
       if (!mounted) return;
       setState(() {});

@@ -2,6 +2,8 @@ import 'dart:math';
 
 import 'package:flutter/material.dart';
 
+import '../config/app_colors.dart';
+
 enum FoodCategory {
   breakfast,
   lunch,
@@ -31,15 +33,15 @@ enum FoodCategory {
   Color get color {
     switch (this) {
       case FoodCategory.breakfast:
-        return const Color(0xFFE8A93C); // warm yellow
+        return AppColors.categoryHoney;
       case FoodCategory.lunch:
-        return const Color(0xFF7D9B76); // sage green
+        return AppColors.categorySage;
       case FoodCategory.dinner:
-        return const Color(0xFFD4714E); // terracotta
+        return AppColors.categoryTerracotta;
       case FoodCategory.snack:
-        return const Color(0xFFB07CC6); // purple
+        return AppColors.categoryPlum;
       case FoodCategory.drink:
-        return const Color(0xFF5B9BD5); // blue
+        return AppColors.categorySky;
     }
   }
 
