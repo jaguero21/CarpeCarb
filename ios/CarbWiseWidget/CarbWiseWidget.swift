@@ -154,12 +154,7 @@ struct GoalRingView: View {
 
 struct GlassCapsuleModifier: ViewModifier {
     func body(content: Content) -> some View {
-        if #available(iOSApplicationExtension 26.0, *) {
-            content.glassEffect(.regular, in: .capsule)
-        } else {
-            content
-                .background(.ultraThinMaterial, in: Capsule())
-        }
+        content.glassEffect(.regular, in: .capsule)
     }
 }
 
@@ -167,12 +162,7 @@ struct GlassRoundedModifier: ViewModifier {
     var cornerRadius: CGFloat = 12
 
     func body(content: Content) -> some View {
-        if #available(iOSApplicationExtension 26.0, *) {
-            content.glassEffect(.regular, in: RoundedRectangle(cornerRadius: cornerRadius))
-        } else {
-            content
-                .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: cornerRadius))
-        }
+        content.glassEffect(.regular, in: RoundedRectangle(cornerRadius: cornerRadius))
     }
 }
 

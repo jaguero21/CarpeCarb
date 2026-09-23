@@ -1,5 +1,5 @@
 # Must match IPHONEOS_DEPLOYMENT_TARGET of the Runner target (16.0).
-IOS_DEPLOYMENT_TARGET = '16.0'
+IOS_DEPLOYMENT_TARGET = '26.0'
 platform :ios, IOS_DEPLOYMENT_TARGET
 
 # CocoaPods analytics sends network stats synchronously affecting flutter build latency.
