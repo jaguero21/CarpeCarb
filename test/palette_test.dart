@@ -27,8 +27,10 @@ void main() {
   });
 
   test('the constants named after existing brand colors still equal them', () {
-    expect(AppColors.categoryHoney, AppColors.honey);
-    expect(AppColors.categoryTerracotta, AppColors.terracotta);
+    // Pinned to the literals, not to each other: `categoryHoney` is declared
+    // as `= honey`, so comparing the two can never fail.
+    expect(AppColors.categoryHoney, const Color(0xFFE8A93C));
+    expect(AppColors.categoryTerracotta, const Color(0xFFD4714E));
   });
 
   test('the progress track keeps its light-mode grey', () {
