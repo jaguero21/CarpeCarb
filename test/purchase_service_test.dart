@@ -413,6 +413,12 @@ void main() {
     expect(outcomes, isNotEmpty);
     expect(outcomes.first.isGranted, isFalse);
     expect(outcomes.first.message, 'Your card was declined.');
+    // Exactly once. A `finally` that let the exception escape into the
+    // listener's catch reported a second, generic failure on top of the real
+    // reason, so a UI that toasts failures showed two for one declined card.
+    expect(outcomes, hasLength(1));
+    // And nothing is held: this transaction was never a purchase.
+    expect(iap.completed, isEmpty);
   });
 
   test('a valid receipt with no usable product is kept, not finished',

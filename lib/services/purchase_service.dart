@@ -272,14 +272,20 @@ class PurchaseService {
       case PurchaseStatus.canceled:
         // Report even if completing throws: the user is owed the real reason,
         // and a waiter left hanging turns a declined card into a 90s timeout.
+        // Swallowed deliberately rather than rethrown — letting it escape put
+        // a second, generic failure on top of the real one and held a
+        // transaction that was never a purchase in the first place.
         try {
           await _complete(purchase);
-        } finally {
-          _report(
-            PurchaseOutcome.failed(_messageFor(purchase)),
-            productId: purchase.productID,
-          );
+        } catch (e) {
+          if (kDebugMode) {
+            debugPrint('Could not finish a failed transaction: $e');
+          }
         }
+        _report(
+          PurchaseOutcome.failed(_messageFor(purchase)),
+          productId: purchase.productID,
+        );
       case PurchaseStatus.pending:
         // Awaiting approval — Ask to Buy, or a bank confirmation. It arrives
         // again as purchased or error, whenever that happens.
