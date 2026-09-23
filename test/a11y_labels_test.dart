@@ -41,5 +41,21 @@ void main() {
     test('treats a zero goal as no goal, the way the app does elsewhere', () {
       expect(carbProgressValue(total: 45, goal: 0), '45 grams, no goal set');
     });
+
+    test('says how far over the goal the day is', () {
+      // The card draws "20g over goal" in terracotta; without this the
+      // spoken value stops at the two numbers and leaves the comparison to
+      // the listener.
+      expect(carbProgressValue(total: 120, goal: 100),
+          '120 of 100 grams, 20 grams over goal');
+    });
+
+    test('says nothing about being over when exactly at the goal', () {
+      expect(carbProgressValue(total: 100, goal: 100), '100 of 100 grams');
+    });
+
+    test('says nothing about being over when under the goal', () {
+      expect(carbProgressValue(total: 99.5, goal: 100), '99.5 of 100 grams');
+    });
   });
 }

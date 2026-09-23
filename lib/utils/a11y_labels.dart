@@ -29,8 +29,15 @@ String foodRowLabel({
     '$name, ${spokenGrams(carbs)} of carbs, logged $time';
 
 /// The day's progress bar, which otherwise announces nothing:
-/// "45 of 100 grams", or "45 grams, no goal set" when no goal is set.
-String carbProgressValue({required double total, double? goal}) =>
-    goal == null || goal <= 0
-        ? '${spokenGrams(total)}, no goal set'
-        : '${spokenNumber(total)} of ${spokenGrams(goal)}';
+/// "45 of 100 grams", or "45 grams, no goal set" when no goal is set. Over the
+/// goal it adds "120 of 100 grams, 20 grams over goal", matching the
+/// "20g over goal" line the card draws in terracotta.
+///
+/// Its Swift twin, `CarbAccessibility.carbsValue`, deliberately stops at the
+/// two numbers: the widget already speaks "+20g over" as its own element, so
+/// saying it there too would say it twice.
+String carbProgressValue({required double total, double? goal}) {
+  if (goal == null || goal <= 0) return '${spokenGrams(total)}, no goal set';
+  final base = '${spokenNumber(total)} of ${spokenGrams(goal)}';
+  return total > goal ? '$base, ${spokenGrams(total - goal)} over goal' : base;
+}

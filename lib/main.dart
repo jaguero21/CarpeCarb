@@ -1781,10 +1781,36 @@ class CarbTrackerHomeState extends State<CarbTrackerHome>
                       label: showingDailyTotal || foodItems.isEmpty
                           ? "Today's total"
                           : foodItems.first.name,
+                      // The card still draws the goal line and the progress
+                      // bar in the single-food state, and `excludeSemantics`
+                      // hides both — so the day has to be spoken here too or
+                      // it is not spoken at all, which is the state the app
+                      // is in after every add.
                       value: showingDailyTotal || foodItems.isEmpty
                           ? carbProgressValue(
                               total: totalCarbs, goal: dailyCarbGoal)
-                          : spokenGrams(foodItems.first.carbs),
+                          : '${spokenGrams(foodItems.first.carbs)}, '
+                              '${carbProgressValue(total: totalCarbs, goal: dailyCarbGoal)} today',
+                      // The card is a control, not a caption: tapping it
+                      // toggles the two states above. The role and the hint
+                      // are what make that — and the value above — reachable.
+                      // Both are gated on the same condition as the
+                      // GestureDetector's onTap, so an empty day doesn't
+                      // announce a button with nothing to do.
+                      button: foodItems.isNotEmpty,
+                      hint: foodItems.isNotEmpty
+                          ? "Double tap to switch between today's total and "
+                              'the last food logged'
+                          : null,
+                      // The long press has no VoiceOver equivalent, so the
+                      // page it opens is offered as a named action instead.
+                      customSemanticsActions: {
+                        const CustomSemanticsAction(label: 'Open settings'):
+                            () {
+                          HapticFeedback.mediumImpact();
+                          _switchToPage(1);
+                        },
+                      },
                       excludeSemantics: true,
                       child: Column(
                         children: [
