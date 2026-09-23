@@ -47,29 +47,65 @@ extension LoggedFood {
     }
 }
 
+/// Keeps a minimum gap between requests.
+///
+/// The slot is claimed *before* any suspension. An actor releases its
+/// isolation at every `await`, so checking the last time, sleeping, and only
+/// then writing it back lets a second caller in during the sleep to read the
+/// same stale value — which is exactly the bug the static version had, and
+/// which moving to an actor does not by itself fix. Reserving first also
+/// queues N concurrent callers one interval apart instead of collapsing them
+/// onto the same instant.
+///
+/// Paced on a monotonic clock, not `Date`. A wall clock can step backwards on
+/// a manual date change or an NTP correction, and an hour-long step back would
+/// otherwise make the next lookup sleep for an hour — Siri would simply appear
+/// to hang.
+actor RequestPacer {
+    static let shared = RequestPacer()
+
+    private let minInterval: Duration
+    private let now: @Sendable () -> ContinuousClock.Instant
+    private var nextSlot: ContinuousClock.Instant?
+
+    init(
+        minInterval: Duration = .milliseconds(1500),
+        now: @escaping @Sendable () -> ContinuousClock.Instant = { ContinuousClock.now }
+    ) {
+        self.minInterval = minInterval
+        self.now = now
+    }
+
+    /// How long this caller must wait, reserved atomically.
+    ///
+    /// Separated from the sleeping so a test can observe the reservation
+    /// without waiting in real time.
+    func reserveSlot() -> Duration {
+        let current = now()
+        let slot = max(current, nextSlot ?? current)
+        nextSlot = slot.advanced(by: minInterval)
+        return current.duration(to: slot)
+    }
+
+    func waitForTurn() async {
+        let delay = reserveSlot()
+        if delay > .zero {
+            try? await Task.sleep(for: delay)
+        }
+    }
+}
+
 public struct PerplexityClient {
-    private static var lastRequestTime: Date?
-    private static let minInterval: TimeInterval = 1.5
 
     // Firebase Cloud Function endpoint
     private static let cloudFunctionURL = "https://us-central1-carpecarb.cloudfunctions.net/getMultipleCarbCounts"
-
-    private static func enforceRateLimit() async {
-        if let last = lastRequestTime {
-            let elapsed = Date().timeIntervalSince(last)
-            if elapsed < minInterval {
-                try? await Task.sleep(nanoseconds: UInt64((minInterval - elapsed) * 1_000_000_000))
-            }
-        }
-        lastRequestTime = Date()
-    }
 
     /// Looks up every food in `foodItem` via the Cloud Function.
     ///
     /// - Parameter idToken: a current Firebase ID token for the signed-in user.
     ///   CarbShared stays free of Firebase, so the caller supplies it.
     public static func lookupCarbs(for foodItem: String, idToken: String) async throws -> LookupResult {
-        await enforceRateLimit()
+        await RequestPacer.shared.waitForTurn()
 
         guard let url = URL(string: cloudFunctionURL) else {
             throw IntentError.message("Invalid server address.")

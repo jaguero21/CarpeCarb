@@ -17,21 +17,25 @@ enum SiriAuth {
         .userNotFound, .userDisabled, .invalidUserToken, .userTokenExpired,
     ]
 
+    /// Main-actor isolated rather than hopping in and out.
+    ///
+    /// Firebase's `User` is not `Sendable`, so returning one from a
+    /// `MainActor.run` closure into a nonisolated context is a data race the
+    /// Swift 6 compiler rejects. Staying on the main actor for the whole call
+    /// keeps the user — and the token refresh it performs — on one actor.
+    @MainActor
     static func idToken() async throws -> String {
-        let user = await MainActor.run { () -> User? in
-            // A background Siri launch may not start the Flutter engine, so
-            // configure Firebase here if FlutterFire hasn't yet. FlutterFire
-            // skips its own setup when a default app already exists.
-            if FirebaseApp.app() == nil {
-                // This reads GoogleService-Info.plist. Dart's
-                // `Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform)`
-                // (lib/main.dart) then reuses this default app only if its options
-                // match lib/firebase_options.dart, so regenerate both together.
-                FirebaseApp.configure()
-            }
-            return Auth.auth().currentUser
+        // A background Siri launch may not start the Flutter engine, so
+        // configure Firebase here if FlutterFire hasn't yet. FlutterFire
+        // skips its own setup when a default app already exists.
+        if FirebaseApp.app() == nil {
+            // This reads GoogleService-Info.plist. Dart's
+            // `Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform)`
+            // (lib/main.dart) then reuses this default app only if its options
+            // match lib/firebase_options.dart, so regenerate both together.
+            FirebaseApp.configure()
         }
-        guard let user else {
+        guard let user = Auth.auth().currentUser else {
             throw IntentError.message("Open CarpeCarb once to finish setting up Siri.")
         }
         do {

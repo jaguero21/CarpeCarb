@@ -1,9 +1,14 @@
-import Flutter
+@preconcurrency import Flutter
 import CarbShared
 import os.log
 
 /// Bridges Flutter ↔ CloudSyncStore via a MethodChannel.
 /// Provides comprehensive logging for debugging iCloud sync issues.
+/// Main-actor isolated: Flutter invokes method-channel handlers on the platform
+/// thread, and every handler here already hopped to the main actor to touch the
+/// store. Saying so once lets the `FlutterResult` callbacks — which are not
+/// Sendable — stay on one actor instead of being sent across boundaries.
+@MainActor
 class CloudSyncChannel {
     static let channelName = "com.carpecarb/cloudsync"
 
@@ -16,7 +21,12 @@ class CloudSyncChannel {
     init(messenger: FlutterBinaryMessenger) {
         channel = FlutterMethodChannel(name: Self.channelName, binaryMessenger: messenger)
         channel.setMethodCallHandler { [weak self] call, result in
-            self?.handle(call, result: result)
+            // Flutter calls this on the platform thread, which is the main
+            // thread; asserting that is what lets a nonisolated closure reach
+            // main-actor state without sending anything across actors.
+            MainActor.assumeIsolated {
+                self?.handle(call, result: result)
+            }
         }
         logger.info("📱 CloudSyncChannel initialized on channel '\(Self.channelName)'")
     }

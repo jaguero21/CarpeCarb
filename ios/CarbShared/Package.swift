@@ -1,4 +1,4 @@
-// swift-tools-version: 5.9
+// swift-tools-version: 6.0
 
 import PackageDescription
 
@@ -16,12 +16,14 @@ let package = Package(
     targets: [
         .target(
             name: "CarbShared",
-            path: "Sources/CarbShared"
+            path: "Sources/CarbShared",
+            swiftSettings: [.swiftLanguageMode(.v6)]
         ),
         .testTarget(
             name: "CarbSharedTests",
             dependencies: ["CarbShared"],
-            path: "Tests/CarbSharedTests"
+            path: "Tests/CarbSharedTests",
+            swiftSettings: [.swiftLanguageMode(.v6)]
         ),
     ]
 )
