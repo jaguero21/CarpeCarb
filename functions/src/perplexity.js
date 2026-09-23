@@ -97,9 +97,12 @@ async function lookupFoods(sanitized, apiKey, { fetchImpl = fetch, sleep = (ms) 
                   "If the exact brand product cannot be found, use the closest matching generic version and note this in details. " +
                   "Always include the serving size in details. " +
                   "Return one element for every food the user mentions. " +
-                  "If you cannot find a reliable carbohydrate value for a food, still return it, but set \"carbs\" to null " +
-                  "and say in details why no reliable value was found. Never estimate or guess a carbohydrate value you cannot source: " +
-                  "people use these numbers to dose insulin, and a wrong number is worse than none. " +
+                  "A food named generically (\"pizza\", \"rice\", \"an apple\") is answerable: use a standard reference serving " +
+                  "from USDA FoodData Central or the most common product, give its carbohydrate value, and say in details " +
+                  "which serving you used. " +
+                  "Set \"carbs\" to null only when no source gives a value for that food at all — a dish you cannot identify, " +
+                  "or one nothing lists — and say in details why. Never invent a number you cannot source: people use these " +
+                  "numbers to dose insulin, and a wrong number is worse than none. " +
                   "A food that genuinely has no carbohydrates (water, black coffee) is 0, not null. " +
                   'Example: [{"name":"HEB Fajita Tortilla","carbs":26,"protein":4,"fat":3,"fiber":1,"calories":150,"details":"Per HEB product nutrition label, one fajita-size flour tortilla (1 tortilla, 45g serving)."}]',
               },
@@ -252,6 +255,15 @@ async function lookupFoods(sanitized, apiKey, { fetchImpl = fetch, sleep = (ms) 
 
       const unknown = mapped.filter((item) => item.carbs === null).length;
       console.log(`Returning ${mapped.length} item(s), ${unknown} without carbs`);
+      if (unknown > 0) {
+        // Types, never values: enough to tell "the model answered null" from
+        // "the model sent something the parse rejected" without putting what
+        // someone ate into Cloud Logging.
+        const kinds = items
+          .map((item) => (item.carbs === null ? "null" : typeof item.carbs))
+          .join(",");
+        console.log(`Unknown carbs, carbs field types: ${kinds}`);
+      }
 
       return {
         items: mapped,
