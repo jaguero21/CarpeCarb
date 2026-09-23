@@ -1564,18 +1564,28 @@ class CarbTrackerHomeState extends State<CarbTrackerHome>
     final isDark = Theme.of(context).brightness == Brightness.dark;
     return GestureDetector(
       onTap: () => _switchToPage(page),
+      behavior: HitTestBehavior.opaque,
       child: Tooltip(
         message: tooltip,
-        child: Container(
-          width: 40,
-          height: 40,
-          decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            color: isActive
-                ? (isDark ? AppColors.lightInk : AppColors.charcoal)
-                : Colors.transparent,
+        // 44x44 is the smallest hit area iOS asks for; the circle stays 40, so
+        // nothing moves on screen. At 40 these two were the only controls in
+        // the app below the minimum.
+        child: SizedBox(
+          width: 44,
+          height: 44,
+          child: Center(
+            child: Container(
+              width: 40,
+              height: 40,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: isActive
+                    ? (isDark ? AppColors.lightInk : AppColors.charcoal)
+                    : Colors.transparent,
+              ),
+              child: Center(child: icon),
+            ),
           ),
-          child: Center(child: icon),
         ),
       ),
     );
@@ -1710,6 +1720,9 @@ class CarbTrackerHomeState extends State<CarbTrackerHome>
   Widget _buildHomePage(bool isDark) {
     return GestureDetector(
       behavior: HitTestBehavior.translucent,
+      // Tapping anywhere dismisses the keyboard. Without this, VoiceOver saw
+      // an unlabelled button the size of the whole screen.
+      excludeFromSemantics: true,
       onTap: _dismissKeyboard,
       child: AnimatedPadding(
         duration: const Duration(milliseconds: 300),
