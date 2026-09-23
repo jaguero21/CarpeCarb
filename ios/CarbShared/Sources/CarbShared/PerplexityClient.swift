@@ -47,29 +47,41 @@ extension LoggedFood {
     }
 }
 
-public struct PerplexityClient {
-    private static var lastRequestTime: Date?
-    private static let minInterval: TimeInterval = 1.5
+/// Serializes the gap between requests.
+///
+/// The previous version read a static `lastRequestTime`, slept, then wrote it
+/// back. Two concurrent lookups could both read the same value, both decide
+/// enough time had passed, and both go — so the 1.5s floor the server expects
+/// was not actually enforced. An actor makes the check and the write one step.
+private actor RequestPacer {
+    static let shared = RequestPacer()
 
-    // Firebase Cloud Function endpoint
-    private static let cloudFunctionURL = "https://us-central1-carpecarb.cloudfunctions.net/getMultipleCarbCounts"
+    private var lastRequestTime: Date?
+    private let minInterval: TimeInterval = 1.5
 
-    private static func enforceRateLimit() async {
+    func waitForTurn() async {
         if let last = lastRequestTime {
             let elapsed = Date().timeIntervalSince(last)
             if elapsed < minInterval {
-                try? await Task.sleep(nanoseconds: UInt64((minInterval - elapsed) * 1_000_000_000))
+                try? await Task.sleep(
+                    nanoseconds: UInt64((minInterval - elapsed) * 1_000_000_000))
             }
         }
         lastRequestTime = Date()
     }
+}
+
+public struct PerplexityClient {
+
+    // Firebase Cloud Function endpoint
+    private static let cloudFunctionURL = "https://us-central1-carpecarb.cloudfunctions.net/getMultipleCarbCounts"
 
     /// Looks up every food in `foodItem` via the Cloud Function.
     ///
     /// - Parameter idToken: a current Firebase ID token for the signed-in user.
     ///   CarbShared stays free of Firebase, so the caller supplies it.
     public static func lookupCarbs(for foodItem: String, idToken: String) async throws -> LookupResult {
-        await enforceRateLimit()
+        await RequestPacer.shared.waitForTurn()
 
         guard let url = URL(string: cloudFunctionURL) else {
             throw IntentError.message("Invalid server address.")

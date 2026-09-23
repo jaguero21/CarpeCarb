@@ -14,7 +14,7 @@ public protocol KeyValueStoring: AnyObject {
 extension NSUbiquitousKeyValueStore: KeyValueStoring {}
 
 /// Syncs app data across devices using NSUbiquitousKeyValueStore (iCloud key-value store).
-/// Placed in CarbShared so all targets (app, widget, Siri) can access it.
+/// Placed in CarbShared so all targets (app, widget, watch, Siri) can access it.
 ///
 /// Data flows entirely through the MethodChannel: Flutter serializes data on push
 /// and writes it back to SharedPreferences on pull. This avoids UserDefaults domain
@@ -94,11 +94,15 @@ public final class CloudSyncStore {
     
     deinit {
         if observing {
-            // Note: deinit is not async, so we do synchronous cleanup
+            // Note: deinit is not async, so we do synchronous cleanup.
+            // `object: nil` rather than `kvStore`: a nonisolated deinit may not
+            // touch a non-Sendable stored property, and since this instance
+            // registered exactly one observer for this notification, removing
+            // it by observer and name alone removes the same registration.
             NotificationCenter.default.removeObserver(
                 self,
                 name: NSUbiquitousKeyValueStore.didChangeExternallyNotification,
-                object: kvStore
+                object: nil
             )
             logger.info("CloudSyncStore deallocated - cleaned up observers")
         }
