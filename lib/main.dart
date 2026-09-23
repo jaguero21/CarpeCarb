@@ -854,38 +854,46 @@ class CarbTrackerHomeState extends State<CarbTrackerHome>
         required bool selected,
         required VoidCallback onTap}) {
       return Expanded(
-        child: GestureDetector(
-          onTap: () {
-            _dismissKeyboard();
-            onTap();
-          },
-          child: AnimatedContainer(
-            duration: const Duration(milliseconds: 180),
-            curve: Curves.easeOut,
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-            decoration: BoxDecoration(
-              color: selected
-                  ? AppColors.sage
-                  : Theme.of(context).colorScheme.surface,
-              borderRadius: BorderRadius.circular(999),
-              border: Border.all(
+        // A pair of buttons, one of them selected — otherwise VoiceOver reads
+        // two bare words and never says which mode is on. The visible Text is
+        // the label, so the two can't drift apart.
+        child: Semantics(
+          button: true,
+          selected: selected,
+          inMutuallyExclusiveGroup: true,
+          child: GestureDetector(
+            onTap: () {
+              _dismissKeyboard();
+              onTap();
+            },
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 180),
+              curve: Curves.easeOut,
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              decoration: BoxDecoration(
                 color: selected
                     ? AppColors.sage
-                    : Theme.of(context)
-                        .colorScheme
-                        .onSurfaceVariant
-                        .withValues(alpha: 0.2),
-              ),
-            ),
-            child: Center(
-              child: Text(
-                label,
-                style: TextStyle(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w600,
+                    : Theme.of(context).colorScheme.surface,
+                borderRadius: BorderRadius.circular(999),
+                border: Border.all(
                   color: selected
-                      ? Colors.white
-                      : Theme.of(context).colorScheme.onSurfaceVariant,
+                      ? AppColors.sage
+                      : Theme.of(context)
+                          .colorScheme
+                          .onSurfaceVariant
+                          .withValues(alpha: 0.2),
+                ),
+              ),
+              child: Center(
+                child: Text(
+                  label,
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    color: selected
+                        ? Colors.white
+                        : Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
                 ),
               ),
             ),
@@ -2005,28 +2013,34 @@ class CarbTrackerHomeState extends State<CarbTrackerHome>
                           ),
                         ),
                         const Spacer(),
-                        GestureDetector(
-                          onTap: _confirmReset,
-                          child: Row(
-                            children: [
-                              Icon(
-                                Icons.refresh,
-                                size: 16,
-                                color: Theme.of(context)
-                                    .colorScheme
-                                    .onSurfaceVariant,
-                              ),
-                              const SizedBox(width: 4),
-                              Text(
-                                'Reset',
-                                style: TextStyle(
-                                  fontSize: 14,
+                        // Announced as a button; the icon and the word
+                        // "Reset" alone told VoiceOver nothing about what it
+                        // was. It already asks for confirmation.
+                        Semantics(
+                          button: true,
+                          child: GestureDetector(
+                            onTap: _confirmReset,
+                            child: Row(
+                              children: [
+                                Icon(
+                                  Icons.refresh,
+                                  size: 16,
                                   color: Theme.of(context)
                                       .colorScheme
                                       .onSurfaceVariant,
                                 ),
-                              ),
-                            ],
+                                const SizedBox(width: 4),
+                                Text(
+                                  'Reset',
+                                  style: TextStyle(
+                                    fontSize: 14,
+                                    color: Theme.of(context)
+                                        .colorScheme
+                                        .onSurfaceVariant,
+                                  ),
+                                ),
+                              ],
+                            ),
                           ),
                         ),
                       ],

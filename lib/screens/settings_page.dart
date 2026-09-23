@@ -710,13 +710,18 @@ class _SettingsPageState extends State<SettingsPage> {
             child: Row(
               mainAxisAlignment: MainAxisAlignment.end,
               children: [
-                GestureDetector(
-                  onTap: _resetSavedFoods,
-                  child: Text(
-                    'Clear All',
-                    style: TextStyle(
-                      fontSize: 14,
-                      color: AppColors.terracotta,
+                // Announced as a button rather than as stray text. It
+                // already asks for confirmation.
+                Semantics(
+                  button: true,
+                  child: GestureDetector(
+                    onTap: _resetSavedFoods,
+                    child: Text(
+                      'Clear All',
+                      style: TextStyle(
+                        fontSize: 14,
+                        color: AppColors.terracotta,
+                      ),
                     ),
                   ),
                 ),
