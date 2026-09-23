@@ -1,5 +1,5 @@
 name: carb_tracker
-description: biteBot - A minimalist carb tracking app using Perplexity API
+description: CarpeCarb - A minimalist carb tracker with AI-powered nutrition lookup
 publish_to: 'none'
 version: 1.0.2+4
 
