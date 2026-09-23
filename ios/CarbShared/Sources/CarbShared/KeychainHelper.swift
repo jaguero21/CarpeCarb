@@ -2,7 +2,7 @@ import Foundation
 import Security
 
 /// Shared Keychain storage for values that need to be accessible across the
-/// main app and its extensions (Widget, Siri App Intents, Watch).
+/// main app and its extensions (Widget, Siri App Intents).
 ///
 /// Requires Keychain Sharing capability enabled in Xcode for all targets that
 /// need access, with access group "group.com.carpecarb.shared" registered.

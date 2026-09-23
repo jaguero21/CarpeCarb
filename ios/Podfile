@@ -1,4 +1,4 @@
-# Must match IPHONEOS_DEPLOYMENT_TARGET of the Runner target (16.0).
+# Must match IPHONEOS_DEPLOYMENT_TARGET of the Runner target (26.0).
 IOS_DEPLOYMENT_TARGET = '26.0'
 platform :ios, IOS_DEPLOYMENT_TARGET
 

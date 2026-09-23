@@ -293,8 +293,8 @@
 				CW0001D1 /* Embed Foundation Extensions */,
 				3B06AD1E1E4923F5004D2608 /* Thin Binary */,
 				F6F1868A4CA5174A454CE32C /* FlutterFire: "flutterfire bundle-service-file" */,
-				13A3B5A7665CD70250563118 /* Re-sign Embedded Frameworks */,
 				99AE41EE6DC64455A9E630E0 /* [CP] Copy Pods Resources */,
+				13A3B5A7665CD70250563118 /* Re-sign Embedded Frameworks */,
 			);
 			buildRules = (
 			);
