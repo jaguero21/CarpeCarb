@@ -70,6 +70,10 @@ class PurchaseService {
   /// buy, restore, or hear about a purchase uses this — a second instance
   /// would mean a second listener completing the same transactions, and a
   /// lock that no longer guards anything.
+  ///
+  /// Only touch this on a device or simulator: it builds the real
+  /// `InAppPurchase`, whose platform channel is not available in host tests.
+  /// Tests construct their own `PurchaseService` with fakes instead.
   static final PurchaseService instance = PurchaseService();
 
   static const String monthlyProductId = 'premium_monthlysub';
@@ -113,6 +117,7 @@ class PurchaseService {
   Completer<String>? _waiter;
   String? _waitingForProductId;
   bool _flowInProgress = false;
+  bool _retrying = false;
 
   Set<String> get _productIds => {monthlyProductId, yearlyProductId};
 
@@ -150,8 +155,9 @@ class PurchaseService {
 
   Future<Map<String, ProductDetails>> queryPremiumProducts() async {
     final response = await _iap.queryProductDetails(_productIds);
-    if (response.error != null) {
-      throw Exception(response.error!.message);
+    final error = response.error;
+    if (error != null) {
+      throw Exception(error.message);
     }
 
     return {
@@ -240,7 +246,18 @@ class PurchaseService {
 
   Future<void> _handlePurchases(List<PurchaseDetails> purchases) async {
     for (final purchase in purchases) {
-      await _handlePurchase(purchase);
+      try {
+        await _handlePurchase(purchase);
+      } catch (e) {
+        // The listener must survive anything: an escaping error is unhandled,
+        // and leaves whoever is waiting to time out with no explanation. Keep
+        // the transaction — it has not been knowingly finished.
+        _hold(purchase);
+        _report(
+          PurchaseOutcome.failed('Could not finish the App Store purchase.'),
+          productId: purchase.productID,
+        );
+      }
     }
   }
 
@@ -253,8 +270,16 @@ class PurchaseService {
         await _grant(purchase);
       case PurchaseStatus.error:
       case PurchaseStatus.canceled:
-        await _complete(purchase);
-        _report(PurchaseOutcome.failed(_messageFor(purchase)));
+        // Report even if completing throws: the user is owed the real reason,
+        // and a waiter left hanging turns a declined card into a 90s timeout.
+        try {
+          await _complete(purchase);
+        } finally {
+          _report(
+            PurchaseOutcome.failed(_messageFor(purchase)),
+            productId: purchase.productID,
+          );
+        }
       case PurchaseStatus.pending:
         // Awaiting approval — Ask to Buy, or a bank confirmation. It arrives
         // again as purchased or error, whenever that happens.
@@ -274,36 +299,53 @@ class PurchaseService {
       validatedProductId = await _validate(
         purchase,
         idToken: idToken,
-        expectedProductId: _waitingForProductId,
+        // The transaction's own product, never the waiter's: validating one
+        // transaction against another's expectation manufactures a mismatch
+        // and throws away a purchase that was fine.
+        expectedProductId: purchase.productID,
       );
     } on ReceiptRejected catch (e) {
       // The receipt is not going to become valid, so let the transaction go.
       await _complete(purchase);
-      _report(PurchaseOutcome.failed(e.message));
+      _report(PurchaseOutcome.failed(e.message), productId: purchase.productID);
       return;
     } catch (e) {
       // Could not reach the validator. Completing here would drop a
       // transaction the user may have paid for, so hold it instead.
       _hold(purchase);
-      _report(PurchaseOutcome.failed(
-        'Could not verify the App Store purchase right now.',
-      ));
+      _report(
+        PurchaseOutcome.failed(
+          'Could not verify the App Store purchase right now.',
+        ),
+        productId: purchase.productID,
+      );
       return;
     }
 
     final plan =
         validatedProductId == null ? null : planForProductId(validatedProductId);
-    await _complete(purchase);
 
     if (plan == null) {
-      _report(PurchaseOutcome.failed(
-        'The App Store receipt was valid but not for a CarpeCarb plan.',
-      ));
+      // The receipt checked out but the answer is not one we can act on — a
+      // renamed field, a product we don't know. That is not the server
+      // rejecting the receipt, so treat it like an unreachable validator and
+      // keep the transaction rather than finishing it ungranted.
+      _hold(purchase);
+      _report(
+        PurchaseOutcome.failed(
+          'Could not read the App Store receipt. CarpeCarb will try again.',
+        ),
+        productId: purchase.productID,
+      );
       return;
     }
 
+    // Grant first, complete second. If completing fails, StoreKit re-delivers
+    // and this runs again harmlessly; if granting fails after completing, the
+    // purchase is gone with nothing to show for it.
     await _premium.setPremiumEnabled(true, plan: plan);
-    _report(PurchaseOutcome.granted(plan));
+    await _complete(purchase);
+    _report(PurchaseOutcome.granted(plan), productId: purchase.productID);
   }
 
   /// Keeps a transaction for a later attempt without completing it.
@@ -315,11 +357,21 @@ class PurchaseService {
   }
 
   Future<void> _retryHeld() async {
-    if (_held.isEmpty) return;
-    final pending = List<PurchaseDetails>.from(_held);
-    _held.clear();
-    for (final purchase in pending) {
-      await _grant(purchase);
+    // Not re-entrant: two auth events in quick succession would otherwise run
+    // two retries at once, and the second would pick up a transaction the
+    // first had re-held — validating and completing it twice. Anything held
+    // again waits for the next auth change, or for StoreKit to re-deliver it
+    // at the next launch.
+    if (_retrying || _held.isEmpty) return;
+    _retrying = true;
+    try {
+      final pending = List<PurchaseDetails>.from(_held);
+      _held.clear();
+      for (final purchase in pending) {
+        await _grant(purchase);
+      }
+    } finally {
+      _retrying = false;
     }
   }
 
@@ -327,14 +379,16 @@ class PurchaseService {
   ///
   /// An outcome nobody was waiting for is the interesting one: it means the
   /// purchase landed while the user was somewhere else entirely.
-  void _report(PurchaseOutcome outcome) {
+  void _report(PurchaseOutcome outcome, {String? productId}) {
     final waiter = _waiter;
     final wanted = _waitingForProductId;
+    // `productId` null means the outcome belongs to no particular transaction
+    // — a stream-level error — and reaches whoever is waiting. Otherwise a
+    // failure has to match the waiter's product, exactly as a grant does;
+    // without that, an unrelated failure answers someone else's purchase.
     final matches = waiter != null &&
         !waiter.isCompleted &&
-        (wanted == null ||
-            outcome.plan == null ||
-            planForProductId(wanted) == outcome.plan);
+        (wanted == null || productId == null || wanted == productId);
 
     if (matches) {
       if (outcome.isGranted) {
@@ -380,6 +434,7 @@ class PurchaseService {
       return token;
     } catch (e) {
       // Treated as "no token yet", not as a bad receipt.
+      if (kDebugMode) debugPrint('Could not get an ID token for validation: $e');
       return null;
     }
   }

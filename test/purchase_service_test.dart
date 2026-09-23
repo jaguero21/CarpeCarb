@@ -17,11 +17,17 @@ class FakeIap implements InAppPurchase {
   int restoreCalls = 0;
   bool buyStarts = true;
 
+  /// StoreKit's `finishTransaction` is not guaranteed to succeed.
+  bool completeThrows = false;
+
   @override
   Stream<List<PurchaseDetails>> get purchaseStream => controller.stream;
 
   @override
   Future<void> completePurchase(PurchaseDetails purchase) async {
+    if (completeThrows) {
+      throw Exception('could not finish the transaction');
+    }
     completed.add(purchase);
   }
 
@@ -90,6 +96,15 @@ class _StubUser implements User {
       throw UnimplementedError('${invocation.memberName} is not stubbed');
 }
 
+/// Storing premium can fail for real: a SharedPreferences write on a full
+/// disk, or under iOS data protection while the device is locked.
+class ThrowingPremiumService extends PremiumService {
+  @override
+  Future<void> setPremiumEnabled(bool value, {String? plan}) async {
+    throw Exception('could not write premium state');
+  }
+}
+
 PurchaseDetails purchase(
   String productId, {
   PurchaseStatus status = PurchaseStatus.purchased,
@@ -131,11 +146,12 @@ void main() {
     ReceiptValidator? validator,
     bool signedIn = true,
     Duration? purchaseTimeout,
+    PremiumService? premiumService,
   }) {
     auth.signedIn = signedIn;
     final service = PurchaseService(
       iap: iap,
-      premiumService: premium,
+      premiumService: premiumService ?? premium,
       auth: auth,
       validator: validator ??
           (p, {required idToken, expectedProductId}) async => p.productID,
@@ -295,5 +311,126 @@ void main() {
 
     expect(iap.completed, isEmpty);
     expect(await isPremiumStored(), isFalse);
+  });
+
+  test('a grant that cannot be stored keeps the transaction', () async {
+    // Completing before storing premium means a failed write leaves the user
+    // charged, un-upgraded, and with the transaction gone from the queue.
+    final service = build(premiumService: ThrowingPremiumService());
+    final outcomes = <PurchaseOutcome>[];
+    service.outcomes.listen(outcomes.add);
+
+    iap.controller.add([purchase(PurchaseService.monthlyProductId)]);
+    await pumpEventQueue();
+
+    expect(iap.completed, isEmpty,
+        reason: 'the purchase is still owed to the user');
+    expect(await isPremiumStored(), isFalse);
+    expect(outcomes, isNotEmpty,
+        reason: 'the failure must be reported, not thrown into the void');
+    expect(outcomes.first.isGranted, isFalse);
+  });
+
+  test('a transaction is validated against its own product', () async {
+    // The waiter's product is global state belonging to whichever purchase is
+    // in flight. Asking the server about the wrong product manufactures a
+    // mismatch, and that bogus rejection discards a good transaction.
+    final expectations = <String?>[];
+    final service = build(
+      validator: (p, {required idToken, expectedProductId}) async {
+        expectations.add(expectedProductId);
+        return p.productID;
+      },
+    );
+
+    final pending = service.purchasePlan(PremiumService.monthlyPlan);
+    await pumpEventQueue();
+
+    iap.controller.add([
+      purchase(
+        PurchaseService.yearlyProductId,
+        status: PurchaseStatus.restored,
+        id: 'tx-yearly',
+      )
+    ]);
+    await pumpEventQueue();
+
+    expect(expectations, [PurchaseService.yearlyProductId]);
+
+    iap.controller
+        .add([purchase(PurchaseService.monthlyProductId, id: 'tx-monthly')]);
+    expect(await pending, isTrue);
+  });
+
+  test("a failure for one product does not answer another's waiter", () async {
+    // Every failure outcome has a null plan, so matching on the plan let any
+    // failure complete any waiter.
+    final service = build();
+    final pending = service.purchasePlan(PremiumService.monthlyPlan);
+    await pumpEventQueue();
+
+    iap.controller.add([
+      purchase(
+        PurchaseService.yearlyProductId,
+        status: PurchaseStatus.error,
+        id: 'tx-yearly',
+        error: IAPError(
+          source: 'app_store',
+          code: 'failed',
+          message: 'Yearly failed.',
+        ),
+      )
+    ]);
+    await pumpEventQueue();
+
+    iap.controller
+        .add([purchase(PurchaseService.monthlyProductId, id: 'tx-monthly')]);
+
+    expect(await pending, isTrue,
+        reason: "an unrelated yearly error must not answer the monthly buyer");
+  });
+
+  test('a transaction whose completion throws is still reported', () async {
+    // Otherwise a declined card looks like a 90-second App Store stall.
+    iap.completeThrows = true;
+    final service = build();
+    final outcomes = <PurchaseOutcome>[];
+    service.outcomes.listen(outcomes.add);
+
+    iap.controller.add([
+      purchase(
+        PurchaseService.monthlyProductId,
+        status: PurchaseStatus.error,
+        error: IAPError(
+          source: 'app_store',
+          code: 'failed',
+          message: 'Your card was declined.',
+        ),
+      )
+    ]);
+    await pumpEventQueue();
+
+    expect(outcomes, isNotEmpty);
+    expect(outcomes.first.isGranted, isFalse);
+    expect(outcomes.first.message, 'Your card was declined.');
+  });
+
+  test('a valid receipt with no usable product is kept, not finished',
+      () async {
+    // A response we cannot interpret is not the server rejecting the receipt,
+    // so the transaction stays in the queue.
+    final service = build(
+      validator: (p, {required idToken, expectedProductId}) async => null,
+    );
+    final outcomes = <PurchaseOutcome>[];
+    service.outcomes.listen(outcomes.add);
+
+    iap.controller.add([purchase(PurchaseService.monthlyProductId)]);
+    await pumpEventQueue();
+
+    expect(iap.completed, isEmpty);
+    expect(await isPremiumStored(), isFalse);
+    expect(outcomes, isNotEmpty);
+    expect(outcomes.first.isGranted, isFalse);
   });
 }
