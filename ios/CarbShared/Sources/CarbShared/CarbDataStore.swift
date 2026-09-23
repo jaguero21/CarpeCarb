@@ -117,9 +117,12 @@ public struct CarbDataStore: @unchecked Sendable {
     /// Siri's timestamps keep milliseconds. Foods from one utterance are
     /// logged 1 ms apart (`addFoods`); whole seconds would collapse them back
     /// together, and deleting one from Apple Health would take the others.
-    // `ISO8601DateFormatter` is documented thread-safe for formatting, and
-    // this one is configured once and never mutated again.
-    nonisolated(unsafe) private static let timestampFormatter: ISO8601DateFormatter = {
+    // Main-actor isolated rather than `nonisolated(unsafe)`: its only caller,
+    // `addFood`, is already on the main actor, so the compiler can enforce
+    // single-actor access instead of a comment asserting it. Apple documents
+    // thread safety for `NSDateFormatter` but not for this type, so leaning on
+    // the checker is the safer of the two.
+    @MainActor private static let timestampFormatter: ISO8601DateFormatter = {
         let formatter = ISO8601DateFormatter()
         formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
         return formatter

@@ -47,27 +47,43 @@ extension LoggedFood {
     }
 }
 
-/// Serializes the gap between requests.
+/// Keeps a minimum gap between requests.
 ///
-/// The previous version read a static `lastRequestTime`, slept, then wrote it
-/// back. Two concurrent lookups could both read the same value, both decide
-/// enough time had passed, and both go — so the 1.5s floor the server expects
-/// was not actually enforced. An actor makes the check and the write one step.
-private actor RequestPacer {
+/// The slot is claimed *before* any suspension. An actor releases its
+/// isolation at every `await`, so checking the last time, sleeping, and only
+/// then writing it back lets a second caller in during the sleep to read the
+/// same stale value — which is exactly the bug the static version had, and
+/// which moving to an actor does not by itself fix. Reserving first also
+/// queues N concurrent callers one interval apart instead of collapsing them
+/// onto the same instant.
+actor RequestPacer {
     static let shared = RequestPacer()
 
-    private var lastRequestTime: Date?
-    private let minInterval: TimeInterval = 1.5
+    private let minInterval: TimeInterval
+    private let now: @Sendable () -> Date
+    private var nextSlot: Date?
+
+    init(minInterval: TimeInterval = 1.5, now: @escaping @Sendable () -> Date = { Date() }) {
+        self.minInterval = minInterval
+        self.now = now
+    }
+
+    /// The delay this caller must wait, reserved atomically.
+    ///
+    /// Separated from the sleeping so a test can observe the reservation
+    /// without waiting in real time.
+    func reserveSlot() -> TimeInterval {
+        let current = now()
+        let slot = max(current, nextSlot ?? current)
+        nextSlot = slot.addingTimeInterval(minInterval)
+        return slot.timeIntervalSince(current)
+    }
 
     func waitForTurn() async {
-        if let last = lastRequestTime {
-            let elapsed = Date().timeIntervalSince(last)
-            if elapsed < minInterval {
-                try? await Task.sleep(
-                    nanoseconds: UInt64((minInterval - elapsed) * 1_000_000_000))
-            }
+        let delay = reserveSlot()
+        if delay > 0 {
+            try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
         }
-        lastRequestTime = Date()
     }
 }
 
