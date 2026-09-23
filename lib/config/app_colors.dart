@@ -61,6 +61,19 @@ class AppColors {
   static const Color glassBorderLight = Color(0x33FFFFFF); // white 20%
   static const Color glassBorderDark = Color(0x14F5EFE8);  // light 8%
 
+  // Food category colors. Three of these are close to, but deliberately not,
+  // the brand colors above — categorySage is not `sage`, categoryPlum is not
+  // `plum`, categorySky is not `sky`. They are named here at their original
+  // values so the dots on screen stay exactly as they were.
+  static const Color categoryHoney = honey;
+  static const Color categorySage = Color(0xFF7D9B76);
+  static const Color categoryTerracotta = terracotta;
+  static const Color categoryPlum = Color(0xFFB07CC6);
+  static const Color categorySky = Color(0xFF5B9BD5);
+
+  // Track behind the daily progress bar in light mode.
+  static const Color progressTrack = Color(0xFFE5E7EB);
+
   // Semantic Colors
   static const Color success = sage;
   static const Color warning = honey;

@@ -1905,7 +1905,7 @@ class CarbTrackerHomeState extends State<CarbTrackerHome>
                                 minHeight: 8,
                                 backgroundColor: isDark
                                     ? AppColors.darkBorderMedium
-                                    : const Color(0xFFE5E7EB),
+                                    : AppColors.progressTrack,
                                 valueColor: AlwaysStoppedAnimation<Color>(
                                   totalCarbs > dailyCarbGoal!
                                       ? AppColors.terracotta

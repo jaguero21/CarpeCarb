@@ -1,6 +1,8 @@
 import 'dart:ui';
 import 'package:flutter/material.dart';
 
+import '../config/app_colors.dart';
+
 /// A frosted-glass container inspired by Apple's Liquid Glass design language.
 ///
 /// Uses [BackdropFilter] with [ImageFilter.blur] to create a translucent,
@@ -36,10 +38,10 @@ class GlassContainer extends StatelessWidget {
 
     final fillColor = isLight
         ? Colors.white.withValues(alpha: 0.6)
-        : const Color(0xFF252019).withValues(alpha: 0.4);
+        : AppColors.darkSurface.withValues(alpha: 0.4);
     final borderColor = isLight
         ? Colors.white.withValues(alpha: 0.2)
-        : const Color(0xFFF5EFE8).withValues(alpha: 0.08);
+        : AppColors.lightInk.withValues(alpha: 0.08);
 
     return Container(
       margin: margin,
