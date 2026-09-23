@@ -19,8 +19,12 @@ From the 2026-09-18 code review, re-checked against the code at `1cc4cc8`:
   (`lib/main.dart:855`), the "Reset" link (`:1963`) and Settings' "Clear All"
   (`lib/screens/settings_page.dart:713`) are bare `GestureDetector`s: VoiceOver
   does not call them buttons, and the toggle never says which mode is selected.
-- **The app's central number is silent.** The daily `LinearProgressIndicator`
-  (`lib/main.dart:1763`) carries no label or value.
+- **The app's central number is noisy, not silent.** Measured rather than
+  assumed: the badge, the big number, the goal line and the bar merge into one
+  node that reads *"Apple 25.0g of 100g daily goal, 25"* — the raw "25.0g", and
+  a bare "25" that the `LinearProgressIndicator` (`lib/main.dart:1763`)
+  contributes as its value. It needs one deliberate label and value, not a
+  label on the bar.
 - **Icon-only status is unlabelled.** The cloud sync indicator (`:1470-1490`) is
   an icon, or a bare spinner while syncing.
 - **The widget's goal ring is undescribed** — two decorative `Circle`s
@@ -32,11 +36,22 @@ that correct a mistake in logged health data.
 
 ## Facts the design relies on
 
-- Measured with Flutter's own guideline matchers against the home screen: the app
-  **passes** `iOSTapTargetGuideline` and `labeledTapTargetGuideline` today. No
-  control needs resizing or relabelling for this work.
-- The same probe **fails** `textContrastGuideline`, on the disclaimer dialog's
-  body text. That belongs to the deferred contrast work (see Non-goals).
+- Flutter's guideline matchers, run against the home screen. An earlier probe of
+  mine reported all of these as passing; it was wrong, because the disclaimer
+  dialog covers the screen on a fresh launch and the home screen was never in
+  the accessibility tree. Seeding the disclaimer as accepted gives the real
+  picture:
+  - `labeledTapTargetGuideline` **fails**: the keyboard-dismiss `GestureDetector`
+    wrapping the whole page (`lib/main.dart`, `_buildHomePage`) is an unlabelled
+    tappable the size of the screen. It is excluded from semantics here, which
+    also makes the guideline pass and worth keeping as a guard.
+  - `iOSTapTargetGuideline` **fails** in two places: the Home and Settings icons
+    are 40pt (`_buildNavIcon`), and the Auto/Manual pills are 37pt. The icons'
+    hit area is widened to 44 without moving anything on screen. The pills would
+    need to get taller, which is a visual change this batch excludes, so they
+    stay — and the guideline is therefore *not* asserted.
+  - `textContrastGuideline` **fails** on the disclaimer dialog's body text, which
+    belongs to the deferred contrast work (see Non-goals).
 - A food row renders `FoodItemCard` (`lib/widgets/food_item_card.dart`), which
   already takes `onTap`/`onLongPress`; the row's time string comes from
   `formatTime` (`lib/utils/date_format.dart`).
@@ -100,6 +115,13 @@ announced without units.
 - The details dialog's new Delete and Save buttons.
 - `iOSTapTargetGuideline` and `labeledTapTargetGuideline` as regression guards.
   Both pass today; the point is that they keep passing.
+
+Two things cannot be covered by widget tests and go to the device checklist
+instead: the cloud sync indicator, which only renders behind `Platform.isIOS`
+and so never appears in host tests; and opening a food's details by long press,
+which the row's swipe recogniser swallows in the test harness — that is
+pre-existing and reproduces on the unmodified code, but it does mean the
+sighted path to the new dialog buttons is unverified in CI.
 
 **By hand, on a device, with VoiceOver on** — the parts CI cannot judge:
 
