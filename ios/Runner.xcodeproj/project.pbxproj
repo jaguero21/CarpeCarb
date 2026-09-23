@@ -349,6 +349,7 @@
 				2541C1142F4B831F00E6F8C6 /* Embed Watch Content */,
 				F6F1868A4CA5174A454CE32C /* FlutterFire: "flutterfire bundle-service-file" */,
 				82E81B896ED4AE5AA339BB22 /* [CP] Copy Pods Resources */,
+				13A3B5A7665CD70250563118 /* Re-sign Embedded Frameworks */,
 			);
 			buildRules = (
 			);
@@ -512,6 +513,21 @@
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
 			shellScript = "/bin/sh \"$FLUTTER_ROOT/packages/flutter_tools/bin/xcode_backend.sh\" embed_and_thin";
+		};
+		13A3B5A7665CD70250563118 /* Re-sign Embedded Frameworks */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputPaths = (
+			);
+			name = "Re-sign Embedded Frameworks";
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "if [ \"${CODE_SIGNING_REQUIRED}\" = \"NO\" ] || [ -z \"${EXPANDED_CODE_SIGN_IDENTITY}\" ]; then\n  echo \"note: signing not required for this build; nothing to re-sign\"\n  exit 0\nfi\n\n# Flutter copies native-asset frameworks (e.g. objective_c.framework) into the\n# app and re-signs them only on macOS - see the `platform == TargetPlatform.macos`\n# condition in packages/flutter_tools/bin/xcode_backend.dart. On iOS they keep the\n# ad-hoc signature Flutter gave them, and the device refuses to install the app:\n#   0xe8008014 (The executable contains an invalid signature.)\n# Re-sign each embedded framework bundle with the identity Xcode resolved.\nFRAMEWORKS=\"${TARGET_BUILD_DIR}/${FRAMEWORKS_FOLDER_PATH}\"\n[ -d \"${FRAMEWORKS}\" ] || exit 0\nfind \"${FRAMEWORKS}\" -maxdepth 1 -type d -name '*.framework' -print0 | while IFS= read -r -d '' fw; do\n  codesign --force --sign \"${EXPANDED_CODE_SIGN_IDENTITY}\" ${OTHER_CODE_SIGN_FLAGS:-} \\\n    --preserve-metadata=identifier,entitlements,flags --timestamp=none \"${fw}\" || exit 1\ndone\n";
 		};
 		6F3559E018EFBEDDECBB7628 /* [CP] Check Pods Manifest.lock */ = {
 			isa = PBXShellScriptBuildPhase;
