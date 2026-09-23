@@ -14,6 +14,11 @@ public enum CarbAccessibility {
     }
 
     /// The ring's value: "45 of 100 grams", or "45 grams, no goal set".
+    ///
+    /// Over the goal this deliberately stops at the two numbers, where its
+    /// Dart twin (`carbProgressValue`) appends ", 20 grams over goal": the
+    /// widget draws "+20g over" as its own accessibility element beside the
+    /// ring, so saying it here too would say it twice.
     public static func carbsValue(total: Double, goal: Double?) -> String {
         guard let goal, goal > 0 else {
             return "\(grams(total)), no goal set"

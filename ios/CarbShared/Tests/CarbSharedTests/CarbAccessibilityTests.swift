@@ -7,6 +7,10 @@ struct CarbAccessibilityTests {
         #expect(CarbAccessibility.grams(25.5) == "25.5 grams")
     }
 
+    @Test func gramsSaysZeroRatherThanNothing() {
+        #expect(CarbAccessibility.grams(0) == "0 grams")
+    }
+
     @Test func gramsIsSingularForOne() {
         #expect(CarbAccessibility.grams(1) == "1 gram")
     }

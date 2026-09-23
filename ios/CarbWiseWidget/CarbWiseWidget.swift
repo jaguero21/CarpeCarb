@@ -259,6 +259,11 @@ struct CarbWiseSmallView: View {
                     .padding(.horizontal, 8)
                     .padding(.vertical, 5)
                     .modifier(GlassCapsuleModifier())
+                    // The drawn "%.1fg" reads as "twenty five point zero g",
+                    // and the name and the number are two unrelated stops.
+                    .accessibilityElement(children: .ignore)
+                    .accessibilityLabel("Last logged, \(entry.data.lastFoodName)")
+                    .accessibilityValue(CarbAccessibility.grams(entry.data.lastFoodCarbs))
                 }
             }
 
@@ -296,6 +301,16 @@ struct CarbWiseMediumView: View {
                             .minimumScaleFactor(0.6)
                             .lineLimit(1)
                     }
+                    // Same as the small view: the ring is two undescribed
+                    // circles, and the number alone reads as "45g" with no
+                    // context. `.systemMedium` ships, so this matters.
+                    .accessibilityElement(children: .ignore)
+                    .accessibilityLabel("Carbs today")
+                    .accessibilityValue(
+                        CarbAccessibility.carbsValue(
+                            total: entry.data.totalCarbs, goal: goal
+                        )
+                    )
 
                     if isOver {
                         Text(String(format: "+%.0fg over", entry.data.totalCarbs - goal))
@@ -307,15 +322,26 @@ struct CarbWiseMediumView: View {
                             .foregroundStyle(.secondary)
                     }
                 } else {
-                    Text(String(format: "%.1fg", entry.data.totalCarbs))
-                        .font(.system(size: 42, weight: .light, design: .rounded))
-                        .foregroundStyle(.primary)
-                        .minimumScaleFactor(0.6)
-                        .lineLimit(1)
+                    // Nested at the enclosing VStack's own spacing, so it is
+                    // one accessibility element without moving anything.
+                    VStack(spacing: 4) {
+                        Text(String(format: "%.1fg", entry.data.totalCarbs))
+                            .font(.system(size: 42, weight: .light, design: .rounded))
+                            .foregroundStyle(.primary)
+                            .minimumScaleFactor(0.6)
+                            .lineLimit(1)
 
-                    Text("total carbs")
-                        .font(.system(size: 13))
-                        .foregroundStyle(.secondary)
+                        Text("total carbs")
+                            .font(.system(size: 13))
+                            .foregroundStyle(.secondary)
+                    }
+                    .accessibilityElement(children: .ignore)
+                    .accessibilityLabel("Carbs today")
+                    .accessibilityValue(
+                        CarbAccessibility.carbsValue(
+                            total: entry.data.totalCarbs, goal: nil
+                        )
+                    )
                 }
             }
             .frame(maxWidth: .infinity)
@@ -347,6 +373,11 @@ struct CarbWiseMediumView: View {
                     .padding(8)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .modifier(GlassRoundedModifier())
+                    // The drawn "%.1fg carbs" reads as "twenty five point
+                    // zero g", and the three lines are three stops.
+                    .accessibilityElement(children: .ignore)
+                    .accessibilityLabel("Last logged, \(entry.data.lastFoodName)")
+                    .accessibilityValue(CarbAccessibility.grams(entry.data.lastFoodCarbs))
                 } else {
                     Text("No foods logged yet")
                         .font(.system(size: 14))
