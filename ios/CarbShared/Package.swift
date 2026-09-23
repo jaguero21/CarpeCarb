@@ -5,8 +5,9 @@ import PackageDescription
 let package = Package(
     name: "CarbShared",
     platforms: [
-        .iOS(.v16),
-        .watchOS(.v9),
+        // Matches what the app and widget targets actually require. macOS is
+        // only the host platform for `swift test`, so it stays where it is.
+        .iOS("26.0"),
         .macOS(.v13),
     ],
     products: [

@@ -14,7 +14,7 @@ public protocol KeyValueStoring: AnyObject {
 extension NSUbiquitousKeyValueStore: KeyValueStoring {}
 
 /// Syncs app data across devices using NSUbiquitousKeyValueStore (iCloud key-value store).
-/// Placed in CarbShared so all targets (app, widget, watch, Siri) can access it.
+/// Placed in CarbShared so all targets (app, widget, Siri) can access it.
 ///
 /// Data flows entirely through the MethodChannel: Flutter serializes data on push
 /// and writes it back to SharedPreferences on pull. This avoids UserDefaults domain
