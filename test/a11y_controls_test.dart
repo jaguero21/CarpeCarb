@@ -131,4 +131,27 @@ void main() {
 
     handle.dispose();
   });
+
+  testWidgets('the two nav icons have a real label, not just a tooltip',
+      (WidgetTester tester) async {
+    // They passed `labeledTapTargetGuideline` on the tooltip alone, which
+    // the guideline accepts in place of a label. The iOS engine does fold a
+    // tooltip into the label, so it spoke — but nothing held it there.
+    stubChannels();
+    SharedPreferences.setMockInitialValues({'disclaimer_accepted': true});
+    final handle = tester.ensureSemantics();
+
+    await tester.pumpWidget(const CarbTrackerApp());
+    await tester.pumpAndSettle();
+
+    for (final name in const ['Home', 'Settings']) {
+      final data =
+          find.semantics.byLabel(name).evaluate().single.getSemanticsData();
+      expect(data.label, name);
+      // And only once: a label beside the tooltip would say it twice.
+      expect(data.tooltip, isEmpty);
+    }
+
+    handle.dispose();
+  });
 }

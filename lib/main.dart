@@ -1570,33 +1570,42 @@ class CarbTrackerHomeState extends State<CarbTrackerHome>
   }) {
     final isActive = _currentPage == page;
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    return GestureDetector(
-      onTap: () => _switchToPage(page),
-      behavior: HitTestBehavior.opaque,
-      child: Tooltip(
-        message: tooltip,
-        // 44x44 is the smallest hit area iOS asks for. At 40 these two were the
-        // only controls in the app below that minimum. The circle itself stays
-        // 40, but the wider box is a fixed-width child of a Row with a Spacer,
-        // so it does move the header a little: the Home circle sits 6pt left of
-        // where it used to, Settings 2pt left, and the taller row drops the
-        // title and the content below it by a couple of points. Measured and
-        // accepted — restoring the old pixels would mean three compensating
-        // paddings that silently break the next time this row changes.
-        child: SizedBox(
-          width: 44,
-          height: 44,
-          child: Center(
-            child: Container(
-              width: 40,
-              height: 40,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: isActive
-                    ? (isDark ? AppColors.lightInk : AppColors.charcoal)
-                    : Colors.transparent,
+    // The icon is the only thing drawn, so the label has to be given. A
+    // tooltip alone satisfies `labeledTapTargetGuideline` and the iOS engine
+    // does fold it into the label, but nothing holds it there — and with the
+    // label given, the tooltip has to leave the tree or it is spoken twice.
+    return Semantics(
+      label: tooltip,
+      child: GestureDetector(
+        onTap: () => _switchToPage(page),
+        behavior: HitTestBehavior.opaque,
+        child: Tooltip(
+          message: tooltip,
+          excludeFromSemantics: true,
+          // 44x44 is the smallest hit area iOS asks for. At 40 these two were
+          // the only controls in the app below that minimum. The circle itself
+          // stays 40, but the wider box is a fixed-width child of a Row with a
+          // Spacer, so it does move the header a little: the Home circle sits
+          // 6pt left of where it used to, Settings 2pt left, and the taller row
+          // drops the title and the content below it by a couple of points.
+          // Measured and accepted — restoring the old pixels would mean three
+          // compensating paddings that silently break the next time this row
+          // changes.
+          child: SizedBox(
+            width: 44,
+            height: 44,
+            child: Center(
+              child: Container(
+                width: 40,
+                height: 40,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: isActive
+                      ? (isDark ? AppColors.lightInk : AppColors.charcoal)
+                      : Colors.transparent,
+                ),
+                child: Center(child: icon),
               ),
-              child: Center(child: icon),
             ),
           ),
         ),
