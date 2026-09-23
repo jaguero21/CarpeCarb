@@ -100,7 +100,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.semantics.byLabel('Apple').evaluate().single,
-        isSemantics(value: '25 grams, 25 of 100 grams today'));
+        isSemantics(value: '25 grams. Today, 25 of 100 grams'));
 
     handle.dispose();
   });
@@ -161,6 +161,33 @@ void main() {
             'food logged',
       ),
     );
+
+    handle.dispose();
+  });
+
+  testWidgets('a logged food with no goal set still reads as a sentence',
+      (WidgetTester tester) async {
+    // No goal is the out-of-box state, and `carbProgressValue` ends it with
+    // "no goal set" — so the day has to be introduced before it, not have a
+    // word glued on after it. Appending " today" produced "25 grams, 25
+    // grams, no goal set today", which stutters and implies a goal exists.
+    stubChannels();
+    SharedPreferences.setMockInitialValues(basePrefs(foods: [
+      {
+        'id': 'a',
+        'name': 'Apple',
+        'carbs': 25.0,
+        'loggedAt': '2026-09-22T08:30:00.000',
+        'category': 'snack'
+      },
+    ]));
+    final handle = tester.ensureSemantics();
+
+    await tester.pumpWidget(const CarbTrackerApp());
+    await tester.pumpAndSettle();
+
+    expect(find.semantics.byLabel('Apple').evaluate().single,
+        isSemantics(value: '25 grams. Today, 25 grams, no goal set'));
 
     handle.dispose();
   });

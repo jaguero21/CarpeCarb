@@ -1806,8 +1806,8 @@ class CarbTrackerHomeState extends State<CarbTrackerHome>
                       value: showingDailyTotal || foodItems.isEmpty
                           ? carbProgressValue(
                               total: totalCarbs, goal: dailyCarbGoal)
-                          : '${spokenGrams(foodItems.first.carbs)}, '
-                              '${carbProgressValue(total: totalCarbs, goal: dailyCarbGoal)} today',
+                          : '${spokenGrams(foodItems.first.carbs)}. Today, '
+                              '${carbProgressValue(total: totalCarbs, goal: dailyCarbGoal)}',
                       // The card is a control, not a caption: tapping it
                       // toggles the two states above. The role and the hint
                       // are what make that — and the value above — reachable.

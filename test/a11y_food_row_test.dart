@@ -171,21 +171,16 @@ void main() {
     await tester.pumpWidget(const CarbTrackerApp());
     await tester.pumpAndSettle();
 
-    final row = find.semantics
-        .byLabel('Apple, 25 grams of carbs, logged 8:30 AM')
-        .evaluate()
-        .single;
-    final descendants = <String>[];
-    void visit(SemanticsNode node) {
-      node.visitChildren((child) {
-        descendants.add(child.getSemanticsData().label);
-        visit(child);
-        return true;
-      });
-    }
-
-    visit(row);
-    expect(descendants.join(' | '), isNot(contains('25.0')));
+    // Asked of the whole tree rather than of the row: anchoring on the row
+    // makes the assertion only as good as the finder, and every way of
+    // locating the row moves or disappears when `excludeSemantics` does — so
+    // the test would die on the lookup instead of on what it means to check.
+    // What matters is that "25.0g" is nowhere VoiceOver can reach it.
+    // This one first: the row-exists check below dies on its own finder when
+    // `excludeSemantics` goes, and would mask what this test is for.
+    expect(find.bySemanticsLabel(RegExp(r'25\.0')), findsNothing);
+    expect(find.semantics.byLabel('Apple, 25 grams of carbs, logged 8:30 AM'),
+        findsOneWidget);
 
     handle.dispose();
   });
