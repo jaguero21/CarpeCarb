@@ -98,14 +98,32 @@ announced without units.
   the label, so the two cannot drift apart.
 - **"Reset"** (`:1963`) and **"Clear All"** (`settings_page.dart:713`): announced
   as buttons. Both already confirm before acting.
-- **Daily progress** (`:1763`): labelled "Carbs today" with the value
+- **Daily progress** (`:1763`): labelled "Today's total" with the value
   `"<total> of <goal> grams"`, or `"<total> grams, no goal set"` when no goal is
-  set.
+  set. **Corrections, from the whole-branch review:**
+  - The card has two states, and the one it is in after every add is the *last
+    food* state (`showingDailyTotal` starts `false` and every add path resets
+    it). That state still draws the goal line and the bar, so it must speak them
+    too: it reads `"<food>"` with the value
+    `"<carbs> grams, <total> of <goal> grams today"`. Speaking only the food's
+    own carbs — the first implementation — left today-against-goal unspoken in
+    the app's default state, which was worse than before the batch.
+  - Over the goal, the value gains `", <n> grams over goal"`, matching the
+    terracotta "20g over goal" the card draws. The widget deliberately does
+    *not* do this, because it already announces "+20g over" as its own element.
+  - The card is a control, not a caption: it announces as a button with a hint
+    for the tap, and its long press — which VoiceOver has no gesture for — is
+    offered as a custom action named "Open settings". Not "View history": the
+    long press opens Settings on its Favorites tab.
 - **Cloud sync indicator** (`:1470`): "Synced", "Syncing", "Sync failed". The
   idle state stays silent, as it renders nothing.
 - **Widget goal ring** (`CarbWiseWidget.swift:138`): the ring becomes one element
   labelled "Carbs today" with the value `"<total> of <goal> grams"`, and the
-  decorative circles are hidden so VoiceOver does not stop on them.
+  decorative circles are hidden so VoiceOver does not stop on them. **Correction:
+  this applies to both shipped families.** The first implementation covered only
+  `.systemSmall`, leaving `.systemMedium` — which is also in `supportedFamilies`
+  — announcing an undescribed ring and a raw "point zero". The last-food capsule
+  in both families speaks through `CarbAccessibility.grams` for the same reason.
 
 ## Part 3 — testing
 
