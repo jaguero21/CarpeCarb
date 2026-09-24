@@ -1,7 +1,7 @@
 name: carb_tracker
 description: CarpeCarb - A minimalist carb tracker with AI-powered nutrition lookup
 publish_to: 'none'
-version: 1.0.2+4
+version: 1.0.3+5
 
 environment:
   sdk: '>=3.0.0 <4.0.0'
