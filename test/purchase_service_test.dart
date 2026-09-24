@@ -681,4 +681,74 @@ void main() {
 
     expect(iap.completed, isEmpty, reason: 'grant failed, so still held');
   });
+
+  test('a restore still validating when it times out does not say "none found"',
+      () async {
+    // On a slow network or a Cloud Function cold start, validation can outlast
+    // the restore's 20s window. The transaction is then in flight, not held, so
+    // checking only for held ones still reported "no active subscription" —
+    // and premium unlocked a few seconds later anyway.
+    final gate = Completer<void>();
+    final service = build(
+      restoreTimeout: const Duration(milliseconds: 50),
+      validator: (p, {required idToken, expectedProductId}) async {
+        await gate.future;
+        return p.productID;
+      },
+    );
+
+    final restoring = service.restorePremiumPlan();
+    iap.controller.add([
+      purchase(PurchaseService.yearlyProductId, status: PurchaseStatus.restored),
+    ]);
+
+    await expectLater(
+      restoring,
+      throwsA(predicate<Object>(
+          (e) => e.toString().contains('Still checking'),
+          'a still-checking message, not "none found"')),
+    );
+
+    // It does come through.
+    gate.complete();
+    await pumpEventQueue();
+    expect(await isPremiumStored(), isTrue);
+  });
+
+  test('a retry skips a held copy the listener has since finished', () async {
+    // The retry snapshots the held list, then works through it. If StoreKit
+    // re-delivers one of them meanwhile and the listener finishes it, the
+    // retry's stale copy used to be validated and completed a second time.
+    var reachable = false;
+    final gate = Completer<void>();
+    var calls = 0;
+    final service = build(
+      validator: (p, {required idToken, expectedProductId}) async {
+        calls++;
+        if (!reachable) throw Exception('connection failed');
+        if (p.purchaseID == 'A') await gate.future;
+        return p.productID;
+      },
+    );
+    final a = purchase(PurchaseService.monthlyProductId, id: 'A');
+    final b = purchase(PurchaseService.yearlyProductId, id: 'B');
+
+    iap.controller.add([a, b]);
+    await pumpEventQueue();
+    expect(calls, 2, reason: 'both held after failing');
+
+    reachable = true;
+    final retry = service.retryHeldTransactions(); // starts on A, which waits
+    await pumpEventQueue();
+
+    iap.controller.add([b]); // StoreKit re-delivers B; the listener finishes it
+    await pumpEventQueue();
+
+    gate.complete();
+    await retry;
+    await pumpEventQueue();
+
+    expect(calls, 4, reason: 'A and B once each after the network returns');
+    expect(iap.completed, hasLength(2));
+  });
 }

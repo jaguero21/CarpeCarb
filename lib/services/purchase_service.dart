@@ -240,14 +240,24 @@ class PurchaseService {
         return await waiter.future.timeout(_restoreTimeout);
       } on TimeoutException {
         // Nothing granted. That only means "no active subscription" if every
-        // transaction was actually checked. One held because its receipt
-        // couldn't be verified — the user offline, say — means the answer is
-        // unknown, and saying "none found" to someone who paid invites them to
-        // buy again.
+        // transaction was actually checked, and saying "none found" to someone
+        // who paid invites them to buy again.
+        //
+        // Still validating: validation can outlast this window on a slow
+        // network or a cold Cloud Function (30s to connect, 30s to answer),
+        // and the grant arrives on its own afterwards.
+        if (_inFlight.isNotEmpty) {
+          throw Exception(
+            'Still checking with the App Store. Premium unlocks as soon as '
+            'it confirms.',
+          );
+        }
+        // Held: the receipt couldn't be checked. Not only offline — also no
+        // token yet, or an answer that couldn't be read — so no claim about
+        // why.
         if (_held.isNotEmpty) {
           throw Exception(
-            "Couldn't reach the App Store to check your purchases. "
-            'Try again when you are back online.',
+            "Couldn't confirm your purchases right now. Try again in a moment.",
           );
         }
         return null;
@@ -413,15 +423,20 @@ class PurchaseService {
     if (_retrying || _held.isEmpty) return;
     _retrying = true;
     try {
+      // Not cleared up front: while the retry works through its snapshot,
+      // StoreKit may re-deliver one of them and the listener finish it, which
+      // unholds it. Its copy here is then stale, so skip anything no longer
+      // held; otherwise it is validated and completed a second time.
       final pending = List<PurchaseDetails>.from(_held);
-      _held.clear();
-      // Through the listener's own path, not straight to _grant. That path
-      // skips a transaction the listener is already validating — a restore's
-      // re-delivery of it, say — and catches a failure per transaction,
-      // re-holding it. Calling _grant directly did neither: two validations
-      // and two grants for one purchase, and a single failed prefs write
-      // escaping as an unhandled error with the rest of the list dropped.
-      await _handlePurchases(pending);
+      for (final purchase in pending) {
+        final key = _keyFor(purchase);
+        if (!_held.any((p) => _keyFor(p) == key)) continue;
+        // Through the listener's own path, not straight to _grant: it skips a
+        // transaction the listener is validating right now, and catches a
+        // failure per transaction and re-holds it, so one failed prefs write
+        // neither escapes as an unhandled error nor drops the rest.
+        await _handlePurchases([purchase]);
+      }
     } finally {
       _retrying = false;
     }
