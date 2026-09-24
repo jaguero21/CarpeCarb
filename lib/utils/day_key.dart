@@ -14,3 +14,17 @@ String dayKey(DateTime now, int resetHour) {
   final d = day.day.toString().padLeft(2, '0');
   return '$y-$m-$d';
 }
+
+/// The next moment the app's day changes: the first [resetHour]:00 strictly
+/// after [now].
+///
+/// Strictly after, so a timer set at a boundary does not fire again at once.
+/// Built with calendar arithmetic like [dayKey], so a daylight-saving change
+/// does not shift it by an hour — and it must agree with [dayKey], or a timer
+/// would fire at a moment that is not actually a new day.
+DateTime nextDayBoundary(DateTime now, int resetHour) {
+  final today = DateTime(now.year, now.month, now.day, resetHour);
+  return today.isAfter(now)
+      ? today
+      : DateTime(now.year, now.month, now.day + 1, resetHour);
+}

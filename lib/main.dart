@@ -127,6 +127,10 @@ class CarbTrackerHomeState extends State<CarbTrackerHome>
   int _currentPage = 0; // 0 = home, 1 = settings
   int _settingsInitialTab = 0;
   int _favoritesVersion = 0;
+  /// Fires when the app's day changes, so an app left open past the reset
+  /// hour rolls over instead of showing yesterday until the next resume.
+  Timer? _dayBoundaryTimer;
+
   int _loadSavedDataToken = 0;
   int _importSiriItemsToken = 0;
   bool _healthKitSyncError = false;
@@ -146,6 +150,7 @@ class CarbTrackerHomeState extends State<CarbTrackerHome>
     _loadSavedData();
     _checkWidgetLaunch();
     _watchForLatePurchases();
+    _scheduleDayBoundary();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _maybeShowDisclaimer();
     });
@@ -334,6 +339,7 @@ class CarbTrackerHomeState extends State<CarbTrackerHome>
       // A purchase held during a network blip is granted as soon as the user
       // is back, not only at the next launch.
       PurchaseService.instance.retryHeldTransactions();
+      _scheduleDayBoundary();
       if (!_premiumService.isCloudSyncEnabled) {
         _onResumed();
         _cloudSyncService.stopListening();
@@ -355,6 +361,30 @@ class CarbTrackerHomeState extends State<CarbTrackerHome>
   /// On resume, start a new day if the app was suspended across the day
   /// boundary (its in-memory list is still yesterday's); otherwise just pick
   /// up Siri items. `_loadSavedData`'s new-day branch imports Siri items itself.
+  /// Arms a timer for the next moment the app's day changes.
+  ///
+  /// Nothing used to happen at that moment: an app left open past the reset
+  /// hour kept yesterday's list, and Siri and the widget — which roll over on
+  /// their own — disagreed with it until the user left and came back. At the
+  /// boundary this runs the same rollover a resume does, then re-arms.
+  ///
+  /// Dart timers do not run while the app is suspended; a boundary missed that
+  /// way is caught by the resume itself, which also re-arms this.
+  void _scheduleDayBoundary() {
+    _dayBoundaryTimer?.cancel();
+    final now = DateTime.now();
+    // A second past the boundary, so `_todayString()` is certain to have moved
+    // on when the rollover checks it.
+    final delay = nextDayBoundary(now, resetHour).difference(now) +
+        const Duration(seconds: 1);
+    _dayBoundaryTimer = Timer(delay, () {
+      if (!mounted) return;
+      _onResumed().whenComplete(() {
+        if (mounted) _scheduleDayBoundary();
+      });
+    });
+  }
+
   Future<void> _onResumed() async {
     final prefs = await SharedPreferences.getInstance();
     if (!mounted) return;
@@ -1344,6 +1374,8 @@ class CarbTrackerHomeState extends State<CarbTrackerHome>
       fiberGoal = result.fiberGoal;
       caloriesGoal = result.caloriesGoal;
     });
+    // The day now ends at a different hour.
+    _scheduleDayBoundary();
     final prefs = await SharedPreferences.getInstance();
     await prefs.setInt(StorageKeys.dailyResetHour, resetHour);
     // Stamp the change so these settings win over an older device's.
@@ -2257,6 +2289,7 @@ class CarbTrackerHomeState extends State<CarbTrackerHome>
     WidgetsBinding.instance.removeObserver(this);
     _cloudSyncService.stopListening();
     _purchaseOutcomes?.cancel();
+    _dayBoundaryTimer?.cancel();
     _foodController.dispose();
     _carbController.dispose();
     _foodFocusNode.dispose();
