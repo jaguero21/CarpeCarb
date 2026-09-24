@@ -331,6 +331,9 @@ class CarbTrackerHomeState extends State<CarbTrackerHome>
   void didChangeAppLifecycleState(AppLifecycleState state) {
     super.didChangeAppLifecycleState(state);
     if (state == AppLifecycleState.resumed) {
+      // A purchase held during a network blip is granted as soon as the user
+      // is back, not only at the next launch.
+      PurchaseService.instance.retryHeldTransactions();
       if (!_premiumService.isCloudSyncEnabled) {
         _onResumed();
         _cloudSyncService.stopListening();

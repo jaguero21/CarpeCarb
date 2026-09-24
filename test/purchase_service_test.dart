@@ -502,4 +502,34 @@ void main() {
     expect(iap.completed, hasLength(1));
     expect(outcomes.where((o) => o.isGranted), hasLength(1));
   });
+
+  test('a held transaction is retried when the app comes back', () async {
+    // Held while the validator was unreachable. Before, the only retries were
+    // a sign-in or a relaunch, so a user who paid during a network blip and
+    // simply returned to the app stayed without premium.
+    var reachable = false;
+    final service = build(
+      validator: (p, {required idToken, expectedProductId}) async {
+        if (!reachable) throw Exception('connection failed');
+        return p.productID;
+      },
+    );
+
+    iap.controller.add([purchase(PurchaseService.monthlyProductId)]);
+    await pumpEventQueue();
+    expect(iap.completed, isEmpty, reason: 'held while unreachable');
+
+    // The network is back and the user returns to the app.
+    reachable = true;
+    await service.retryHeldTransactions();
+
+    expect(await isPremiumStored(), isTrue);
+    expect(iap.completed, hasLength(1));
+  });
+
+  test('retrying with nothing held does nothing', () async {
+    final service = build();
+    await service.retryHeldTransactions();
+    expect(iap.completed, isEmpty);
+  });
 }

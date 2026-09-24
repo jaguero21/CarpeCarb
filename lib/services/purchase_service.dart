@@ -111,7 +111,7 @@ class PurchaseService {
 
   /// Transactions seen while the receipt could not be checked. They are not
   /// completed, so StoreKit keeps them and re-delivers them at the next
-  /// launch; this list is the in-session retry.
+  /// launch; within a session they are retried on resume and on sign-in.
   final List<PurchaseDetails> _held = <PurchaseDetails>[];
 
   /// Transactions being handled right now, so overlapping stream events
@@ -385,12 +385,20 @@ class PurchaseService {
     _held.removeWhere((p) => _keyFor(p) == key);
   }
 
+  /// Retries anything held while its receipt couldn't be checked.
+  ///
+  /// Called when the app returns to the foreground. Without it the only
+  /// retries were a sign-in or a relaunch, so a purchase held during a network
+  /// blip stayed ungranted for a user who simply came back to the app. Safe to
+  /// call on every resume: it does nothing when nothing is held, and it is not
+  /// re-entrant.
+  Future<void> retryHeldTransactions() => _retryHeld();
+
   Future<void> _retryHeld() async {
     // Not re-entrant: two auth events in quick succession would otherwise run
     // two retries at once, and the second would pick up a transaction the
     // first had re-held — validating and completing it twice. Anything held
-    // again waits for the next auth change, or for StoreKit to re-deliver it
-    // at the next launch.
+    // again waits for the next resume, auth change, or StoreKit re-delivery.
     if (_retrying || _held.isEmpty) return;
     _retrying = true;
     try {
