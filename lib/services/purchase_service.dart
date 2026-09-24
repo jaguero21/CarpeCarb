@@ -501,46 +501,82 @@ class PurchaseService {
         debugPrint('validateAppStoreReceipt HTTP ${response.statusCode}');
       }
 
-      if (response.statusCode == 401 || response.statusCode == 403) {
-        throw Exception(
-          'Receipt verification blocked. Check Cloud Function permissions.',
-        );
-      }
-
-      if (response.statusCode != 200) {
-        throw Exception('Could not verify App Store purchase right now.');
-      }
-
-      final json = jsonDecode(responseBody) as Map<String, dynamic>;
-      final data = (json['result'] ?? json['data']) as Map<String, dynamic>?;
-
-      if (data == null) {
-        throw Exception('Could not verify App Store purchase right now.');
-      }
-
-      if (data['isValid'] != true) {
-        final reason = data['reason']?.toString();
-        if (reason == 'product-mismatch') {
-          final found = data['productId']?.toString() ?? 'unknown';
-          throw ReceiptRejected(
-            'Receipt was valid but for a different product ($found).',
-          );
-        }
-        if (reason == 'no-active-subscription') {
-          throw ReceiptRejected(
-            'No active subscription was found in the App Store receipt.',
-          );
-        }
-        throw ReceiptRejected(
-          'Receipt validation failed (${reason ?? 'unknown'}).',
-        );
-      }
-
-      final productId = data['productId']?.toString();
-      if (productId == null || productId.isEmpty) return null;
-      return productId;
+      return interpretValidation(response.statusCode, responseBody);
     } finally {
       client.close();
     }
+  }
+
+  /// Reads the validator's answer.
+  ///
+  /// This is where a transaction's fate is decided, so it is pure and tested
+  /// on its own. Throws [ReceiptRejected] only for a verdict the server
+  /// actually reached — the listener then finishes the transaction, which
+  /// cannot be undone. Everything else throws a plain exception, including a
+  /// body that isn't the JSON expected, and the listener holds the transaction
+  /// for another try. When unsure, this must not produce a rejection.
+  ///
+  /// Returns the validated product id, or null when the server named none —
+  /// which the listener also treats as a reason to hold.
+  @visibleForTesting
+  static String? interpretValidation(int statusCode, String body) {
+    if (statusCode == 401 || statusCode == 403) {
+      throw Exception(
+        'Receipt verification blocked. Check Cloud Function permissions.',
+      );
+    }
+
+    // Includes 503 'unavailable': the server could not reach Apple's
+    // certificate check, so nothing is known about this receipt yet.
+    if (statusCode != 200) {
+      throw Exception('Could not verify App Store purchase right now.');
+    }
+
+    final json = jsonDecode(body) as Map<String, dynamic>;
+    final data = (json['result'] ?? json['data']) as Map<String, dynamic>?;
+
+    if (data == null) {
+      throw Exception('Could not verify App Store purchase right now.');
+    }
+
+    final isValid = data['isValid'];
+
+    // Only a boolean is a verdict. Anything else — the field missing, a
+    // string "false", a proxy's own JSON — is not something the server
+    // decided, so it must hold rather than finish the transaction.
+    if (isValid != true && isValid != false) {
+      throw Exception('Could not verify App Store purchase right now.');
+    }
+
+    if (isValid == false) {
+      final reason = data['reason']?.toString();
+      if (reason == 'product-mismatch') {
+        final found = data['productId']?.toString() ?? 'unknown';
+        throw ReceiptRejected(
+          'Receipt was valid but for a different product ($found).',
+        );
+      }
+      if (reason == 'no-active-subscription') {
+        throw ReceiptRejected(
+          'No active subscription was found in the App Store receipt.',
+        );
+      }
+      if (reason == 'unverifiable') {
+        // Not "try Restore": restore re-delivers this same unreadable record
+        // and gets the same answer. The server only says this for a purchase
+        // record too malformed to read, so a person has to look at it.
+        throw ReceiptRejected(
+          "The App Store sent a purchase record CarpeCarb couldn't read. If "
+          'you were charged, please contact support.',
+        );
+      }
+      throw ReceiptRejected(
+        'Receipt validation failed (${reason ?? 'unknown'}).',
+      );
+    }
+
+    final productId = data['productId']?.toString();
+    if (productId == null || productId.isEmpty) return null;
+    return productId;
   }
 }

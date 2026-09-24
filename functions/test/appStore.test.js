@@ -9,6 +9,7 @@ const {
 } = require("@apple/app-store-server-library");
 const {
   PREMIUM_PRODUCT_IDS,
+  MalformedTransactionError,
   peekEnvironment,
   isActiveTransaction,
   createAppStore,
@@ -36,10 +37,17 @@ test("peekEnvironment reads Production and Sandbox", () => {
 });
 
 test("peekEnvironment rejects malformed input and other environments", () => {
-  assert.throws(() => peekEnvironment("not-a-jws"), /Malformed JWS/);
-  assert.throws(() => peekEnvironment("a.%%%.c"), /Malformed JWS payload/);
-  assert.throws(() => peekEnvironment(fakeJws({ environment: "Xcode" })), /Unsupported environment/);
-  assert.throws(() => peekEnvironment(fakeJws({})), /Unsupported environment/);
+  // The type matters as much as the message. MalformedTransactionError is the
+  // only failure the server treats as final; if one of these became a plain
+  // Error, a malformed record would quietly go back to being held and
+  // re-delivered at every launch, and a message check would not notice.
+  const malformed = (pattern) => (err) =>
+    err instanceof MalformedTransactionError && pattern.test(err.message);
+
+  assert.throws(() => peekEnvironment("not-a-jws"), malformed(/Malformed JWS/));
+  assert.throws(() => peekEnvironment("a.%%%.c"), malformed(/Malformed JWS payload/));
+  assert.throws(() => peekEnvironment(fakeJws({ environment: "Xcode" })), malformed(/Unsupported environment/));
+  assert.throws(() => peekEnvironment(fakeJws({})), malformed(/Unsupported environment/));
 });
 
 test("isActiveTransaction requires a premium product, future expiry, and no revocation", () => {

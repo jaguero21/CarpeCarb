@@ -3,6 +3,11 @@ const assert = require("node:assert/strict");
 const { HttpsError } = require("firebase-functions/v2/https");
 const { createHandlers } = require("../src/handlers");
 const { notBilled } = require("../src/perplexity");
+const {
+  VerificationException,
+  VerificationStatus,
+} = require("@apple/app-store-server-library");
+const { MalformedTransactionError } = require("../src/appStore");
 
 const NOW = Date.parse("2026-09-18T12:00:00Z");
 const auth = { uid: "u1" };
@@ -177,12 +182,49 @@ test("a transaction refunded before it was replayed is reported revoked", async 
   });
 });
 
-test("verification failure maps to failed-precondition", async () => {
-  const { deps } = makeDeps({ verifyTransaction: async () => { throw new Error("bad chain"); } });
+// How a verification failure is reported decides whether the client finishes
+// the transaction. A rejection tells it to complete, which drops the purchase
+// from StoreKit's queue for good; an error tells it to hold and retry. Only a
+// transaction too malformed to read may be reported as a rejection.
 
+async function validateWith(verifyTransaction) {
+  const { deps } = makeDeps({ verifyTransaction });
+  return createHandlers(deps).validateAppStoreReceipt({ auth, data: { receiptData: "a.b.c" } });
+}
+
+test("a transaction too malformed to read is reported as unverifiable", async () => {
+  // It could never verify. Held, StoreKit would re-deliver it at every launch
+  // and the user would see "could not verify" on every cold start.
+  const result = await validateWith(async () => {
+    throw new MalformedTransactionError("Malformed JWS.");
+  });
+
+  assert.deepEqual(result, { isValid: false, reason: "unverifiable" });
+});
+
+test("no status Apple's verifier can raise is treated as final", async () => {
+  // The library reports an OCSP `tryLater`, a connection reset while reading
+  // the OCSP response, and a stale cached response as VERIFICATION_FAILURE or
+  // FAILURE — the same statuses a bad signature produces. Treating any of them
+  // as final would, during a hiccup at Apple, finish real purchases ungranted.
+  // So every status, present and future, must leave the client holding.
+  const statuses = Object.values(VerificationStatus).filter((v) => typeof v === "number");
+  assert.ok(statuses.length >= 8, "expected the library's full status list");
+
+  for (const status of statuses) {
+    await assert.rejects(
+      validateWith(async () => { throw new VerificationException(status); }),
+      (err) => err.code === "unavailable",
+      `status ${VerificationStatus[status]} must hold, not finish`
+    );
+  }
+});
+
+test("an unrecognised failure stays an error, so the client holds", async () => {
+  // Not every throw is a verdict — it could be a bug here.
   await assert.rejects(
-    createHandlers(deps).validateAppStoreReceipt({ auth, data: { receiptData: "a.b.c" } }),
-    (err) => err.code === "failed-precondition"
+    validateWith(async () => { throw new Error("something unexpected"); }),
+    (err) => err.code === "unavailable"
   );
 });
 

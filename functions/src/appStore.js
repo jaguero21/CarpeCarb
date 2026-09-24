@@ -12,6 +12,13 @@ const PREMIUM_PRODUCT_IDS = new Set([
 const SUPPORTED_ENVIRONMENTS = [Environment.PRODUCTION, Environment.SANDBOX];
 
 /**
+ * A transaction that could never verify: not a JWS, an unreadable payload, or
+ * an environment this app doesn't serve. A distinct type so it can be told
+ * apart from an unexpected error, which must not be treated as final.
+ */
+class MalformedTransactionError extends Error {}
+
+/**
  * Reads the `environment` claim from a JWS payload WITHOUT verifying it.
  * Only used to pick which verifier to run; the verifier then enforces it.
  *
@@ -20,15 +27,15 @@ const SUPPORTED_ENVIRONMENTS = [Environment.PRODUCTION, Environment.SANDBOX];
  */
 function peekEnvironment(jws) {
   const parts = typeof jws === "string" ? jws.split(".") : [];
-  if (parts.length !== 3) throw new Error("Malformed JWS.");
+  if (parts.length !== 3) throw new MalformedTransactionError("Malformed JWS.");
   let payload;
   try {
     payload = JSON.parse(Buffer.from(parts[1], "base64url").toString("utf8"));
   } catch {
-    throw new Error("Malformed JWS payload.");
+    throw new MalformedTransactionError("Malformed JWS payload.");
   }
   if (!SUPPORTED_ENVIRONMENTS.includes(payload.environment)) {
-    throw new Error(`Unsupported environment: ${payload.environment}`);
+    throw new MalformedTransactionError(`Unsupported environment: ${payload.environment}`);
   }
   return payload.environment;
 }
@@ -119,8 +126,34 @@ function createAppStore(config) {
   return { verifyTransaction, fetchSubscriptionStatus };
 }
 
+/**
+ * Whether a verification failure is final for this transaction.
+ *
+ * This decides whether the client finishes the transaction, which drops it
+ * from StoreKit's queue for good. So the bar is certainty, and only one case
+ * meets it: a transaction too malformed to even read. It could never verify.
+ *
+ * Every failure from Apple's verifier stays non-final, whatever status it
+ * carries. The verifier runs online and calls Apple's OCSP responder, and the
+ * library only reports a *network* failure there as retryable: an OCSP
+ * `tryLater` answer, a connection reset while reading the response, or a stale
+ * cached response all surface as VERIFICATION_FAILURE or FAILURE, the same
+ * statuses a bad signature produces. Trusting those as final would, during any
+ * hiccup at Apple, tell every client to finish real purchases ungranted. A
+ * misconfigured or rotated root certificate would do the same to every
+ * transaction. Holding costs a retry; finishing wrongly costs a paid purchase.
+ *
+ * @param {unknown} err
+ * @returns {boolean}
+ */
+function isPermanentVerificationFailure(err) {
+  return err instanceof MalformedTransactionError;
+}
+
 module.exports = {
   PREMIUM_PRODUCT_IDS,
+  MalformedTransactionError,
+  isPermanentVerificationFailure,
   peekEnvironment,
   isActiveTransaction,
   createAppStore,
