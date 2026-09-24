@@ -599,4 +599,86 @@ void main() {
     iap.controller.add([purchase(PurchaseService.monthlyProductId)]);
     expect(await retrying, isTrue);
   });
+
+  test('a restore that cannot reach the validator says so, not "none found"',
+      () async {
+    // A paying user whose premium didn't unlock taps Restore while still
+    // offline. Only a grant answers a restore, so this used to wait out the
+    // timeout and report no subscription — false, and an invitation to buy
+    // again or ask for a refund.
+    final service = build(
+      restoreTimeout: const Duration(milliseconds: 50),
+      validator: (p, {required idToken, expectedProductId}) async =>
+          throw Exception('connection failed'),
+    );
+
+    final restoring = service.restorePremiumPlan();
+    iap.controller.add([
+      purchase(PurchaseService.monthlyProductId,
+          status: PurchaseStatus.restored),
+    ]);
+
+    await expectLater(restoring, throwsA(isA<Exception>()));
+    expect(iap.completed, isEmpty, reason: 'held, not finished');
+  });
+
+  test('a retry does not process a transaction the listener already has',
+      () async {
+    // Resume retries held transactions while a restore's re-delivery of the
+    // same one may still be validating. Two copies meant two validations
+    // against a rate-limited endpoint and two "purchase went through" notices.
+    var calls = 0;
+    var reachable = false;
+    final gate = Completer<void>();
+    final service = build(
+      validator: (p, {required idToken, expectedProductId}) async {
+        calls++;
+        if (!reachable) throw Exception('connection failed');
+        await gate.future;
+        return p.productID;
+      },
+    );
+    final tx = purchase(PurchaseService.monthlyProductId);
+
+    iap.controller.add([tx]);
+    await pumpEventQueue();
+    expect(calls, 1, reason: 'held after the first, failed attempt');
+
+    // The network is back; the listener is re-validating it, and is slow.
+    reachable = true;
+    iap.controller.add([tx]);
+    await pumpEventQueue();
+
+    // The user comes back to the app mid-validation.
+    final retry = service.retryHeldTransactions();
+    gate.complete();
+    await retry;
+    await pumpEventQueue();
+
+    expect(calls, 2, reason: 'one failed attempt, then exactly one more');
+    expect(iap.completed, hasLength(1));
+  });
+
+  test('a retry that fails part-way keeps the transaction and does not throw',
+      () async {
+    // The retry used to have no catch: a failed prefs write escaped as an
+    // unhandled error, and — the list having been cleared first — the rest of
+    // the held transactions were dropped from the in-session retry.
+    var reachable = false;
+    final service = build(
+      premiumService: ThrowingPremiumService(),
+      validator: (p, {required idToken, expectedProductId}) async {
+        if (!reachable) throw Exception('connection failed');
+        return p.productID;
+      },
+    );
+
+    iap.controller.add([purchase(PurchaseService.monthlyProductId)]);
+    await pumpEventQueue();
+
+    reachable = true;
+    await service.retryHeldTransactions();
+
+    expect(iap.completed, isEmpty, reason: 'grant failed, so still held');
+  });
 }

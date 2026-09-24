@@ -239,6 +239,17 @@ class PurchaseService {
       try {
         return await waiter.future.timeout(_restoreTimeout);
       } on TimeoutException {
+        // Nothing granted. That only means "no active subscription" if every
+        // transaction was actually checked. One held because its receipt
+        // couldn't be verified — the user offline, say — means the answer is
+        // unknown, and saying "none found" to someone who paid invites them to
+        // buy again.
+        if (_held.isNotEmpty) {
+          throw Exception(
+            "Couldn't reach the App Store to check your purchases. "
+            'Try again when you are back online.',
+          );
+        }
         return null;
       }
     } finally {
@@ -404,9 +415,13 @@ class PurchaseService {
     try {
       final pending = List<PurchaseDetails>.from(_held);
       _held.clear();
-      for (final purchase in pending) {
-        await _grant(purchase);
-      }
+      // Through the listener's own path, not straight to _grant. That path
+      // skips a transaction the listener is already validating — a restore's
+      // re-delivery of it, say — and catches a failure per transaction,
+      // re-holding it. Calling _grant directly did neither: two validations
+      // and two grants for one purchase, and a single failed prefs write
+      // escaping as an unhandled error with the rest of the list dropped.
+      await _handlePurchases(pending);
     } finally {
       _retrying = false;
     }
