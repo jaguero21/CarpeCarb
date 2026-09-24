@@ -166,15 +166,17 @@ class CloudSyncChannel {
                 let keys = data.keys.joined(separator: ", ")
                 self.logger.info("🔔 Remote change detected: \(keyCount) key(s) changed: [\(keys)]")
                 
-                DispatchQueue.main.async {
-                    self.logger.debug("   Invoking Flutter callback 'onRemoteChange'")
-                    
-                    self.channel.invokeMethod("onRemoteChange", arguments: data) { error in
-                        if let error = error {
-                            self.logger.error("❌ Failed to send remote change to Flutter: \(String(describing: error))")
-                        } else {
-                            self.logger.debug("   ✓ Flutter callback completed successfully")
-                        }
+                // Already on the main actor — CloudSyncStore calls this from a
+                // Task { @MainActor } — so no DispatchQueue.main hop. That hop
+                // compiled only because `@preconcurrency import Flutter` waived
+                // the channel it captured; without it the compiler checks this.
+                self.logger.debug("   Invoking Flutter callback 'onRemoteChange'")
+
+                self.channel.invokeMethod("onRemoteChange", arguments: data) { error in
+                    if let error = error {
+                        self.logger.error("❌ Failed to send remote change to Flutter: \(String(describing: error))")
+                    } else {
+                        self.logger.debug("   ✓ Flutter callback completed successfully")
                     }
                 }
             }
