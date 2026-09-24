@@ -58,11 +58,13 @@ class PurchaseService {
     ReceiptValidator? validator,
     Duration? purchaseTimeout,
     Duration? restoreTimeout,
+    Duration? validationTimeout,
   })  : _iap = iap ?? InAppPurchase.instance,
         _premium = premiumService ?? PremiumService(),
         _authOverride = auth,
         _purchaseTimeout = purchaseTimeout ?? purchaseWaitTimeout,
-        _restoreTimeout = restoreTimeout ?? restoreWaitTimeout {
+        _restoreTimeout = restoreTimeout ?? restoreWaitTimeout,
+        _validationTimeout = validationTimeout ?? validationLimit {
     _validate = validator ?? _validateReceiptOverHttp;
   }
 
@@ -88,6 +90,16 @@ class PurchaseService {
   static const Duration purchaseWaitTimeout = Duration(seconds: 90);
   static const Duration restoreWaitTimeout = Duration(seconds: 20);
 
+  /// Bounds getting a token and validating one transaction, end to end.
+  ///
+  /// The HTTP call limits connecting and waiting for the response, but not
+  /// reading the body, and getting a token has no limit at all. A stall in
+  /// either — a network switch mid-response — left the transaction in the
+  /// in-flight set for good: every restore for the rest of the session said
+  /// "still checking", and StoreKit's re-deliveries of it were skipped. Past
+  /// this limit the transaction is held, which is always safe.
+  static const Duration validationLimit = Duration(seconds: 75);
+
   final InAppPurchase _iap;
   final PremiumService _premium;
   /// Resolved on use, not in the constructor: `SettingsPage` builds a
@@ -98,6 +110,7 @@ class PurchaseService {
 
   final Duration _purchaseTimeout;
   final Duration _restoreTimeout;
+  final Duration _validationTimeout;
   late final ReceiptValidator _validate;
 
   final StreamController<PurchaseOutcome> _outcomes =
@@ -244,12 +257,14 @@ class PurchaseService {
         // who paid invites them to buy again.
         //
         // Still validating: validation can outlast this window on a slow
-        // network or a cold Cloud Function (30s to connect, 30s to answer),
-        // and the grant arrives on its own afterwards.
+        // network or a cold Cloud Function (up to `validationLimit`), and a
+        // grant arrives on its own afterwards. But what is still in flight may
+        // be an old, expired transaction the server will reject, so promise
+        // nothing unconditionally.
         if (_inFlight.isNotEmpty) {
           throw Exception(
-            'Still checking with the App Store. Premium unlocks as soon as '
-            'it confirms.',
+            'Still checking with the App Store. If you have an active '
+            'subscription, premium unlocks as soon as it confirms.',
           );
         }
         // Held: the receipt couldn't be checked. Not only offline — also no
@@ -326,7 +341,9 @@ class PurchaseService {
   }
 
   Future<void> _grant(PurchaseDetails purchase) async {
-    final idToken = await _idToken();
+    // A token that never arrives is treated like no token: hold.
+    final idToken = await _idToken()
+        .timeout(_validationTimeout, onTimeout: () => null);
     if (idToken == null) {
       _hold(purchase);
       return;
@@ -341,7 +358,8 @@ class PurchaseService {
         // transaction against another's expectation manufactures a mismatch
         // and throws away a purchase that was fine.
         expectedProductId: purchase.productID,
-      );
+      ).timeout(_validationTimeout);
+      // A TimeoutException lands in the catch-all below and holds.
     } on ReceiptRejected catch (e) {
       // The receipt is not going to become valid, so let the transaction go.
       _unhold(purchase);

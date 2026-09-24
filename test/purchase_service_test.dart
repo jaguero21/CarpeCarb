@@ -147,6 +147,7 @@ void main() {
     bool signedIn = true,
     Duration? purchaseTimeout,
     Duration? restoreTimeout,
+    Duration? validationTimeout,
     PremiumService? premiumService,
   }) {
     auth.signedIn = signedIn;
@@ -158,6 +159,7 @@ void main() {
           (p, {required idToken, expectedProductId}) async => p.productID,
       purchaseTimeout: purchaseTimeout,
       restoreTimeout: restoreTimeout,
+      validationTimeout: validationTimeout,
     );
     service.start();
     addTearDown(service.dispose);
@@ -750,5 +752,34 @@ void main() {
 
     expect(calls, 4, reason: 'A and B once each after the network returns');
     expect(iap.completed, hasLength(2));
+  });
+
+  test('a validation that never answers is held, not left in flight forever',
+      () async {
+    // The response body read has no timeout of its own. If it stalls — a
+    // network switch mid-response — the transaction never left the in-flight
+    // set, and every restore for the rest of the session said "Still
+    // checking" while re-deliveries of it were skipped.
+    final never = Completer<String?>();
+    final service = build(
+      validationTimeout: const Duration(milliseconds: 50),
+      restoreTimeout: const Duration(milliseconds: 200),
+      validator: (p, {required idToken, expectedProductId}) => never.future,
+    );
+
+    iap.controller.add([purchase(PurchaseService.monthlyProductId)]);
+    await Future<void>.delayed(const Duration(milliseconds: 120));
+    await pumpEventQueue();
+
+    expect(iap.completed, isEmpty, reason: 'held, never finished unchecked');
+
+    // A later restore is no longer stuck behind it: it reports the held
+    // transaction rather than something permanently "still checking".
+    await expectLater(
+      service.restorePremiumPlan(),
+      throwsA(predicate<Object>(
+          (e) => e.toString().contains("Couldn't confirm"),
+          'the held message, not "Still checking"')),
+    );
   });
 }
