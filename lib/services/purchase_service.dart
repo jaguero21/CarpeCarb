@@ -539,7 +539,16 @@ class PurchaseService {
       throw Exception('Could not verify App Store purchase right now.');
     }
 
-    if (data['isValid'] != true) {
+    final isValid = data['isValid'];
+
+    // Only a boolean is a verdict. Anything else — the field missing, a
+    // string "false", a proxy's own JSON — is not something the server
+    // decided, so it must hold rather than finish the transaction.
+    if (isValid != true && isValid != false) {
+      throw Exception('Could not verify App Store purchase right now.');
+    }
+
+    if (isValid == false) {
       final reason = data['reason']?.toString();
       if (reason == 'product-mismatch') {
         final found = data['productId']?.toString() ?? 'unknown';
@@ -553,9 +562,12 @@ class PurchaseService {
         );
       }
       if (reason == 'unverifiable') {
+        // Not "try Restore": restore re-delivers this same unreadable record
+        // and gets the same answer. The server only says this for a purchase
+        // record too malformed to read, so a person has to look at it.
         throw ReceiptRejected(
-          "The App Store couldn't confirm this purchase. If you were charged, "
-          'Restore Purchases will pick it up.',
+          "The App Store sent a purchase record CarpeCarb couldn't read. If "
+          'you were charged, please contact support.',
         );
       }
       throw ReceiptRejected(

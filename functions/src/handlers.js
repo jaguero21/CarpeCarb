@@ -121,16 +121,17 @@ function createHandlers(deps) {
       payload = await deps.verifyTransaction(receiptData);
     } catch (err) {
       if (isPermanentVerificationFailure(err)) {
-        // Apple's final word. Answer in-band, as a verdict, so the client
-        // finishes the transaction. As an error it held it instead, StoreKit
-        // re-delivered it at every launch, and the user was told "could not
-        // verify" on every cold start with no way to clear it.
+        // Too malformed to ever verify. Answer in-band, as a verdict, so the
+        // client finishes it rather than holding it and having StoreKit
+        // re-deliver it at every launch.
         console.error(`[jws] Unverifiable transaction for ${uid}: ${describe(err)}`);
         return { isValid: false, reason: "unverifiable" };
       }
-      // Nothing is known about the receipt — the online check could not reach
-      // Apple, or something unexpected went wrong. An error keeps the client
-      // holding the transaction; a verdict here could lose a paid purchase.
+      // Every verifier failure lands here, whatever its status: Apple's library
+      // reports several transient OCSP problems with the same statuses as a
+      // bad signature, so none of them can be trusted as final. An error keeps
+      // the client holding the transaction; a verdict here could lose a paid
+      // purchase. See isPermanentVerificationFailure.
       console.error(`[jws] Verification unavailable for ${uid}: ${describe(err)}`);
       throw new HttpsError("unavailable", "Couldn't verify with the App Store right now. Try again shortly.");
     }

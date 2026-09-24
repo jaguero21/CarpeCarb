@@ -2,8 +2,6 @@ const {
   AppStoreServerAPIClient,
   Environment,
   SignedDataVerifier,
-  VerificationException,
-  VerificationStatus,
 } = require("@apple/app-store-server-library");
 
 const PREMIUM_PRODUCT_IDS = new Set([
@@ -129,24 +127,27 @@ function createAppStore(config) {
 }
 
 /**
- * Whether a verification failure is Apple's final word on this transaction.
+ * Whether a verification failure is final for this transaction.
  *
  * This decides whether the client finishes the transaction, which drops it
- * from StoreKit's queue for good. So only failures known to be permanent count:
- * a verifier status other than RETRYABLE_VERIFICATION_FAILURE, or a malformed
- * transaction. Retryable failures — the online OCSP check could not reach Apple
- * — and anything unrecognised are not, because nothing is known about the
- * receipt, and finishing it could lose a purchase the user paid for.
+ * from StoreKit's queue for good. So the bar is certainty, and only one case
+ * meets it: a transaction too malformed to even read. It could never verify.
+ *
+ * Every failure from Apple's verifier stays non-final, whatever status it
+ * carries. The verifier runs online and calls Apple's OCSP responder, and the
+ * library only reports a *network* failure there as retryable: an OCSP
+ * `tryLater` answer, a connection reset while reading the response, or a stale
+ * cached response all surface as VERIFICATION_FAILURE or FAILURE, the same
+ * statuses a bad signature produces. Trusting those as final would, during any
+ * hiccup at Apple, tell every client to finish real purchases ungranted. A
+ * misconfigured or rotated root certificate would do the same to every
+ * transaction. Holding costs a retry; finishing wrongly costs a paid purchase.
  *
  * @param {unknown} err
  * @returns {boolean}
  */
 function isPermanentVerificationFailure(err) {
-  if (err instanceof MalformedTransactionError) return true;
-  if (err instanceof VerificationException) {
-    return err.status !== VerificationStatus.RETRYABLE_VERIFICATION_FAILURE;
-  }
-  return false;
+  return err instanceof MalformedTransactionError;
 }
 
 module.exports = {

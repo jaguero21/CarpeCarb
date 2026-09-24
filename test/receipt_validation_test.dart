@@ -56,12 +56,15 @@ void main() {
       );
     });
 
-    test('says something a user can act on', () {
+    test('does not send the user to Restore, which cannot help', () {
+      // Restore re-delivers the same unreadable record and gets the same
+      // answer, so pointing there would be a dead end.
       try {
         read(200, verdict({'isValid': false, 'reason': 'unverifiable'}));
         fail('expected a rejection');
       } on ReceiptRejected catch (e) {
-        expect(e.message, contains('Restore Purchases'));
+        expect(e.message, isNot(contains('Restore')));
+        expect(e.message, contains('contact support'));
       }
     });
 
@@ -97,6 +100,21 @@ void main() {
 
     test('when a 200 carries no verdict at all', () {
       expect(() => read(200, '{}'), heldForRetry());
+    });
+
+    test('when isValid is missing or not a boolean', () {
+      // Only a boolean is a verdict. A string "false" — or even a string
+      // "true" on an otherwise valid answer — was read as a rejection and
+      // finished the transaction.
+      for (final data in <Map<String, Object?>>[
+        {},
+        {'isValid': 'false'},
+        {'isValid': 'true', 'productId': 'premium_yearly'},
+        {'isValid': null},
+        {'message': 'login'},
+      ]) {
+        expect(() => read(200, verdict(data)), heldForRetry(), reason: '$data');
+      }
     });
 
     test('when a 200 is not the JSON expected', () {

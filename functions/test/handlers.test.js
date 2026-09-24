@@ -184,63 +184,44 @@ test("a transaction refunded before it was replayed is reported revoked", async 
 
 // How a verification failure is reported decides whether the client finishes
 // the transaction. A rejection tells it to complete, which drops the purchase
-// from StoreKit's queue for good; an error tells it to hold and retry. So only
-// a failure Apple's library marks as permanent may be reported as a rejection.
+// from StoreKit's queue for good; an error tells it to hold and retry. Only a
+// transaction too malformed to read may be reported as a rejection.
 
 async function validateWith(verifyTransaction) {
   const { deps } = makeDeps({ verifyTransaction });
   return createHandlers(deps).validateAppStoreReceipt({ auth, data: { receiptData: "a.b.c" } });
 }
 
-test("a transaction Apple permanently refuses is reported as unverifiable", async () => {
-  // A bad signature will never verify. Reporting it as an error made the
-  // client hold it, so StoreKit re-delivered it at every launch and the user
-  // saw "could not verify" on every cold start with no way to clear it.
+test("a transaction too malformed to read is reported as unverifiable", async () => {
+  // It could never verify. Held, StoreKit would re-deliver it at every launch
+  // and the user would see "could not verify" on every cold start.
   const result = await validateWith(async () => {
-    throw new VerificationException(VerificationStatus.VERIFICATION_FAILURE);
+    throw new MalformedTransactionError("Malformed JWS.");
   });
 
   assert.deepEqual(result, { isValid: false, reason: "unverifiable" });
 });
 
-test("each permanent verifier status is reported as unverifiable", async () => {
-  for (const status of [
-    VerificationStatus.INVALID_APP_IDENTIFIER,
-    VerificationStatus.INVALID_ENVIRONMENT,
-    VerificationStatus.INVALID_CHAIN_LENGTH,
-    VerificationStatus.INVALID_CERTIFICATE,
-    VerificationStatus.FAILURE,
-  ]) {
-    const result = await validateWith(async () => {
-      throw new VerificationException(status);
-    });
-    assert.equal(result.reason, "unverifiable", `status ${VerificationStatus[status]}`);
+test("no status Apple's verifier can raise is treated as final", async () => {
+  // The library reports an OCSP `tryLater`, a connection reset while reading
+  // the OCSP response, and a stale cached response as VERIFICATION_FAILURE or
+  // FAILURE — the same statuses a bad signature produces. Treating any of them
+  // as final would, during a hiccup at Apple, finish real purchases ungranted.
+  // So every status, present and future, must leave the client holding.
+  const statuses = Object.values(VerificationStatus).filter((v) => typeof v === "number");
+  assert.ok(statuses.length >= 8, "expected the library's full status list");
+
+  for (const status of statuses) {
+    await assert.rejects(
+      validateWith(async () => { throw new VerificationException(status); }),
+      (err) => err.code === "unavailable",
+      `status ${VerificationStatus[status]} must hold, not finish`
+    );
   }
 });
 
-test("a malformed transaction is reported as unverifiable", async () => {
-  const result = await validateWith(async () => {
-    throw new MalformedTransactionError("Malformed JWS.");
-  });
-
-  assert.equal(result.reason, "unverifiable");
-});
-
-test("a retryable verification failure stays an error, so the client holds", async () => {
-  // Online verification calls Apple's OCSP responder. If that is unreachable,
-  // nothing is known about the receipt. Calling it a rejection here would make
-  // the client complete — and lose — a purchase the user paid for.
-  await assert.rejects(
-    validateWith(async () => {
-      throw new VerificationException(VerificationStatus.RETRYABLE_VERIFICATION_FAILURE);
-    }),
-    (err) => err.code === "unavailable"
-  );
-});
-
 test("an unrecognised failure stays an error, so the client holds", async () => {
-  // Not every throw is Apple's verdict — it could be a bug here. When in doubt,
-  // do not tell the client to finish a transaction.
+  // Not every throw is a verdict — it could be a bug here.
   await assert.rejects(
     validateWith(async () => { throw new Error("something unexpected"); }),
     (err) => err.code === "unavailable"
