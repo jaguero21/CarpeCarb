@@ -131,6 +131,12 @@ class CarbTrackerHomeState extends State<CarbTrackerHome>
   /// hour rolls over instead of showing yesterday until the next resume.
   Timer? _dayBoundaryTimer;
 
+  /// The moment the day-boundary timer is armed for. Exposed so a test can
+  /// check it: the timer's own delay isn't observable, and arming it against
+  /// the wrong reset hour is silent until yesterday's carbs appear in today.
+  @visibleForTesting
+  DateTime? scheduledDayBoundary;
+
   int _loadSavedDataToken = 0;
   int _importSiriItemsToken = 0;
   bool _healthKitSyncError = false;
@@ -150,7 +156,6 @@ class CarbTrackerHomeState extends State<CarbTrackerHome>
     _loadSavedData();
     _checkWidgetLaunch();
     _watchForLatePurchases();
-    _scheduleDayBoundary();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _maybeShowDisclaimer();
     });
@@ -368,15 +373,19 @@ class CarbTrackerHomeState extends State<CarbTrackerHome>
   /// their own — disagreed with it until the user left and came back. At the
   /// boundary this runs the same rollover a resume does, then re-arms.
   ///
-  /// Dart timers do not run while the app is suspended; a boundary missed that
-  /// way is caught by the resume itself, which also re-arms this.
+  /// Armed from `_loadSavedData`, once the reset hour is loaded — not from
+  /// initState, where it would still be the default of 0. Re-armed on resume
+  /// and when Settings changes the reset hour. Dart timers do not run while
+  /// the app is suspended; a boundary missed that way is caught by the resume
+  /// itself.
   void _scheduleDayBoundary() {
     _dayBoundaryTimer?.cancel();
     final now = DateTime.now();
     // A second past the boundary, so `_todayString()` is certain to have moved
     // on when the rollover checks it.
-    final delay = nextDayBoundary(now, resetHour).difference(now) +
-        const Duration(seconds: 1);
+    final boundary = nextDayBoundary(now, resetHour);
+    scheduledDayBoundary = boundary;
+    final delay = boundary.difference(now) + const Duration(seconds: 1);
     _dayBoundaryTimer = Timer(delay, () {
       if (!mounted) return;
       _onResumed().whenComplete(() {
@@ -436,6 +445,10 @@ class CarbTrackerHomeState extends State<CarbTrackerHome>
     final savedGoal = prefs.getDouble(StorageKeys.dailyCarbGoal);
     final savedResetHour = prefs.getInt(StorageKeys.dailyResetHour) ?? 0;
     resetHour = savedResetHour;
+    // Armed here, once the reset hour is actually known — both at launch and
+    // when a reset hour arrives from another device through iCloud, which
+    // also comes through this load.
+    _scheduleDayBoundary();
     proteinGoal = prefs.getDouble(StorageKeys.proteinGoal);
     fatGoal = prefs.getDouble(StorageKeys.fatGoal);
     fiberGoal = prefs.getDouble(StorageKeys.fiberGoal);
