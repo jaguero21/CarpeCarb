@@ -420,12 +420,22 @@ class PurchaseService {
     final waiter = _waiter;
     final wanted = _waitingForProductId;
     // `productId` null means the outcome belongs to no particular transaction
-    // — a stream-level error — and reaches whoever is waiting. Otherwise a
-    // failure has to match the waiter's product, exactly as a grant does;
-    // without that, an unrelated failure answers someone else's purchase.
+    // — a stream-level error — and reaches whoever is waiting.
+    //
+    // A purchase waits for one product, so an outcome must be for that product,
+    // grant or failure alike; otherwise an unrelated failure answers someone
+    // else's purchase.
+    //
+    // A restore (`wanted == null`) waits for *any* plan, and is answered only
+    // by a grant. Restore re-delivers every past transaction, so one expired
+    // transaction's rejection is not the restore failing — a live one may be
+    // next. If nothing grants, the restore times out and reports that no
+    // active subscription was found, which is then true.
+    final isRestore = wanted == null;
     final matches = waiter != null &&
         !waiter.isCompleted &&
-        (wanted == null || productId == null || wanted == productId);
+        (productId == null ||
+            (isRestore ? outcome.isGranted : wanted == productId));
 
     if (matches) {
       if (outcome.isGranted) {

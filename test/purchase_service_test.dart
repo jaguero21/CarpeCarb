@@ -146,6 +146,7 @@ void main() {
     ReceiptValidator? validator,
     bool signedIn = true,
     Duration? purchaseTimeout,
+    Duration? restoreTimeout,
     PremiumService? premiumService,
   }) {
     auth.signedIn = signedIn;
@@ -156,6 +157,7 @@ void main() {
       validator: validator ??
           (p, {required idToken, expectedProductId}) async => p.productID,
       purchaseTimeout: purchaseTimeout,
+      restoreTimeout: restoreTimeout,
     );
     service.start();
     addTearDown(service.dispose);
@@ -531,5 +533,70 @@ void main() {
     final service = build();
     await service.retryHeldTransactions();
     expect(iap.completed, isEmpty);
+  });
+
+  test('one expired transaction does not fail a restore that finds a live one',
+      () async {
+    // Restore re-delivers every past transaction. An old, expired one can be
+    // processed first; its rejection used to answer the whole restore with
+    // "no active subscription", and then the live one granted premium anyway —
+    // two contradictory messages, the first of them wrong.
+    final service = build(
+      validator: (p, {required idToken, expectedProductId}) async {
+        if (p.purchaseID == 'old') {
+          throw ReceiptRejected('No active subscription.');
+        }
+        return p.productID;
+      },
+    );
+
+    final restoring = service.restorePremiumPlan();
+    iap.controller.add([
+      purchase(PurchaseService.monthlyProductId,
+          status: PurchaseStatus.restored, id: 'old'),
+      purchase(PurchaseService.yearlyProductId,
+          status: PurchaseStatus.restored, id: 'current'),
+    ]);
+
+    expect(await restoring, PremiumService.yearlyPlan);
+  });
+
+  test('a restore that finds only expired transactions reports none found',
+      () async {
+    // Now that a rejection no longer answers a restore, "nothing active" is
+    // reported by the timeout — null, which Settings shows as "No active
+    // subscription found to restore."
+    final service = build(
+      restoreTimeout: const Duration(milliseconds: 50),
+      validator: (p, {required idToken, expectedProductId}) async =>
+          throw ReceiptRejected('No active subscription.'),
+    );
+
+    final restoring = service.restorePremiumPlan();
+    iap.controller.add([
+      purchase(PurchaseService.monthlyProductId,
+          status: PurchaseStatus.restored, id: 'old'),
+    ]);
+
+    expect(await restoring, isNull);
+    expect(iap.restoreCalls, 1);
+  });
+
+  test('a purchase the App Store will not start fails and frees the lock',
+      () async {
+    // If the lock stayed held, every later purchase would be refused with
+    // "a purchase is already in progress" until the app was restarted.
+    iap.buyStarts = false;
+    final service = build();
+
+    await expectLater(
+      service.purchasePlan(PremiumService.monthlyPlan),
+      throwsA(isA<Exception>()),
+    );
+
+    iap.buyStarts = true;
+    final retrying = service.purchasePlan(PremiumService.monthlyPlan);
+    iap.controller.add([purchase(PurchaseService.monthlyProductId)]);
+    expect(await retrying, isTrue);
   });
 }
