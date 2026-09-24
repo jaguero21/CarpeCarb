@@ -12,19 +12,19 @@ const PREMIUM_PRODUCT_IDS = new Set([
 const SUPPORTED_ENVIRONMENTS = [Environment.PRODUCTION, Environment.SANDBOX];
 
 /**
- * Reads the `environment` claim from a JWS payload WITHOUT verifying it.
- * Only used to pick which verifier to run; the verifier then enforces it.
- *
- * @param {string} jws
- * @returns {string}
- */
-/**
  * A transaction that could never verify: not a JWS, an unreadable payload, or
  * an environment this app doesn't serve. A distinct type so it can be told
  * apart from an unexpected error, which must not be treated as final.
  */
 class MalformedTransactionError extends Error {}
 
+/**
+ * Reads the `environment` claim from a JWS payload WITHOUT verifying it.
+ * Only used to pick which verifier to run; the verifier then enforces it.
+ *
+ * @param {string} jws
+ * @returns {string}
+ */
 function peekEnvironment(jws) {
   const parts = typeof jws === "string" ? jws.split(".") : [];
   if (parts.length !== 3) throw new MalformedTransactionError("Malformed JWS.");

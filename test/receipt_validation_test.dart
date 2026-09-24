@@ -47,9 +47,13 @@ void main() {
   });
 
   group('a verdict the server reached is a rejection', () {
-    test('when Apple permanently refuses the transaction', () {
-      // The bug this batch fixes: this arrived as HTTP 400, was held, and was
-      // re-delivered at every launch with no way for the user to clear it.
+    test('when the purchase record is too malformed to read', () {
+      // The server says "unverifiable" for that case only. It is not what it
+      // says when Apple's verifier rejects a transaction — every verifier
+      // failure stays an error, because Apple's library reports several
+      // transient problems with the same statuses a bad signature gets.
+      // Held, an unreadable record was re-delivered at every launch with no
+      // way for the user to clear it.
       expect(
         () => read(200, verdict({'isValid': false, 'reason': 'unverifiable'})),
         rejected(),
