@@ -2,6 +2,8 @@ const {
   AppStoreServerAPIClient,
   Environment,
   SignedDataVerifier,
+  VerificationException,
+  VerificationStatus,
 } = require("@apple/app-store-server-library");
 
 const PREMIUM_PRODUCT_IDS = new Set([
@@ -18,17 +20,24 @@ const SUPPORTED_ENVIRONMENTS = [Environment.PRODUCTION, Environment.SANDBOX];
  * @param {string} jws
  * @returns {string}
  */
+/**
+ * A transaction that could never verify: not a JWS, an unreadable payload, or
+ * an environment this app doesn't serve. A distinct type so it can be told
+ * apart from an unexpected error, which must not be treated as final.
+ */
+class MalformedTransactionError extends Error {}
+
 function peekEnvironment(jws) {
   const parts = typeof jws === "string" ? jws.split(".") : [];
-  if (parts.length !== 3) throw new Error("Malformed JWS.");
+  if (parts.length !== 3) throw new MalformedTransactionError("Malformed JWS.");
   let payload;
   try {
     payload = JSON.parse(Buffer.from(parts[1], "base64url").toString("utf8"));
   } catch {
-    throw new Error("Malformed JWS payload.");
+    throw new MalformedTransactionError("Malformed JWS payload.");
   }
   if (!SUPPORTED_ENVIRONMENTS.includes(payload.environment)) {
-    throw new Error(`Unsupported environment: ${payload.environment}`);
+    throw new MalformedTransactionError(`Unsupported environment: ${payload.environment}`);
   }
   return payload.environment;
 }
@@ -119,8 +128,31 @@ function createAppStore(config) {
   return { verifyTransaction, fetchSubscriptionStatus };
 }
 
+/**
+ * Whether a verification failure is Apple's final word on this transaction.
+ *
+ * This decides whether the client finishes the transaction, which drops it
+ * from StoreKit's queue for good. So only failures known to be permanent count:
+ * a verifier status other than RETRYABLE_VERIFICATION_FAILURE, or a malformed
+ * transaction. Retryable failures — the online OCSP check could not reach Apple
+ * — and anything unrecognised are not, because nothing is known about the
+ * receipt, and finishing it could lose a purchase the user paid for.
+ *
+ * @param {unknown} err
+ * @returns {boolean}
+ */
+function isPermanentVerificationFailure(err) {
+  if (err instanceof MalformedTransactionError) return true;
+  if (err instanceof VerificationException) {
+    return err.status !== VerificationStatus.RETRYABLE_VERIFICATION_FAILURE;
+  }
+  return false;
+}
+
 module.exports = {
   PREMIUM_PRODUCT_IDS,
+  MalformedTransactionError,
+  isPermanentVerificationFailure,
   peekEnvironment,
   isActiveTransaction,
   createAppStore,

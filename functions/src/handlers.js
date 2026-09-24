@@ -1,7 +1,16 @@
 const { HttpsError } = require("firebase-functions/v2/https");
 const { sanitizeFoodInput, isNotBilled, splitUnknownCarbs, listNames } = require("./perplexity");
 const { parseTzOffset } = require("./quota");
-const { PREMIUM_PRODUCT_IDS, isActiveTransaction } = require("./appStore");
+const { PREMIUM_PRODUCT_IDS, isActiveTransaction, isPermanentVerificationFailure } = require("./appStore");
+
+/**
+ * A log-safe description of a verification error. Apple's VerificationException
+ * has no message, only a numeric status, so a plain `err.message` logged "".
+ */
+function describe(err) {
+  if (err && typeof err.status === "number") return `status ${err.status}`;
+  return err && err.message ? err.message : String(err);
+}
 
 /**
  * Builds the callable handlers from injected dependencies so they can be
@@ -111,8 +120,19 @@ function createHandlers(deps) {
     try {
       payload = await deps.verifyTransaction(receiptData);
     } catch (err) {
-      console.error(`[jws] Verification failed for ${uid}: ${err.message}`);
-      throw new HttpsError("failed-precondition", "App Store could not verify this transaction.");
+      if (isPermanentVerificationFailure(err)) {
+        // Apple's final word. Answer in-band, as a verdict, so the client
+        // finishes the transaction. As an error it held it instead, StoreKit
+        // re-delivered it at every launch, and the user was told "could not
+        // verify" on every cold start with no way to clear it.
+        console.error(`[jws] Unverifiable transaction for ${uid}: ${describe(err)}`);
+        return { isValid: false, reason: "unverifiable" };
+      }
+      // Nothing is known about the receipt — the online check could not reach
+      // Apple, or something unexpected went wrong. An error keeps the client
+      // holding the transaction; a verdict here could lose a paid purchase.
+      console.error(`[jws] Verification unavailable for ${uid}: ${describe(err)}`);
+      throw new HttpsError("unavailable", "Couldn't verify with the App Store right now. Try again shortly.");
     }
 
     const environment = payload.environment ?? null;
