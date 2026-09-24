@@ -4,7 +4,11 @@ import Testing
 
 /// An in-memory stand-in for NSUbiquitousKeyValueStore: the real one needs a
 /// signed-in iCloud account, which a test machine doesn't have.
-final class FakeKeyValueStore: KeyValueStoring {
+/// `@unchecked Sendable` so a test can post the change notification from a
+/// background thread, the way NSUbiquitousKeyValueStore really does. Each test
+/// owns its own instance and the posting task only passes it along as the
+/// notification's object.
+final class FakeKeyValueStore: KeyValueStoring, @unchecked Sendable {
     var values: [String: Any] = [:]
     var synchronizeResult = true
     private(set) var synchronizeCount = 0
@@ -123,13 +127,24 @@ struct CloudSyncStoreTests {
         var count = 0
     }
 
-    /// Posts the notification the way NSUbiquitousKeyValueStore does, then lets
-    /// the store's main-actor hop run before the test looks at the result.
+    /// Posts the notification the way NSUbiquitousKeyValueStore does — from a
+    /// background thread — then lets the store's main-actor hop run before the
+    /// test looks at the result.
+    ///
+    /// The thread matters. This used to post from the test's own context, so
+    /// the handler was always entered on the main actor and the suite could not
+    /// see that a real iCloud change arrives off it. Under Swift 6 that
+    /// difference is a trap, not a warning: an `@objc` member of a `@MainActor`
+    /// class carries a runtime executor check, and the app crashed with
+    /// EXC_BREAKPOINT the first time another device changed anything.
     private func postRemoteChange() async {
-        NotificationCenter.default.post(
-            name: NSUbiquitousKeyValueStore.didChangeExternallyNotification,
-            object: kvStore
-        )
+        let store = kvStore
+        await Task.detached {
+            NotificationCenter.default.post(
+                name: NSUbiquitousKeyValueStore.didChangeExternallyNotification,
+                object: store
+            )
+        }.value
         for _ in 0..<100 {
             await Task.yield()
         }

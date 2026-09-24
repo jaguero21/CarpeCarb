@@ -19,6 +19,11 @@ class SiriBufferChannel {
     private let logger = Logger(subsystem: "com.carpecarb", category: "SiriBufferChannel")
 
     init(messenger: FlutterBinaryMessenger) {
+        // No `taskQueue:` on purpose. Without one, Flutter dispatches handlers
+        // on the platform task runner — the main thread — which is what lets
+        // `handle` be reached through `MainActor.assumeIsolated` below.
+        // Adding a task queue here moves handlers off the main thread and turns
+        // that into a guaranteed crash, not a race.
         channel = FlutterMethodChannel(name: Self.channelName, binaryMessenger: messenger)
         channel.setMethodCallHandler { [weak self] call, result in
             // Flutter calls this on the platform thread, which is the main

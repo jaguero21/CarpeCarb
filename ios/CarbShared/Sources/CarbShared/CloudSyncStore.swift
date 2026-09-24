@@ -268,21 +268,26 @@ public final class CloudSyncStore {
 
     // MARK: - Notification Handlers
     
-    /// Called when NSUbiquitousKeyValueStore detects external changes
-    /// - Note: This is called on a background thread by NotificationCenter
-    @objc private func kvStoreDidChange(_ notification: Notification) {
+    /// Called when NSUbiquitousKeyValueStore detects external changes.
+    ///
+    /// `nonisolated` because it genuinely is not on the main actor:
+    /// NotificationCenter delivers this on a background thread. The class is
+    /// `@MainActor`, and in Swift 6 an `@objc` member of a globally isolated
+    /// class carries a runtime executor check — so leaving it isolated traps
+    /// (EXC_BREAKPOINT on a background thread) the moment iCloud reports a
+    /// change from another device. Isolated state is reached through the
+    /// `Task { @MainActor }` below, which is where it always belonged.
+    @objc nonisolated private func kvStoreDidChange(_ notification: Notification) {
         logger.debug("Received external change notification")
-        
-        // Verify the notification is from our store
-        guard let store = notification.object as AnyObject?,
-              store === (kvStore as AnyObject) else {
-            logger.warning("Notification from unexpected store - ignoring")
-            return
-        }
-        
+
+        // The observer was registered with `object: kvStore`, so
+        // NotificationCenter only delivers that store's notifications here.
+        // The old identity check re-read `kvStore`, which a nonisolated method
+        // may not touch, and which that registration already guarantees.
+
         // Get the change reason
         if let changeReason = notification.userInfo?[NSUbiquitousKeyValueStoreChangeReasonKey] as? Int {
-            logChangeReason(changeReason)
+            Self.logChangeReason(changeReason, to: logger)
         }
         
         // Get changed keys if available
@@ -320,8 +325,11 @@ public final class CloudSyncStore {
     
     // MARK: - Helpers
     
-    /// Logs the change reason from the notification
-    private func logChangeReason(_ reason: Int) {
+    /// Logs the change reason from the notification.
+    ///
+    /// Static and given the logger, so the nonisolated notification handler
+    /// can call it without reaching into main-actor state.
+    private nonisolated static func logChangeReason(_ reason: Int, to logger: Logger) {
         switch reason {
         case NSUbiquitousKeyValueStoreServerChange:
             logger.debug("Change reason: Server change")
