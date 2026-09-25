@@ -27,6 +27,11 @@ linter:
 analyzer:
   exclude:
     - firebase_backend_example/**
+    - build/**
+    - android/**
+    - ios/**
+    - macos/**
+    - linux/**
 
 # Additional information about this file can be found at
 # https://dart.dev/guides/language/analysis-options
