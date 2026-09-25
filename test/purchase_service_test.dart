@@ -146,6 +146,8 @@ void main() {
     ReceiptValidator? validator,
     bool signedIn = true,
     Duration? purchaseTimeout,
+    Duration? restoreTimeout,
+    Duration? validationTimeout,
     PremiumService? premiumService,
   }) {
     auth.signedIn = signedIn;
@@ -156,6 +158,8 @@ void main() {
       validator: validator ??
           (p, {required idToken, expectedProductId}) async => p.productID,
       purchaseTimeout: purchaseTimeout,
+      restoreTimeout: restoreTimeout,
+      validationTimeout: validationTimeout,
     );
     service.start();
     addTearDown(service.dispose);
@@ -501,5 +505,281 @@ void main() {
     expect(calls, 1, reason: 'one receipt, one validation');
     expect(iap.completed, hasLength(1));
     expect(outcomes.where((o) => o.isGranted), hasLength(1));
+  });
+
+  test('a held transaction is retried when the app comes back', () async {
+    // Held while the validator was unreachable. Before, the only retries were
+    // a sign-in or a relaunch, so a user who paid during a network blip and
+    // simply returned to the app stayed without premium.
+    var reachable = false;
+    final service = build(
+      validator: (p, {required idToken, expectedProductId}) async {
+        if (!reachable) throw Exception('connection failed');
+        return p.productID;
+      },
+    );
+
+    iap.controller.add([purchase(PurchaseService.monthlyProductId)]);
+    await pumpEventQueue();
+    expect(iap.completed, isEmpty, reason: 'held while unreachable');
+
+    // The network is back and the user returns to the app.
+    reachable = true;
+    await service.retryHeldTransactions();
+
+    expect(await isPremiumStored(), isTrue);
+    expect(iap.completed, hasLength(1));
+  });
+
+  test('retrying with nothing held does nothing', () async {
+    final service = build();
+    await service.retryHeldTransactions();
+    expect(iap.completed, isEmpty);
+  });
+
+  test('one expired transaction does not fail a restore that finds a live one',
+      () async {
+    // Restore re-delivers every past transaction. An old, expired one can be
+    // processed first; its rejection used to answer the whole restore with
+    // "no active subscription", and then the live one granted premium anyway —
+    // two contradictory messages, the first of them wrong.
+    final service = build(
+      validator: (p, {required idToken, expectedProductId}) async {
+        if (p.purchaseID == 'old') {
+          throw ReceiptRejected('No active subscription.');
+        }
+        return p.productID;
+      },
+    );
+
+    final restoring = service.restorePremiumPlan();
+    iap.controller.add([
+      purchase(PurchaseService.monthlyProductId,
+          status: PurchaseStatus.restored, id: 'old'),
+      purchase(PurchaseService.yearlyProductId,
+          status: PurchaseStatus.restored, id: 'current'),
+    ]);
+
+    expect(await restoring, PremiumService.yearlyPlan);
+  });
+
+  test('a restore that finds only expired transactions reports none found',
+      () async {
+    // Now that a rejection no longer answers a restore, "nothing active" is
+    // reported by the timeout — null, which Settings shows as "No active
+    // subscription found to restore."
+    final service = build(
+      restoreTimeout: const Duration(milliseconds: 50),
+      validator: (p, {required idToken, expectedProductId}) async =>
+          throw ReceiptRejected('No active subscription.'),
+    );
+
+    final restoring = service.restorePremiumPlan();
+    iap.controller.add([
+      purchase(PurchaseService.monthlyProductId,
+          status: PurchaseStatus.restored, id: 'old'),
+    ]);
+
+    expect(await restoring, isNull);
+    expect(iap.restoreCalls, 1);
+  });
+
+  test('a purchase the App Store will not start fails and frees the lock',
+      () async {
+    // If the lock stayed held, every later purchase would be refused with
+    // "a purchase is already in progress" until the app was restarted.
+    iap.buyStarts = false;
+    final service = build();
+
+    await expectLater(
+      service.purchasePlan(PremiumService.monthlyPlan),
+      throwsA(isA<Exception>()),
+    );
+
+    iap.buyStarts = true;
+    final retrying = service.purchasePlan(PremiumService.monthlyPlan);
+    iap.controller.add([purchase(PurchaseService.monthlyProductId)]);
+    expect(await retrying, isTrue);
+  });
+
+  test('a restore that cannot reach the validator says so, not "none found"',
+      () async {
+    // A paying user whose premium didn't unlock taps Restore while still
+    // offline. Only a grant answers a restore, so this used to wait out the
+    // timeout and report no subscription — false, and an invitation to buy
+    // again or ask for a refund.
+    final service = build(
+      restoreTimeout: const Duration(milliseconds: 50),
+      validator: (p, {required idToken, expectedProductId}) async =>
+          throw Exception('connection failed'),
+    );
+
+    final restoring = service.restorePremiumPlan();
+    iap.controller.add([
+      purchase(PurchaseService.monthlyProductId,
+          status: PurchaseStatus.restored),
+    ]);
+
+    await expectLater(restoring, throwsA(isA<Exception>()));
+    expect(iap.completed, isEmpty, reason: 'held, not finished');
+  });
+
+  test('a retry does not process a transaction the listener already has',
+      () async {
+    // Resume retries held transactions while a restore's re-delivery of the
+    // same one may still be validating. Two copies meant two validations
+    // against a rate-limited endpoint and two "purchase went through" notices.
+    var calls = 0;
+    var reachable = false;
+    final gate = Completer<void>();
+    final service = build(
+      validator: (p, {required idToken, expectedProductId}) async {
+        calls++;
+        if (!reachable) throw Exception('connection failed');
+        await gate.future;
+        return p.productID;
+      },
+    );
+    final tx = purchase(PurchaseService.monthlyProductId);
+
+    iap.controller.add([tx]);
+    await pumpEventQueue();
+    expect(calls, 1, reason: 'held after the first, failed attempt');
+
+    // The network is back; the listener is re-validating it, and is slow.
+    reachable = true;
+    iap.controller.add([tx]);
+    await pumpEventQueue();
+
+    // The user comes back to the app mid-validation.
+    final retry = service.retryHeldTransactions();
+    gate.complete();
+    await retry;
+    await pumpEventQueue();
+
+    expect(calls, 2, reason: 'one failed attempt, then exactly one more');
+    expect(iap.completed, hasLength(1));
+  });
+
+  test('a retry that fails part-way keeps the transaction and does not throw',
+      () async {
+    // The retry used to have no catch: a failed prefs write escaped as an
+    // unhandled error, and — the list having been cleared first — the rest of
+    // the held transactions were dropped from the in-session retry.
+    var reachable = false;
+    final service = build(
+      premiumService: ThrowingPremiumService(),
+      validator: (p, {required idToken, expectedProductId}) async {
+        if (!reachable) throw Exception('connection failed');
+        return p.productID;
+      },
+    );
+
+    iap.controller.add([purchase(PurchaseService.monthlyProductId)]);
+    await pumpEventQueue();
+
+    reachable = true;
+    await service.retryHeldTransactions();
+
+    expect(iap.completed, isEmpty, reason: 'grant failed, so still held');
+  });
+
+  test('a restore still validating when it times out does not say "none found"',
+      () async {
+    // On a slow network or a Cloud Function cold start, validation can outlast
+    // the restore's 20s window. The transaction is then in flight, not held, so
+    // checking only for held ones still reported "no active subscription" —
+    // and premium unlocked a few seconds later anyway.
+    final gate = Completer<void>();
+    final service = build(
+      restoreTimeout: const Duration(milliseconds: 50),
+      validator: (p, {required idToken, expectedProductId}) async {
+        await gate.future;
+        return p.productID;
+      },
+    );
+
+    final restoring = service.restorePremiumPlan();
+    iap.controller.add([
+      purchase(PurchaseService.yearlyProductId, status: PurchaseStatus.restored),
+    ]);
+
+    await expectLater(
+      restoring,
+      throwsA(predicate<Object>(
+          (e) => e.toString().contains('Still checking'),
+          'a still-checking message, not "none found"')),
+    );
+
+    // It does come through.
+    gate.complete();
+    await pumpEventQueue();
+    expect(await isPremiumStored(), isTrue);
+  });
+
+  test('a retry skips a held copy the listener has since finished', () async {
+    // The retry snapshots the held list, then works through it. If StoreKit
+    // re-delivers one of them meanwhile and the listener finishes it, the
+    // retry's stale copy used to be validated and completed a second time.
+    var reachable = false;
+    final gate = Completer<void>();
+    var calls = 0;
+    final service = build(
+      validator: (p, {required idToken, expectedProductId}) async {
+        calls++;
+        if (!reachable) throw Exception('connection failed');
+        if (p.purchaseID == 'A') await gate.future;
+        return p.productID;
+      },
+    );
+    final a = purchase(PurchaseService.monthlyProductId, id: 'A');
+    final b = purchase(PurchaseService.yearlyProductId, id: 'B');
+
+    iap.controller.add([a, b]);
+    await pumpEventQueue();
+    expect(calls, 2, reason: 'both held after failing');
+
+    reachable = true;
+    final retry = service.retryHeldTransactions(); // starts on A, which waits
+    await pumpEventQueue();
+
+    iap.controller.add([b]); // StoreKit re-delivers B; the listener finishes it
+    await pumpEventQueue();
+
+    gate.complete();
+    await retry;
+    await pumpEventQueue();
+
+    expect(calls, 4, reason: 'A and B once each after the network returns');
+    expect(iap.completed, hasLength(2));
+  });
+
+  test('a validation that never answers is held, not left in flight forever',
+      () async {
+    // The response body read has no timeout of its own. If it stalls — a
+    // network switch mid-response — the transaction never left the in-flight
+    // set, and every restore for the rest of the session said "Still
+    // checking" while re-deliveries of it were skipped.
+    final never = Completer<String?>();
+    final service = build(
+      validationTimeout: const Duration(milliseconds: 50),
+      restoreTimeout: const Duration(milliseconds: 200),
+      validator: (p, {required idToken, expectedProductId}) => never.future,
+    );
+
+    iap.controller.add([purchase(PurchaseService.monthlyProductId)]);
+    await Future<void>.delayed(const Duration(milliseconds: 120));
+    await pumpEventQueue();
+
+    expect(iap.completed, isEmpty, reason: 'held, never finished unchecked');
+
+    // A later restore is no longer stuck behind it: it reports the held
+    // transaction rather than something permanently "still checking".
+    await expectLater(
+      service.restorePremiumPlan(),
+      throwsA(predicate<Object>(
+          (e) => e.toString().contains("Couldn't confirm"),
+          'the held message, not "Still checking"')),
+    );
   });
 }

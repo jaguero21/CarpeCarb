@@ -30,6 +30,8 @@ import os.log
       logger.debug("Launch options: \(options.keys.map { $0.rawValue }.joined(separator: ", "))")
     }
     
+    observeLifecycle()
+
     let result = super.application(application, didFinishLaunchingWithOptions: launchOptions)
     
     if result {
@@ -63,24 +65,30 @@ import os.log
     logger.info("✓ SiriBufferChannel registered successfully")
   }
   
-  override func applicationWillResignActive(_ application: UIApplication) {
-    logger.info("📴 Application will resign active")
-    super.applicationWillResignActive(application)
+  /// Logs the lifecycle transitions iOS 26 deprecated as delegate overrides.
+  ///
+  /// The notifications are the replacement Apple's deprecation names. The
+  /// overrides only logged and called `super`, so FlutterAppDelegate's own
+  /// handling is untouched. The closures capture just the `Sendable` logger:
+  /// they are nonisolated, and reaching main-actor state from one is the same
+  /// runtime trap that crashed iCloud sync in #49.
+  private func observeLifecycle() {
+    let logger = self.logger
+    let center = NotificationCenter.default
+    center.addObserver(forName: UIApplication.willResignActiveNotification, object: nil, queue: .main) { _ in
+      logger.info("📴 Application will resign active")
+    }
+    center.addObserver(forName: UIApplication.willEnterForegroundNotification, object: nil, queue: .main) { _ in
+      logger.info("▶️  Application will enter foreground")
+    }
+    center.addObserver(forName: UIApplication.didBecomeActiveNotification, object: nil, queue: .main) { _ in
+      logger.info("✅ Application became active")
+    }
   }
-  
+
   override func applicationDidEnterBackground(_ application: UIApplication) {
     logger.info("⏸️  Application entered background")
     super.applicationDidEnterBackground(application)
-  }
-  
-  override func applicationWillEnterForeground(_ application: UIApplication) {
-    logger.info("▶️  Application will enter foreground")
-    super.applicationWillEnterForeground(application)
-  }
-  
-  override func applicationDidBecomeActive(_ application: UIApplication) {
-    logger.info("✅ Application became active")
-    super.applicationDidBecomeActive(application)
   }
   
   override func applicationWillTerminate(_ application: UIApplication) {

@@ -58,11 +58,13 @@ class PurchaseService {
     ReceiptValidator? validator,
     Duration? purchaseTimeout,
     Duration? restoreTimeout,
+    Duration? validationTimeout,
   })  : _iap = iap ?? InAppPurchase.instance,
         _premium = premiumService ?? PremiumService(),
         _authOverride = auth,
         _purchaseTimeout = purchaseTimeout ?? purchaseWaitTimeout,
-        _restoreTimeout = restoreTimeout ?? restoreWaitTimeout {
+        _restoreTimeout = restoreTimeout ?? restoreWaitTimeout,
+        _validationTimeout = validationTimeout ?? validationLimit {
     _validate = validator ?? _validateReceiptOverHttp;
   }
 
@@ -88,6 +90,16 @@ class PurchaseService {
   static const Duration purchaseWaitTimeout = Duration(seconds: 90);
   static const Duration restoreWaitTimeout = Duration(seconds: 20);
 
+  /// Bounds getting a token and validating one transaction, end to end.
+  ///
+  /// The HTTP call limits connecting and waiting for the response, but not
+  /// reading the body, and getting a token has no limit at all. A stall in
+  /// either — a network switch mid-response — left the transaction in the
+  /// in-flight set for good: every restore for the rest of the session said
+  /// "still checking", and StoreKit's re-deliveries of it were skipped. Past
+  /// this limit the transaction is held, which is always safe.
+  static const Duration validationLimit = Duration(seconds: 75);
+
   final InAppPurchase _iap;
   final PremiumService _premium;
   /// Resolved on use, not in the constructor: `SettingsPage` builds a
@@ -98,6 +110,7 @@ class PurchaseService {
 
   final Duration _purchaseTimeout;
   final Duration _restoreTimeout;
+  final Duration _validationTimeout;
   late final ReceiptValidator _validate;
 
   final StreamController<PurchaseOutcome> _outcomes =
@@ -111,7 +124,7 @@ class PurchaseService {
 
   /// Transactions seen while the receipt could not be checked. They are not
   /// completed, so StoreKit keeps them and re-delivers them at the next
-  /// launch; this list is the in-session retry.
+  /// launch; within a session they are retried on resume and on sign-in.
   final List<PurchaseDetails> _held = <PurchaseDetails>[];
 
   /// Transactions being handled right now, so overlapping stream events
@@ -239,6 +252,29 @@ class PurchaseService {
       try {
         return await waiter.future.timeout(_restoreTimeout);
       } on TimeoutException {
+        // Nothing granted. That only means "no active subscription" if every
+        // transaction was actually checked, and saying "none found" to someone
+        // who paid invites them to buy again.
+        //
+        // Still validating: validation can outlast this window on a slow
+        // network or a cold Cloud Function (up to `validationLimit`), and a
+        // grant arrives on its own afterwards. But what is still in flight may
+        // be an old, expired transaction the server will reject, so promise
+        // nothing unconditionally.
+        if (_inFlight.isNotEmpty) {
+          throw Exception(
+            'Still checking with the App Store. If you have an active '
+            'subscription, premium unlocks as soon as it confirms.',
+          );
+        }
+        // Held: the receipt couldn't be checked. Not only offline — also no
+        // token yet, or an answer that couldn't be read — so no claim about
+        // why.
+        if (_held.isNotEmpty) {
+          throw Exception(
+            "Couldn't confirm your purchases right now. Try again in a moment.",
+          );
+        }
         return null;
       }
     } finally {
@@ -305,7 +341,9 @@ class PurchaseService {
   }
 
   Future<void> _grant(PurchaseDetails purchase) async {
-    final idToken = await _idToken();
+    // A token that never arrives is treated like no token: hold.
+    final idToken = await _idToken()
+        .timeout(_validationTimeout, onTimeout: () => null);
     if (idToken == null) {
       _hold(purchase);
       return;
@@ -320,7 +358,8 @@ class PurchaseService {
         // transaction against another's expectation manufactures a mismatch
         // and throws away a purchase that was fine.
         expectedProductId: purchase.productID,
-      );
+      ).timeout(_validationTimeout);
+      // A TimeoutException lands in the catch-all below and holds.
     } on ReceiptRejected catch (e) {
       // The receipt is not going to become valid, so let the transaction go.
       _unhold(purchase);
@@ -385,19 +424,36 @@ class PurchaseService {
     _held.removeWhere((p) => _keyFor(p) == key);
   }
 
+  /// Retries anything held while its receipt couldn't be checked.
+  ///
+  /// Called when the app returns to the foreground. Without it the only
+  /// retries were a sign-in or a relaunch, so a purchase held during a network
+  /// blip stayed ungranted for a user who simply came back to the app. Safe to
+  /// call on every resume: it does nothing when nothing is held, and it is not
+  /// re-entrant.
+  Future<void> retryHeldTransactions() => _retryHeld();
+
   Future<void> _retryHeld() async {
     // Not re-entrant: two auth events in quick succession would otherwise run
     // two retries at once, and the second would pick up a transaction the
     // first had re-held — validating and completing it twice. Anything held
-    // again waits for the next auth change, or for StoreKit to re-deliver it
-    // at the next launch.
+    // again waits for the next resume, auth change, or StoreKit re-delivery.
     if (_retrying || _held.isEmpty) return;
     _retrying = true;
     try {
+      // Not cleared up front: while the retry works through its snapshot,
+      // StoreKit may re-deliver one of them and the listener finish it, which
+      // unholds it. Its copy here is then stale, so skip anything no longer
+      // held; otherwise it is validated and completed a second time.
       final pending = List<PurchaseDetails>.from(_held);
-      _held.clear();
       for (final purchase in pending) {
-        await _grant(purchase);
+        final key = _keyFor(purchase);
+        if (!_held.any((p) => _keyFor(p) == key)) continue;
+        // Through the listener's own path, not straight to _grant: it skips a
+        // transaction the listener is validating right now, and catches a
+        // failure per transaction and re-holds it, so one failed prefs write
+        // neither escapes as an unhandled error nor drops the rest.
+        await _handlePurchases([purchase]);
       }
     } finally {
       _retrying = false;
@@ -412,12 +468,22 @@ class PurchaseService {
     final waiter = _waiter;
     final wanted = _waitingForProductId;
     // `productId` null means the outcome belongs to no particular transaction
-    // — a stream-level error — and reaches whoever is waiting. Otherwise a
-    // failure has to match the waiter's product, exactly as a grant does;
-    // without that, an unrelated failure answers someone else's purchase.
+    // — a stream-level error — and reaches whoever is waiting.
+    //
+    // A purchase waits for one product, so an outcome must be for that product,
+    // grant or failure alike; otherwise an unrelated failure answers someone
+    // else's purchase.
+    //
+    // A restore (`wanted == null`) waits for *any* plan, and is answered only
+    // by a grant. Restore re-delivers every past transaction, so one expired
+    // transaction's rejection is not the restore failing — a live one may be
+    // next. If nothing grants, the restore times out and reports that no
+    // active subscription was found, which is then true.
+    final isRestore = wanted == null;
     final matches = waiter != null &&
         !waiter.isCompleted &&
-        (wanted == null || productId == null || wanted == productId);
+        (productId == null ||
+            (isRestore ? outcome.isGranted : wanted == productId));
 
     if (matches) {
       if (outcome.isGranted) {
