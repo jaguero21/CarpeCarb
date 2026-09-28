@@ -158,7 +158,7 @@
     <span class="logo-name">CarpeCarb</span>
   </div>
   <h1>Privacy Policy</h1>
-  <p class="meta">Effective date: March 22, 2026 &nbsp;·&nbsp; Last updated: March 22, 2026</p>
+  <p class="meta">Effective date: March 22, 2026 &nbsp;·&nbsp; Last updated: September 28, 2026</p>
 </header>
 
 <main>
@@ -215,25 +215,25 @@
 
   <section>
     <h2><span class="icon">☁️</span> iCloud Sync</h2>
-    <p>If you enable Cloud Sync, your food log, favorites, and goals are stored in your personal iCloud account via Apple's CloudKit / iCloud Key-Value Store. This data is:</p>
+    <p>If you enable Cloud Sync, your food log, favorites, and goals are stored in your personal iCloud account using Apple's iCloud Key-Value Store. This data is:</p>
     <ul>
-      <li>Accessible only to you via your Apple ID / Firebase anonymous session</li>
+      <li>Accessible only to you, through your Apple ID</li>
       <li>Used solely to sync your data across your own devices</li>
       <li>Never read, analyzed, or shared by us for any other purpose</li>
     </ul>
-    <p>You can delete your cloud data by contacting us (see below) or by deleting the app on all devices.</p>
+    <p>This data lives in your iCloud account, not on our servers, so only you can delete it. To remove it, turn off iCloud for CarpeCarb in Settings &gt; [your name] &gt; iCloud, or delete the app on all your devices.</p>
   </section>
 
   <section>
     <h2><span class="icon">💳</span> In-App Purchases</h2>
-    <p>Premium subscriptions are processed entirely by Apple via the App Store. We do not receive or store your payment information. Receipt validation is performed server-side using Apple's receipt verification API to confirm your subscription status.</p>
+    <p>Premium subscriptions are processed entirely by Apple via the App Store. We do not receive or store your payment information. To confirm your subscription, our server verifies the signed transaction the App Store provides and stores a subscription record linked to your anonymous ID: the plan, the App Store transaction ID, its expiry date, and whether it has been refunded. This lets premium follow your subscription — including renewals, cancellations, and refunds.</p>
   </section>
 
   <section>
     <h2><span class="icon">🔗</span> Third-Party Services</h2>
     <p>CarpeCarb uses the following third-party services. Each is governed by its own privacy policy:</p>
     <ul>
-      <li><strong>Firebase (Google)</strong> — anonymous authentication and Firestore rate-limit storage. <a href="https://firebase.google.com/support/privacy" target="_blank" rel="noopener">Firebase Privacy Policy</a></li>
+      <li><strong>Firebase (Google)</strong> — anonymous authentication, and Firestore storage linked to your anonymous ID: your subscription record, your daily count of AI lookups (for the free-tier limit), and short-lived request counters used for rate limiting, which expire automatically. <a href="https://firebase.google.com/support/privacy" target="_blank" rel="noopener">Firebase Privacy Policy</a></li>
       <li><strong>Perplexity AI</strong> — nutrition data lookups. <a href="https://www.perplexity.ai/hub/legal/privacy-policy" target="_blank" rel="noopener">Perplexity Privacy Policy</a></li>
       <li><strong>Apple HealthKit</strong> — nutrition data (with permission). <a href="https://www.apple.com/legal/privacy/" target="_blank" rel="noopener">Apple Privacy Policy</a></li>
       <li><strong>Apple App Store</strong> — in-app purchases and subscription management.</li>

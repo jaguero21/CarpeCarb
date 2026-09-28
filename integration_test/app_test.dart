@@ -70,25 +70,25 @@ void main() {
     testWidgets('shows disclaimer on first launch', (tester) async {
       await pumpApp(tester);
 
-      expect(find.text('Health Disclaimer'), findsOneWidget);
-      expect(find.text('I Understand'), findsOneWidget);
+      expect(find.text('Before You Start'), findsOneWidget);
+      expect(find.text('I Agree'), findsOneWidget);
     });
 
     testWidgets('dismisses disclaimer and shows home screen', (tester) async {
       await pumpApp(tester);
 
-      await tester.tap(find.text('I Understand'));
+      await tester.tap(find.text('I Agree'));
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 500));
 
-      expect(find.text('Health Disclaimer'), findsNothing);
+      expect(find.text('Before You Start'), findsNothing);
       expect(find.text('CarpeCarb'), findsOneWidget);
     });
 
     testWidgets('skips disclaimer when already accepted', (tester) async {
       await pumpAppDisclaimerAccepted(tester);
 
-      expect(find.text('Health Disclaimer'), findsNothing);
+      expect(find.text('Before You Start'), findsNothing);
       expect(find.text('CarpeCarb'), findsOneWidget);
     });
   });
