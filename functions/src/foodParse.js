@@ -183,9 +183,19 @@ function findCandidate(pick, candidates) {
   return candidates.find((c) => c.fdcId === id) || null;
 }
 
-/** The standard portion: the "typical serving" if the candidate has one, else its first portion. */
+/**
+ * The standard portion for a no-amount pick: the "typical serving" if the
+ * candidate has one, else its first non-synthetic portion. The synthetic
+ * 100 g portion (added to every candidate so it can always be weighed) is
+ * never picked here: with no amount from the user, serving 100 g would be a
+ * silent guess, not something anyone asked for.
+ */
 function standardPortion(candidate) {
-  return candidate.portions.find((p) => p.label === "typical serving") || candidate.portions[0] || null;
+  return (
+    candidate.portions.find((p) => p.label === "typical serving") ||
+    candidate.portions.find((p) => p.id !== "100g") ||
+    null
+  );
 }
 
 /** Lowercased, alphanumeric-only, for brand matching that ignores punctuation and case. */

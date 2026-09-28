@@ -205,6 +205,24 @@ test("a food with no amount gets the standard portion, not the model's own pick"
     "USDA FoodData Central (Survey (FNDDS)): Soup, pho, with meat, Pho Palace, typical serving (245 g).");
 });
 
+test("a branded no-amount food whose only candidate has just the 100 g portion goes to the web", async () => {
+  // No foodMeasures at all, so the candidate ends up with only the synthetic
+  // 100 g portion. With no amount from the user, serving 100 g would be a
+  // silent guess, so this must fall back to the web instead.
+  const only100g = { ...PHO, brandOwner: "Pho Palace", foodMeasures: [] };
+  const { fetchImpl } = world({
+    parse: parsed(food("pho", null, "Pho Palace")),
+    search: { pho: json({ foods: [only100g] }) },
+    pick: completion('[{"index":0,"fdcId":2707124,"portionId":"100g","count":1}]'),
+  });
+  const { webLookup, calls } = web({ items: [{ name: "Pho", carbs: 40, details: "web" }], citations: [] });
+
+  const res = await lookupFoodsUsda("pho", KEYS, { fetchImpl, webLookup });
+
+  assert.deepEqual(calls, ["pho"]);
+  assert.equal(res.items[0].carbs, 40);
+});
+
 test("foods USDA can't match go to one web lookup, labelled, after the USDA foods", async () => {
   const { fetchImpl } = world({
     parse: parsed(food("pho", null, "Pho Palace"), food("grandma's casserole"), food("chipotle bowl")),

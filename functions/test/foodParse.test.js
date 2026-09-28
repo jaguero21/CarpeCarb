@@ -300,6 +300,18 @@ test("validatePick with no amount falls back to the candidate's first portion wh
   );
 });
 
+test("validatePick with no amount never returns the synthetic 100 g portion", () => {
+  // A candidate that only ever got the appended 100 g portion (no foodMeasures,
+  // no household serving text, or a failed details call). No amount means the
+  // server would silently serve 100 g of it, which nobody asked for.
+  const candidate = { ...PHO, portions: [{ id: "100g", label: "100 g", grams: 100 }] };
+
+  assert.equal(
+    validatePick({ fdcId: 2707124, portionId: "100g", count: 1 }, [candidate], { amount: null, brand: null }),
+    null
+  );
+});
+
 test("validatePick with no amount still rejects an fdcId that isn't a sent candidate", () => {
   assert.equal(validatePick({ fdcId: 999, portionId: "p1", count: 1 }, [PHO], { amount: null, brand: null }), null);
   assert.equal(validatePick(null, [PHO], { amount: null, brand: null }), null);
