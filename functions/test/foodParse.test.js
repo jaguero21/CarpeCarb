@@ -1,0 +1,173 @@
+const test = require("node:test");
+const assert = require("node:assert/strict");
+const { parseFoods, pickMatches, validatePick, ParseError } = require("../src/foodParse");
+
+function completion(content) {
+  return { ok: true, status: 200, json: async () => ({ choices: [{ message: { content } }] }) };
+}
+function status(code) {
+  return { ok: false, status: code, json: async () => ({}) };
+}
+/** A sonar stand-in returning `responses` in order and recording request bodies. */
+function sonar(...responses) {
+  const bodies = [];
+  const fetchImpl = async (_url, init) => {
+    bodies.push(JSON.parse(init.body));
+    const next = responses[Math.min(bodies.length, responses.length) - 1];
+    if (next instanceof Error) throw next;
+    return next;
+  };
+  return { fetchImpl, bodies };
+}
+const opts = (fetchImpl, billing = { billed: false }) => ({ fetchImpl, timeoutMs: 6000, billing });
+
+const PHO = {
+  fdcId: 2707124, description: "Soup, pho, with meat", dataType: "Survey (FNDDS)", brand: null,
+  per100g: { carbs: 5.6, protein: 5.81, fat: 3.33, fiber: 0.4, calories: 77 },
+  portions: [
+    { id: "p1", label: "1 cup", grams: 245 },
+    { id: "p2", label: "typical serving", grams: 245 },
+    { id: "100g", label: "100 g", grams: 100 },
+  ],
+};
+
+// ── parseFoods ──
+
+test("parseFoods calls sonar with search off and returns the foods", async () => {
+  const { fetchImpl, bodies } = sonar(completion(
+    '[{"name":"pho","query":"pho","amount":"a bowl of","text":"a bowl of pho"},' +
+    '{"name":"McDonald\'s nuggets","query":"McDonald\'s Chicken McNuggets","amount":"10","text":"10 mcdonalds nuggets"}]'
+  ));
+  const billing = { billed: false };
+
+  const foods = await parseFoods("a bowl of pho and 10 mcdonalds nuggets", "KEY", opts(fetchImpl, billing));
+
+  assert.deepEqual(foods, [
+    { name: "pho", query: "pho", amount: "a bowl of", text: "a bowl of pho" },
+    { name: "McDonald's nuggets", query: "McDonald's Chicken McNuggets", amount: "10", text: "10 mcdonalds nuggets" },
+  ]);
+  assert.equal(bodies[0].model, "sonar");
+  assert.equal(bodies[0].disable_search, true);
+  assert.equal(bodies[0].temperature, 0);
+  assert.equal(bodies[0].messages[1].content, "a bowl of pho and 10 mcdonalds nuggets");
+  assert.match(bodies[0].messages[0].content, /keep a brand or chain name/i);
+  assert.equal(billing.billed, true);
+});
+
+test("parseFoods accepts fenced output and a missing amount", async () => {
+  const { fetchImpl } = sonar(completion('```json\n[{"name":"pizza","query":"pizza","text":"pizza"}]\n```'));
+
+  const [food] = await parseFoods("pizza", "KEY", opts(fetchImpl));
+
+  assert.equal(food.amount, null);
+});
+
+test("parseFoods rejects output that is not a usable food list", async () => {
+  for (const content of [
+    "no json here",
+    "[]",
+    '[{"name":"pizza"}]',
+    '[{"name":"","query":"pizza","text":"pizza"}]',
+    '[{"name":"pizza","query":"pizza","text":"pizza","amount":3}]',
+    JSON.stringify(Array.from({ length: 11 }, () => ({ name: "a", query: "a", text: "a" }))),
+  ]) {
+    const { fetchImpl } = sonar(completion(content));
+    await assert.rejects(parseFoods("pizza", "KEY", opts(fetchImpl)), ParseError, content);
+  }
+});
+
+test("a sonar failure is a ParseError, billed only on 2xx", async () => {
+  for (const [response, billed] of [
+    [status(500), false],
+    [status(429), false],
+    [Object.assign(new Error("t"), { name: "TimeoutError" }), false],
+    [{ ok: true, status: 200, json: async () => ({ choices: [] }) }, true],
+  ]) {
+    const billing = { billed: false };
+    const { fetchImpl } = sonar(response);
+    await assert.rejects(parseFoods("pizza", "KEY", opts(fetchImpl, billing)), ParseError);
+    assert.equal(billing.billed, billed);
+  }
+});
+
+// ── pickMatches ──
+
+test("pickMatches sends one call for all foods with candidates, IDs and portions only", async () => {
+  const { fetchImpl, bodies } = sonar(completion('[{"index":0,"fdcId":2707124,"portionId":"p1","count":3}]'));
+  const foods = [
+    { name: "pho", query: "pho", amount: "a bowl of", text: "a bowl of pho" },
+    { name: "zzz", query: "zzz", amount: null, text: "zzz" },
+  ];
+
+  const picks = await pickMatches(foods, [[PHO], []], "KEY", opts(fetchImpl));
+
+  assert.equal(bodies.length, 1);
+  assert.equal(bodies[0].disable_search, true);
+  const sent = JSON.parse(bodies[0].messages[1].content);
+  assert.deepEqual(sent, {
+    foods: [{
+      index: 0, name: "pho", amount: "a bowl of",
+      candidates: [{
+        fdcId: 2707124, description: "Soup, pho, with meat", dataType: "Survey (FNDDS)", brand: null,
+        portions: PHO.portions,
+      }],
+    }],
+  });
+  // The model is never shown nutrition values, so it can't echo or invent them.
+  assert.doesNotMatch(bodies[0].messages[1].content, /per100g|carbs/);
+  assert.deepEqual(picks, [{ index: 0, fdcId: 2707124, portionId: "p1", count: 3 }, null]);
+});
+
+test("pickMatches makes no call when no food has candidates", async () => {
+  const { fetchImpl, bodies } = sonar(completion("[]"));
+
+  const picks = await pickMatches([{ name: "a", query: "a", amount: null, text: "a" }], [[]], "KEY", opts(fetchImpl));
+
+  assert.equal(bodies.length, 0);
+  assert.deepEqual(picks, [null]);
+});
+
+test("pickMatches ignores picks for indexes it did not send", async () => {
+  const { fetchImpl } = sonar(completion('[{"index":5,"fdcId":1,"portionId":"p1","count":1}]'));
+
+  const picks = await pickMatches([{ name: "pho", query: "pho", amount: null, text: "pho" }], [[PHO]], "KEY", opts(fetchImpl));
+
+  assert.deepEqual(picks, [null]);
+});
+
+test("the pick prompt forbids other brands and nutrition values", async () => {
+  const { fetchImpl, bodies } = sonar(completion("[]"));
+  await pickMatches([{ name: "pho", query: "pho", amount: null, text: "pho" }], [[PHO]], "KEY", opts(fetchImpl));
+
+  const system = bodies[0].messages[0].content;
+  assert.match(system, /only a candidate from that brand or chain/i);
+  assert.match(system, /Never give nutrition values/);
+});
+
+// ── validatePick ──
+
+test("validatePick accepts a pick naming a sent candidate, its portion and a sane count", () => {
+  assert.deepEqual(validatePick({ fdcId: 2707124, portionId: "p1", count: 3 }, [PHO]), {
+    candidate: PHO, portion: PHO.portions[0], count: 3,
+  });
+  // Some models quote numbers.
+  assert.equal(validatePick({ fdcId: "2707124", portionId: "100g", count: 0.25 }, [PHO]).count, 0.25);
+});
+
+test("validatePick rejects anything else", () => {
+  for (const pick of [
+    null,
+    "2707124",
+    { fdcId: null, portionId: null, count: null },
+    { fdcId: 999, portionId: "p1", count: 1 },
+    { fdcId: 2707124, portionId: "p9", count: 1 },
+    { fdcId: 2707124, portionId: "p1", count: 0 },
+    { fdcId: 2707124, portionId: "p1", count: 0.2 },
+    { fdcId: 2707124, portionId: "p1", count: 21 },
+    { fdcId: 2707124, portionId: "p1", count: "2" },
+    { fdcId: 2707124, portionId: "p1", count: NaN },
+    { fdcId: "27x", portionId: "p1", count: 1 },
+  ]) {
+    assert.equal(validatePick(pick, [PHO]), null, JSON.stringify(pick));
+  }
+});
