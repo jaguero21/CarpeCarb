@@ -199,13 +199,19 @@ class CarbTrackerHomeState extends State<CarbTrackerHome>
               colorScheme.surface.withValues(alpha: 0.97),
           shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(24)),
+          // Scrollable, with a title that wraps: nobody can use the app
+          // without agreeing here, so at large text sizes the whole of it —
+          // and the button — has to stay reachable rather than overflow.
+          scrollable: true,
           title: Row(
             children: [
               Icon(Icons.info_outline,
                   color: AppColors.honey, size: 22),
               const SizedBox(width: 10),
-              const Text('Health Disclaimer',
-                  style: TextStyle(fontSize: 18)),
+              const Expanded(
+                child: Text('Before You Start',
+                    style: TextStyle(fontSize: 18)),
+              ),
             ],
           ),
           content: Text(
@@ -214,6 +220,13 @@ class CarbTrackerHomeState extends State<CarbTrackerHome>
             'The carbohydrate and nutrition data shown in this app '
             'is not medical advice and should not be used to make '
             'medical or dietary decisions.\n\n'
+            // Required before anything reaches a third-party AI: App Review
+            // asks for explicit permission, and agreeing below is that
+            // permission. Guarded by test/disclaimer_test.dart.
+            'To look up nutrition, CarpeCarb sends the food you type to '
+            'Perplexity, a third-party AI service. Only the food '
+            'description is sent — never your name, your contact '
+            'details, or your Apple Health data.\n\n'
             'Always consult a qualified healthcare professional '
             'before making changes to your diet, especially if you '
             'have diabetes, a metabolic condition, or any other '
@@ -244,7 +257,7 @@ class CarbTrackerHomeState extends State<CarbTrackerHome>
                         borderRadius: BorderRadius.circular(14)),
                   ),
                   child: const Text(
-                    'I Understand',
+                    'I Agree',
                     style: TextStyle(
                       color: Colors.white,
                       fontWeight: FontWeight.w600,
