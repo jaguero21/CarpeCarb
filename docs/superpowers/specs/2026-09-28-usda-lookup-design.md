@@ -46,6 +46,33 @@ every run.
 4. **Numbers:** always calculated by the server from USDA data. The model
    supplies IDs and a count, never nutrition values, on the USDA path.
 
+## Scope after live validation (2026-09-28)
+
+Four live rounds (5 runs per food, real model and real FDC) narrowed the
+scope. **USDA is used only for foods where the user names a brand or chain.**
+Every other food takes today's web lookup.
+
+- **Brand/chain foods were reliable.** McNuggets gave 9.7 g (4 pc) and 24 g
+  (10 pc), and Big Mac gave 44.1 g, identical on every run. The server also
+  checks the named brand: the matched entry's description or brand owner must
+  contain it, after dropping case and punctuation. A food that fails the check
+  falls back to the web.
+- **Plain foods were not reliable.** FDC search ranks short generic words
+  poorly: "pizza" returns Dessert pizza, Pizza rolls and Pizza Hut entries.
+  USDA-style phrasing helped, but the pick still chose variants ("Pizza,
+  cheese, stuffed crust"). FNDDS "typical serving" portions can also be far
+  from what one person eats (pizza 296 g ≈ 89 g carbs). "an apple" was
+  sometimes read as half an apple. The web lookup (about 35 g per slice)
+  stays the safer answer for these.
+- **Perplexity limits this account to about one request per second.** A web
+  fallback fired right after the pick call was answered 429 with
+  `retry-after: 1`. Every Perplexity call (parse, pick and the web lookup) now
+  retries a 429 once after the server's wait, when that wait is 2 s or less.
+
+A request with no branded foods makes one parse call and then the web lookup.
+Plain foods therefore cost one extra search-off `sonar` call ($0.005) and
+about 1–2 s compared with before.
+
 ## Architecture
 
 ```
