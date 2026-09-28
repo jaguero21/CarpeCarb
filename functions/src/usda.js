@@ -67,6 +67,11 @@ function portionLabel(p) {
     .join(" ");
 }
 
+/** Trims a brand name; blank-after-trim is no brand at all. */
+function cleanBrand(value) {
+  return typeof value === "string" && value.trim() ? value.trim() : null;
+}
+
 function toCandidate(food) {
   if (!food || !Number.isInteger(food.fdcId) || typeof food.description !== "string") return null;
   const carbs = per100g(food, [NUTRIENT.carbs]);
@@ -85,7 +90,7 @@ function toCandidate(food) {
     fdcId: food.fdcId,
     description: food.description,
     dataType: food.dataType,
-    brand: food.brandOwner || food.brandName || null,
+    brand: cleanBrand(food.brandOwner) || cleanBrand(food.brandName),
     per100g: {
       carbs,
       protein: per100g(food, [NUTRIENT.protein]),
@@ -105,19 +110,36 @@ function withPortionIds(candidate) {
 }
 
 /**
+ * Sorts details-endpoint portions by FDC's own ascending sequenceNumber. Portions
+ * without a numeric sequenceNumber go after those with one, in the order received.
+ */
+function bySequenceNumber(foodPortions) {
+  return foodPortions
+    .map((p, index) => ({ p, index, seq: Number.isFinite(p && p.sequenceNumber) ? p.sequenceNumber : null }))
+    .sort((a, b) => {
+      if (a.seq !== null && b.seq !== null) return a.seq - b.seq;
+      if (a.seq !== null) return -1;
+      if (b.seq !== null) return 1;
+      return a.index - b.index;
+    })
+    .map((x) => x.p);
+}
+
+/**
  * Searches FDC and returns usable candidates, best match first.
  *
  * @param {string} query
  * @param {string} apiKey
- * @param {{fetchImpl?: typeof fetch, timeoutMs?: number}} [options]
+ * @param {{fetchImpl?: typeof fetch, timeoutMs?: number, includeBranded?: boolean}} [options]
  * @returns {Promise<object[]>}
  * @throws {UsdaError} when the search itself fails
  */
-async function searchCandidates(query, apiKey, { fetchImpl = fetch, timeoutMs = 4000 } = {}) {
+async function searchCandidates(query, apiKey, { fetchImpl = fetch, timeoutMs = 4000, includeBranded = true } = {}) {
+  const dataType = includeBranded ? DATA_TYPES : DATA_TYPES.filter((t) => t !== "Branded");
   const found = await usdaPost(
     "/foods/search",
     apiKey,
-    { query, pageSize: SEARCH_PAGE_SIZE, dataType: DATA_TYPES },
+    { query, pageSize: SEARCH_PAGE_SIZE, dataType },
     { fetchImpl, timeoutMs }
   );
   const candidates = (Array.isArray(found && found.foods) ? found.foods : []).map(toCandidate).filter(Boolean);
@@ -135,7 +157,7 @@ async function searchCandidates(query, apiKey, { fetchImpl = fetch, timeoutMs = 
       for (const food of Array.isArray(details) ? details : []) {
         const c = needPortions.find((x) => food && x.fdcId === food.fdcId);
         if (!c) continue;
-        for (const p of food.foodPortions || []) addPortion(c.portions, portionLabel(p), p.gramWeight);
+        for (const p of bySequenceNumber(food.foodPortions || [])) addPortion(c.portions, portionLabel(p), p.gramWeight);
       }
     } catch (err) {
       if (!(err instanceof UsdaError)) throw err;

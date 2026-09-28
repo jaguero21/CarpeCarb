@@ -19,7 +19,9 @@ const PARSE_PROMPT =
   '"query" (string: a short FoodData Central search phrase for it; keep a brand or chain name, ' +
   "e.g. \"McDonald's Chicken McNuggets\"; leave out quantities), " +
   '"amount" (string: the user\'s own words for how much, e.g. "a bowl of", "10", "2 slices"; null if they gave none), ' +
-  '"text" (string: the user\'s words for this food, amount included, copied exactly). ' +
+  '"text" (string: the user\'s words for this food, amount included, copied exactly), ' +
+  '"brand" (string: the brand, chain, restaurant or store the user named, e.g. "McDonald\'s", "H-E-B"; ' +
+  "null if they named none). " +
   "Do not give nutrition values.";
 
 const PICK_PROMPT =
@@ -30,7 +32,9 @@ const PICK_PROMPT =
   "Rules: Choose a candidate only if it is the same food. A different dish, a different form (broth for a soup, " +
   "raw for cooked) or an ingredient of it is not a match. " +
   "If the user named a brand or chain, only a candidate from that brand or chain matches; if there is none, fdcId is null. " +
-  'If the user gave no amount, use the portion labelled "typical serving" if there is one, else the first portion, with count 1. ' +
+  "If the user named no brand or chain, choose a generic entry; choose a brand or restaurant entry " +
+  '(for example "Hamburger (Burger King)") only if no generic entry is the same food. ' +
+  "If the user gave no amount, set portionId and count to null; the server uses the standard portion. " +
   "If the user gave an amount, choose the portion and count that give it: \"10\" nuggets with a \"4 pieces\" portion is count 2.5. " +
   "If nothing matches, fdcId is null. Never give nutrition values.";
 
@@ -90,7 +94,7 @@ const isField = (v) => typeof v === "string" && v.trim().length > 0 && v.length 
 /**
  * Splits the user's text into foods.
  *
- * @returns {Promise<{name: string, query: string, amount: string|null, text: string}[]>}
+ * @returns {Promise<{name: string, query: string, amount: string|null, text: string, brand: string|null}[]>}
  * @throws {ParseError}
  */
 async function parseFoods(text, apiKey, options) {
@@ -99,9 +103,14 @@ async function parseFoods(text, apiKey, options) {
   return raw.map((item) => {
     if (!item || typeof item !== "object") throw new ParseError("item");
     const amount = item.amount === undefined ? null : item.amount;
+    const brand = item.brand === undefined ? null : item.brand;
     if (!isField(item.name) || !isField(item.query) || !isField(item.text)) throw new ParseError("fields");
     if (amount !== null && !isField(amount)) throw new ParseError("amount");
-    return { name: item.name.trim(), query: item.query.trim(), amount: amount && amount.trim(), text: item.text.trim() };
+    if (brand !== null && !isField(brand)) throw new ParseError("brand");
+    return {
+      name: item.name.trim(), query: item.query.trim(), amount: amount && amount.trim(), text: item.text.trim(),
+      brand: brand === null ? null : brand.trim(),
+    };
   });
 }
 
@@ -120,6 +129,7 @@ async function pickMatches(foods, candidateLists, apiKey, options) {
       index,
       name: food.name,
       amount: food.amount,
+      brand: food.brand,
       candidates: candidates.map((c) => ({
         fdcId: c.fdcId, description: c.description, dataType: c.dataType, brand: c.brand, portions: c.portions,
       })),
@@ -136,17 +146,37 @@ async function pickMatches(foods, candidateLists, apiKey, options) {
   return picks;
 }
 
-/**
- * A pick the server can use, or null. The ID must be a candidate that was
- * sent, the portion must be one of its portions, and the count must be sane.
- *
- * @returns {{candidate: object, portion: object, count: number}|null}
- */
-function validatePick(pick, candidates) {
+function findCandidate(pick, candidates) {
   if (!pick || typeof pick !== "object") return null;
   const id = typeof pick.fdcId === "string" && /^\d+$/.test(pick.fdcId) ? Number(pick.fdcId) : pick.fdcId;
-  const candidate = candidates.find((c) => c.fdcId === id);
+  return candidates.find((c) => c.fdcId === id) || null;
+}
+
+/** The standard portion: the "typical serving" if the candidate has one, else its first portion. */
+function standardPortion(candidate) {
+  return candidate.portions.find((p) => p.label === "typical serving") || candidate.portions[0] || null;
+}
+
+/**
+ * A pick the server can use, or null. The ID must be a candidate that was
+ * sent. When the user gave an amount, the portion must be one of the
+ * candidate's portions and the count must be sane. When they gave no amount,
+ * the model's portion and count are ignored: the server uses the standard
+ * portion with count 1.
+ *
+ * @param {string|null} amount - the user's own words for the amount, or null
+ * @returns {{candidate: object, portion: object, count: number}|null}
+ */
+function validatePick(pick, candidates, amount) {
+  const candidate = findCandidate(pick, candidates);
   if (!candidate) return null;
+
+  if (amount === null) {
+    const portion = standardPortion(candidate);
+    if (!portion) return null;
+    return { candidate, portion, count: 1 };
+  }
+
   const portion = candidate.portions.find((p) => p.id === pick.portionId);
   if (!portion) return null;
   const count = pick.count;

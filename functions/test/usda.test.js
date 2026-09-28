@@ -34,15 +34,21 @@ const BROTH_BRANDED_ML = {
   servingSize: 177.0, servingSizeUnit: "ml", householdServingFullText: "6 OZA", foodMeasures: [],
   foodNutrients: [{ nutrientId: 1005, value: 3.39 }, { nutrientId: 1008, value: 17.0 }],
 };
-// The details endpoint's portions for 173297, as FDC returns them.
+// The details endpoint's portions for 173297, as FDC returns them: out of grams order,
+// each carrying FDC's own sequenceNumber (6 pc = 2, 4 pc = 1, 10 pc = 3).
 const NUGGETS_DETAILS = [{
   fdcId: 173297, dataType: "SR Legacy",
   foodPortions: [
-    { gramWeight: 95.0, amount: 6.0, modifier: "pieces", measureUnit: { name: "undetermined" } },
-    { gramWeight: 64.0, amount: 4.0, modifier: "pieces", measureUnit: { name: "undetermined" } },
-    { gramWeight: 159.0, amount: 10.0, modifier: "pieces", measureUnit: { name: "undetermined" } },
+    { gramWeight: 95.0, amount: 6.0, modifier: "pieces", measureUnit: { name: "undetermined" }, sequenceNumber: 2 },
+    { gramWeight: 64.0, amount: 4.0, modifier: "pieces", measureUnit: { name: "undetermined" }, sequenceNumber: 1 },
+    { gramWeight: 159.0, amount: 10.0, modifier: "pieces", measureUnit: { name: "undetermined" }, sequenceNumber: 3 },
   ],
 }];
+const FRIES_BRANDED = {
+  fdcId: 3001, dataType: "Branded", description: "FRIES", brandOwner: "Lamb Weston Sales, Inc. ",
+  servingSize: 84.0, servingSizeUnit: "g", householdServingFullText: "3 oz",
+  foodNutrients: [{ nutrientId: 1005, value: 24.0 }],
+};
 
 function json(body, status = 200) {
   return { ok: status >= 200 && status < 300, status, json: async () => body };
@@ -71,6 +77,14 @@ test("searchCandidates sends the query to FDC search with the four data types", 
   assert.ok(calls[0].signal, "every FDC call has a timeout");
 });
 
+test("includeBranded false sends the three non-branded data types", async () => {
+  const { fetchImpl, calls } = fdc({ search: { foods: [] } });
+
+  await searchCandidates("pizza", "KEY", { fetchImpl, includeBranded: false });
+
+  assert.deepEqual(calls[0].body.dataType, ["Survey (FNDDS)", "SR Legacy", "Foundation"]);
+});
+
 test("a survey food keeps its per-100 g values and listed portions, plus 100 g", async () => {
   const { fetchImpl, calls } = fdc({ search: { foods: [PHO_FNDDS] } });
 
@@ -88,21 +102,59 @@ test("a survey food keeps its per-100 g values and listed portions, plus 100 g",
   assert.equal(calls.length, 1, "no details call when search already has portions");
 });
 
-test("an SR Legacy food gets its portions from one details call", async () => {
+test("an SR Legacy food gets its portions from one details call, ordered by sequenceNumber", async () => {
   const { fetchImpl, calls } = fdc({ search: { foods: [NUGGETS_SR] }, details: NUGGETS_DETAILS });
 
   const [nuggets] = await searchCandidates("McDonald's Chicken McNuggets", "KEY", { fetchImpl });
 
   assert.match(calls[1].url, /\/fdc\/v1\/foods\?api_key=KEY$/);
   assert.deepEqual(calls[1].body, { fdcIds: [173297], format: "full" });
+  // FDC's own order (sequenceNumber 1, 2, 3), not the order the portions arrived in.
   assert.deepEqual(nuggets.portions, [
-    { id: "p1", label: "6 pieces", grams: 95 },
-    { id: "p2", label: "4 pieces", grams: 64 },
+    { id: "p1", label: "4 pieces", grams: 64 },
+    { id: "p2", label: "6 pieces", grams: 95 },
     { id: "p3", label: "10 pieces", grams: 159 },
     { id: "100g", label: "100 g", grams: 100 },
   ]);
   // A nutrient the record doesn't list is unknown, not 0.
   assert.equal(nuggets.per100g.fiber, null);
+});
+
+test("details portions without a sequenceNumber sort after those that have one, in received order", async () => {
+  const search = {
+    fdcId: 999, dataType: "SR Legacy", description: "Mystery Meat", foodMeasures: [],
+    foodNutrients: [{ nutrientId: 1005, value: 1 }],
+  };
+  const details = [{
+    fdcId: 999, dataType: "SR Legacy",
+    foodPortions: [
+      { gramWeight: 10, amount: 1, modifier: "no-seq-first", measureUnit: { name: "undetermined" } },
+      { gramWeight: 20, amount: 2, modifier: "seq-1", measureUnit: { name: "undetermined" }, sequenceNumber: 1 },
+      { gramWeight: 30, amount: 3, modifier: "no-seq-second", measureUnit: { name: "undetermined" } },
+    ],
+  }];
+  const { fetchImpl } = fdc({ search: { foods: [search] }, details });
+
+  const [c] = await searchCandidates("mystery", "KEY", { fetchImpl });
+
+  assert.deepEqual(c.portions.map((p) => p.label), ["2 seq-1", "1 no-seq-first", "3 no-seq-second", "100 g"]);
+});
+
+test("a branded food's brand is trimmed", async () => {
+  const { fetchImpl } = fdc({ search: { foods: [FRIES_BRANDED] } });
+
+  const [fries] = await searchCandidates("fries", "KEY", { fetchImpl });
+
+  assert.equal(fries.brand, "Lamb Weston Sales, Inc.");
+});
+
+test("a brand that is only whitespace comes out null", async () => {
+  const blankBrand = { ...FRIES_BRANDED, fdcId: 3002, brandOwner: "   " };
+  const { fetchImpl } = fdc({ search: { foods: [blankBrand] } });
+
+  const [fries] = await searchCandidates("fries", "KEY", { fetchImpl });
+
+  assert.equal(fries.brand, null);
 });
 
 test("a failed details call leaves the candidate usable by weight", async () => {

@@ -110,7 +110,9 @@ async function lookupFoodsUsda(sanitized, { perplexityKey, usdaKey }, options = 
   const matches = foods.map(() => null);
   try {
     const lists = await Promise.all(foods.map((food) =>
-      searchCandidates(food.query, usdaKey, { fetchImpl, timeoutMs: Math.min(USDA_CALL_MS, left(USDA_BUDGET_MS)) })
+      searchCandidates(food.query, usdaKey, {
+        fetchImpl, timeoutMs: Math.min(USDA_CALL_MS, left(USDA_BUDGET_MS)), includeBranded: food.brand !== null,
+      })
         .catch((err) => {
           console.log(`[lookup] usda search failed: ${errorCode(err)}`);
           return [];
@@ -120,7 +122,7 @@ async function lookupFoodsUsda(sanitized, { perplexityKey, usdaKey }, options = 
       const picks = await pickMatches(foods, lists, perplexityKey, {
         fetchImpl, billing, timeoutMs: Math.min(SONAR_CALL_MS, left(USDA_BUDGET_MS)),
       });
-      picks.forEach((pick, i) => { matches[i] = validatePick(pick, lists[i]); });
+      picks.forEach((pick, i) => { matches[i] = validatePick(pick, lists[i], foods[i].amount); });
     }
   } catch (err) {
     console.log(`[lookup] pick failed: ${errorCode(err)}`);
