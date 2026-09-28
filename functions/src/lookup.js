@@ -109,15 +109,18 @@ async function lookupFoodsUsda(sanitized, { perplexityKey, usdaKey }, options = 
 
   const matches = foods.map(() => null);
   try {
-    const lists = await Promise.all(foods.map((food) =>
-      searchCandidates(food.query, usdaKey, {
-        fetchImpl, timeoutMs: Math.min(USDA_CALL_MS, left(USDA_BUDGET_MS)), surveyOnly: food.brand === null,
-      })
-        .catch((err) => {
-          console.log(`[lookup] usda search failed: ${errorCode(err)}`);
-          return [];
-        })
-    ));
+    // Only a food with a named brand or chain is reliable enough for USDA. A plain food
+    // ("pizza", "an apple") gets an empty candidate list, which pickMatches skips, so it
+    // falls straight through to the web leftover below without ever being searched.
+    const lists = await Promise.all(foods.map((food) => {
+      if (food.brand === null) return [];
+      return searchCandidates(food.query, usdaKey, {
+        fetchImpl, timeoutMs: Math.min(USDA_CALL_MS, left(USDA_BUDGET_MS)),
+      }).catch((err) => {
+        console.log(`[lookup] usda search failed: ${errorCode(err)}`);
+        return [];
+      });
+    }));
     if (lists.some((list) => list.length > 0) && left(USDA_BUDGET_MS) > 0) {
       const picks = await pickMatches(foods, lists, perplexityKey, {
         fetchImpl, billing, timeoutMs: Math.min(SONAR_CALL_MS, left(USDA_BUDGET_MS)),

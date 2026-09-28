@@ -19,6 +19,10 @@ const PHO_WITH_TYPICAL = {
     { disseminationText: "Quantity not specified", gramWeight: 245 },
   ],
 };
+// Carries a brand (via brandOwner, the field toCandidate actually reads), for tests where the
+// food names a brand and the server must see that brand on the matched candidate.
+const PHO_BRANDED = { ...PHO, brandOwner: "Pho Palace" };
+const PHO_WITH_TYPICAL_BRANDED = { ...PHO_WITH_TYPICAL, brandOwner: "Pho Palace" };
 const KEYS = { perplexityKey: "PKEY", usdaKey: "UKEY" };
 
 function json(body, status = 200) {
@@ -68,8 +72,8 @@ function web(result) {
 
 test("a USDA match is calculated by the server and cites FDC", async () => {
   const { fetchImpl } = world({
-    parse: parsed(food("pho", "a bowl of")),
-    search: { pho: json({ foods: [PHO] }) },
+    parse: parsed(food("pho", "a bowl of", "Pho Palace")),
+    search: { pho: json({ foods: [PHO_BRANDED] }) },
     pick: completion('[{"index":0,"fdcId":2707124,"portionId":"p1","count":3}]'),
   });
   const { webLookup, calls } = web(new Error("must not be called"));
@@ -79,7 +83,7 @@ test("a USDA match is calculated by the server and cites FDC", async () => {
   assert.deepEqual(res, {
     items: [{
       name: "pho", carbs: 41.2, protein: 42.7, fat: 24.5, fiber: 2.9, calories: 566,
-      details: "USDA FoodData Central (Survey (FNDDS)): Soup, pho, with meat, 3 × 1 cup (735 g).",
+      details: "USDA FoodData Central (Survey (FNDDS)): Soup, pho, with meat, Pho Palace, 3 × 1 cup (735 g).",
     }],
     citations: ["https://fdc.nal.usda.gov/food-details/2707124/nutrients"],
   });
@@ -93,7 +97,7 @@ test("a count of 1 reads as the portion alone, and a brand is named", async () =
     foodNutrients: [{ nutrientId: 1005, value: 46.7 }],
   };
   const { fetchImpl } = world({
-    parse: parsed(food("fajita tortilla")),
+    parse: parsed(food("fajita tortilla", null, "Price Chopper")),
     search: { "fajita tortilla": json({ foods: [branded] }) },
     pick: completion('[{"index":0,"fdcId":2104027,"portionId":"p1","count":1}]'),
   });
@@ -106,16 +110,55 @@ test("a count of 1 reads as the portion alone, and a brand is named", async () =
   assert.equal(res.items[0].protein, null);
 });
 
-test("a food parsed with no brand searches Survey (FNDDS) only", async () => {
-  const { fetchImpl, usdaCalls } = world({
-    parse: parsed(food("pho", "a bowl of")),
-    search: { pho: json({ foods: [PHO] }) },
+test("an unbranded food makes no USDA request and goes to the web", async () => {
+  const { fetchImpl, seen } = world({
+    parse: parsed(food("pizza")),
+  });
+  const { webLookup, calls } = web({ items: [{ name: "Pizza", carbs: 35, details: "web" }], citations: [] });
+
+  const res = await lookupFoodsUsda("pizza", KEYS, { fetchImpl, webLookup });
+
+  assert.equal(seen.usda, 0, "no USDA call for a food with no named brand");
+  assert.deepEqual(calls, ["pizza"]);
+  assert.equal(res.items[0].carbs, 35);
+});
+
+test("an all-unbranded request sends exactly the original text to the web, once", async () => {
+  const { fetchImpl, seen } = world({
+    parse: parsed(food("pizza"), food("fries")),
+  });
+  const { webLookup, calls } = web({ items: [{ name: "Pizza", carbs: 35, details: "web" }], citations: [] });
+  const lines = [];
+  const origLog = console.log;
+  console.log = (...a) => lines.push(a.join(" "));
+  let res;
+  try {
+    res = await lookupFoodsUsda("pizza and fries", KEYS, { fetchImpl, webLookup });
+  } finally {
+    console.log = origLog;
+  }
+
+  assert.equal(seen.usda, 0);
+  assert.equal(seen.sonar, 1, "only the parse call, no pick call");
+  assert.deepEqual(calls, ["pizza and fries"]);
+  assert.equal(res.items[0].carbs, 35);
+  assert.match(lines.join("\n"), /foods=2 usda=0 web=2/);
+});
+
+test("a mixed request puts the USDA item first, then the web items, searching only the branded food", async () => {
+  const bigMac = { ...PHO, description: "MCDONALD'S, Big Mac", brandOwner: "McDonald's" };
+  const { fetchImpl, seen } = world({
+    parse: parsed(food("big mac", null, "McDonald's"), food("fries")),
+    search: { "big mac": json({ foods: [bigMac] }) },
     pick: completion('[{"index":0,"fdcId":2707124,"portionId":"p1","count":1}]'),
   });
+  const { webLookup, calls } = web({ items: [{ name: "Fries", carbs: 30, details: "web" }], citations: [] });
 
-  await lookupFoodsUsda("a bowl of pho", KEYS, { fetchImpl, webLookup: web({}).webLookup });
+  const res = await lookupFoodsUsda("big mac and fries", KEYS, { fetchImpl, webLookup });
 
-  assert.deepEqual(usdaCalls[0].dataType, ["Survey (FNDDS)"]);
+  assert.equal(seen.usda, 1, "only the branded food is searched");
+  assert.deepEqual(res.items.map((i) => i.name), ["big mac", "Fries"]);
+  assert.deepEqual(calls, ["fries"]);
 });
 
 test("a food parsed with a brand searches all four data types", async () => {
@@ -149,8 +192,8 @@ test("a branded food whose pick names a candidate without that brand falls back 
 
 test("a food with no amount gets the standard portion, not the model's own pick", async () => {
   const { fetchImpl } = world({
-    parse: parsed(food("pho")),
-    search: { pho: json({ foods: [PHO_WITH_TYPICAL] }) },
+    parse: parsed(food("pho", null, "Pho Palace")),
+    search: { pho: json({ foods: [PHO_WITH_TYPICAL_BRANDED] }) },
     // The model picked p1 (1 cup) with count 3; with no amount, the server overrides both.
     pick: completion('[{"index":0,"fdcId":2707124,"portionId":"p1","count":3}]'),
   });
@@ -159,13 +202,13 @@ test("a food with no amount gets the standard portion, not the model's own pick"
 
   assert.equal(res.items[0].carbs, 13.7);
   assert.equal(res.items[0].details,
-    "USDA FoodData Central (Survey (FNDDS)): Soup, pho, with meat, typical serving (245 g).");
+    "USDA FoodData Central (Survey (FNDDS)): Soup, pho, with meat, Pho Palace, typical serving (245 g).");
 });
 
 test("foods USDA can't match go to one web lookup, labelled, after the USDA foods", async () => {
   const { fetchImpl } = world({
-    parse: parsed(food("pho"), food("grandma's casserole"), food("chipotle bowl")),
-    search: { pho: json({ foods: [PHO] }) },
+    parse: parsed(food("pho", null, "Pho Palace"), food("grandma's casserole"), food("chipotle bowl")),
+    search: { pho: json({ foods: [PHO_BRANDED] }) },
     pick: completion('[{"index":0,"fdcId":2707124,"portionId":"p1","count":1}]'),
   });
   const { webLookup, calls } = web({
@@ -194,8 +237,8 @@ test("a pick that fails validation falls back instead of trusting it", async () 
     "not json",
   ]) {
     const { fetchImpl } = world({
-      parse: parsed(food("pho", "a bowl of")),
-      search: { pho: json({ foods: [PHO] }) },
+      parse: parsed(food("pho", "a bowl of", "Pho Palace")),
+      search: { pho: json({ foods: [PHO_BRANDED] }) },
       pick: completion(pick),
     });
     const { webLookup, calls } = web({ items: [{ name: "Pho", carbs: 40, details: "web" }], citations: [] });
@@ -209,7 +252,7 @@ test("a pick that fails validation falls back instead of trusting it", async () 
 
 test("with no amount, an invalid fdcId still falls back, even though portion and count are ignored", async () => {
   const { fetchImpl } = world({
-    parse: parsed(food("pho")),
+    parse: parsed(food("pho", null, "Pho Palace")),
     search: { pho: json({ foods: [PHO] }) },
     // No amount: portionId/count would be ignored, but this fdcId is not a candidate at all.
     pick: completion('[{"index":0,"fdcId":999,"portionId":"p1","count":50}]'),
@@ -228,7 +271,7 @@ test("USDA errors send the food to the web and the request still succeeds", asyn
     () => json({}, 500),
     () => { throw Object.assign(new Error("t"), { name: "TimeoutError" }); },
   ]) {
-    const { fetchImpl } = world({ parse: parsed(food("pho")), search: { pho: failure } });
+    const { fetchImpl } = world({ parse: parsed(food("pho", null, "Pho Palace")), search: { pho: failure } });
     const { webLookup, calls } = web({ items: [{ name: "Pho", carbs: 40, details: "web" }], citations: [] });
 
     const res = await lookupFoodsUsda("pho", KEYS, { fetchImpl, webLookup });
@@ -268,8 +311,8 @@ test("an unbilled failure stays refundable only if nothing was billed", async ()
 
 test("when the web fallback fails, USDA foods still return and the rest are unknown", async () => {
   const { fetchImpl } = world({
-    parse: parsed(food("pho"), food("mystery")),
-    search: { pho: json({ foods: [PHO] }) },
+    parse: parsed(food("pho", null, "Pho Palace"), food("mystery")),
+    search: { pho: json({ foods: [PHO_BRANDED] }) },
     pick: completion('[{"index":0,"fdcId":2707124,"portionId":"p1","count":1}]'),
   });
 
@@ -288,7 +331,7 @@ test("past the USDA budget, the pick is skipped and foods go to the web", async 
   let t = 0;
   const now = () => t;
   const { fetchImpl, seen } = world({
-    parse: () => { t = 13_000; return parsed(food("pho")); },
+    parse: () => { t = 13_000; return parsed(food("pho", null, "Pho Palace")); },
     search: { pho: json({ foods: [PHO] }) },
     pick: completion('[{"index":0,"fdcId":2707124,"portionId":"p1","count":1}]'),
   });
@@ -321,7 +364,7 @@ test("a web error with no USDA foods is rethrown", async () => {
 
 test("an unexpected error in USDA search sends the food to the web", async () => {
   const { fetchImpl } = world({
-    parse: parsed(food("pho")),
+    parse: parsed(food("pho", null, "Pho Palace")),
     search: { pho: json({ foods: [{ fdcId: 1, dataType: "SR Legacy", description: "x", foodNutrients: 5 }] }) },
   });
   const { webLookup, calls } = web({ items: [{ name: "Pho", carbs: 40, details: "web" }], citations: [] });
@@ -334,7 +377,7 @@ test("an unexpected error in USDA search sends the food to the web", async () =>
 
 test("an unexpected error in the pick call sends the food to the web", async () => {
   const { fetchImpl } = world({
-    parse: parsed(food("pho")),
+    parse: parsed(food("pho", null, "Pho Palace")),
     search: { pho: json({ foods: [PHO] }) },
     pick: { ok: true, status: 200, json: async () => ({ get choices() { throw new TypeError("boom"); } }) },
   });
@@ -386,8 +429,8 @@ test("logs carry counts and timing, never food text or keys", async () => {
   console.error = (...a) => lines.push(a.join(" "));
   try {
     const { fetchImpl } = world({
-      parse: parsed(food("pho"), food("secret stew")),
-      search: { pho: json({ foods: [PHO] }) },
+      parse: parsed(food("pho", null, "Pho Palace"), food("secret stew")),
+      search: { pho: json({ foods: [PHO_BRANDED] }) },
       pick: completion('[{"index":0,"fdcId":2707124,"portionId":"p1","count":1}]'),
     });
     await lookupFoodsUsda("pho and secret stew", KEYS, {
