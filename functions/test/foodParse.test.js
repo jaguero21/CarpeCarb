@@ -54,7 +54,8 @@ test("parseFoods calls sonar with search off and returns the foods", async () =>
   assert.equal(bodies[0].disable_search, true);
   assert.equal(bodies[0].temperature, 0);
   assert.equal(bodies[0].messages[1].content, "a bowl of pho and 10 mcdonalds nuggets");
-  assert.match(bodies[0].messages[0].content, /keep a brand or chain name/i);
+  assert.match(bodies[0].messages[0].content, /use it with the product name/i);
+  assert.match(bodies[0].messages[0].content, /USDA's own naming style/);
   assert.equal(billing.billed, true);
 });
 
@@ -179,6 +180,8 @@ test("the pick prompt requires generic entries by default, forbids other brands,
   assert.match(system, /choose a generic entry/i);
   assert.match(system, /Hamburger \(Burger King\)/);
   assert.match(system, /portionId and count to null/i);
+  assert.match(system, /A variant the user did not mention/);
+  assert.match(system, /fdcId is null/);
   assert.match(system, /Never give nutrition values/);
 });
 

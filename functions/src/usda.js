@@ -7,7 +7,7 @@
 
 const USDA_BASE = "https://api.nal.usda.gov/fdc/v1";
 const DATA_TYPES = ["Survey (FNDDS)", "SR Legacy", "Foundation", "Branded"];
-const SEARCH_PAGE_SIZE = 8;
+const SEARCH_PAGE_SIZE = 15;
 const NUTRIENT = { carbs: 1005, protein: 1003, fat: 1004, fiber: 1079 };
 // Energy in kcal. Foundation foods sometimes list only the Atwater values.
 const KCAL = [1008, 2047, 2048];

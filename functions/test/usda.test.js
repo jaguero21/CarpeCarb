@@ -72,7 +72,7 @@ test("searchCandidates sends the query to FDC search with the four data types", 
 
   assert.match(calls[0].url, /^https:\/\/api\.nal\.usda\.gov\/fdc\/v1\/foods\/search\?api_key=KEY$/);
   assert.deepEqual(calls[0].body, {
-    query: "pho", pageSize: 8, dataType: ["Survey (FNDDS)", "SR Legacy", "Foundation", "Branded"],
+    query: "pho", pageSize: 15, dataType: ["Survey (FNDDS)", "SR Legacy", "Foundation", "Branded"],
   });
   assert.ok(calls[0].signal, "every FDC call has a timeout");
 });
