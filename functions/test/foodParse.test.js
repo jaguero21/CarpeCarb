@@ -328,6 +328,7 @@ const MUST_PASS_BRANDS = [
   { brand: "McDonald's", description: "McDONALD'S, Chicken McNUGGETS", candidateBrand: null },
   { brand: "McDonald's", description: "Big Mac (McDonalds)", candidateBrand: null },
   { brand: "H-E-B", description: "Fajita Tortillas", candidateBrand: "H-E-B" },
+  { brand: "H-E-B", description: "HEB Fajita Tortillas", candidateBrand: null },
   { brand: "Burger King", description: "Hamburger (Burger King)", candidateBrand: null },
   { brand: "Wendy's", description: "WENDY'S, Jr. Hamburger", candidateBrand: null },
 ];
@@ -351,6 +352,24 @@ test("validatePick rejects a candidate that doesn't carry the named brand", () =
   );
 
   assert.equal(result, null);
+});
+
+const MUST_FAIL_BRANDS = [
+  // "aw" is a raw substring of "strAWberry"; a real word-boundary check must not match it.
+  { brand: "A&W", description: "Strawberry shake" },
+  // "sonic" is a raw substring of "superSONICburger"; same trap.
+  { brand: "Sonic", description: "Supersonic burger" },
+  { brand: "H-E-B", description: "Tortillas, ready-to-bake or -fry" },
+];
+
+test("validatePick rejects a brand that only appears as part of a longer word", () => {
+  for (const { brand, description } of MUST_FAIL_BRANDS) {
+    const candidate = brandCandidate(description, null);
+    const result = validatePick(
+      { fdcId: 1, portionId: "p1", count: 1 }, [candidate], { amount: "1", brand }
+    );
+    assert.equal(result, null, `${brand} should not match "${description}"`);
+  }
 });
 
 test("validatePick skips the brand check when the food named no brand", () => {

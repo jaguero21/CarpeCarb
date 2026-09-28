@@ -198,16 +198,29 @@ function standardPortion(candidate) {
   );
 }
 
-/** Lowercased, alphanumeric-only, for brand matching that ignores punctuation and case. */
-function norm(s) {
-  return String(s).toLowerCase().replace(/[^a-z0-9]/g, "");
+/**
+ * Lowercased words for brand matching on token boundaries. `'`, `’`, `&`, `-`
+ * and `.` are dropped outright (so "H-E-B", "HEB" and "A&W" tokenize the way
+ * people actually write them); anything else non-alphanumeric becomes a
+ * space, and runs of whitespace collapse. A raw substring match would let
+ * "A&W" match "str-AW-berry" or "Sonic" match "super-SONIC-burger"; this
+ * keeps the match to whole words only.
+ */
+function tokens(s) {
+  return String(s)
+    .toLowerCase()
+    .replace(/['’&\-.]/g, "")
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
 }
 
-/** Whether the candidate's description or brand names the given brand. */
+/** Whether the candidate's description or brand names the given brand, as a whole word. */
 function carriesBrand(candidate, brand) {
-  const normBrand = norm(brand);
-  if (!normBrand) return false;
-  return norm(candidate.description).includes(normBrand) || norm(candidate.brand || "").includes(normBrand);
+  const needle = tokens(brand);
+  if (!needle) return false;
+  const wrap = (s) => ` ${tokens(s)} `;
+  const target = ` ${needle} `;
+  return wrap(candidate.description).includes(target) || wrap(candidate.brand || "").includes(target);
 }
 
 /**
