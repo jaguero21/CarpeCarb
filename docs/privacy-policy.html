@@ -199,6 +199,7 @@
   <section>
     <h2><span class="icon">🔍</span> Nutrition Lookups</h2>
     <p>When you search for a food item, the text you type is sent to our Firebase Cloud Function, which forwards it to <strong>Perplexity AI</strong> to retrieve nutrition data. The request is associated only with your anonymous UID — no personal information is transmitted.</p>
+    <p>To find nutrition values, a short search phrase based on the food you type is also sent to USDA FoodData Central, a public nutrition database run by the U.S. Department of Agriculture. It is sent from our server, with nothing that identifies you.</p>
     <p>We do not log or store your food search queries beyond what is necessary for rate limiting. Perplexity AI's use of data is governed by their own <a href="https://www.perplexity.ai/hub/legal/privacy-policy" target="_blank" rel="noopener">Privacy Policy</a>.</p>
   </section>
 
@@ -235,6 +236,7 @@
     <ul>
       <li><strong>Firebase (Google)</strong> — anonymous authentication, and Firestore storage linked to your anonymous ID: your subscription record, your daily count of AI lookups (for the free-tier limit), and short-lived request counters used for rate limiting, which expire automatically. <a href="https://firebase.google.com/support/privacy" target="_blank" rel="noopener">Firebase Privacy Policy</a></li>
       <li><strong>Perplexity AI</strong> — nutrition data lookups. <a href="https://www.perplexity.ai/hub/legal/privacy-policy" target="_blank" rel="noopener">Perplexity Privacy Policy</a></li>
+      <li><strong>USDA FoodData Central</strong> — public nutrition database searched for nutrition values. <a href="https://www.usda.gov/privacy-policy" target="_blank" rel="noopener">USDA Privacy Policy</a></li>
       <li><strong>Apple HealthKit</strong> — nutrition data (with permission). <a href="https://www.apple.com/legal/privacy/" target="_blank" rel="noopener">Apple Privacy Policy</a></li>
       <li><strong>Apple App Store</strong> — in-app purchases and subscription management.</li>
     </ul>

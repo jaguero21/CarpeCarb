@@ -1,11 +1,12 @@
 const fs = require("fs");
 const path = require("path");
 const { onCall, HttpsError } = require("firebase-functions/v2/https");
-const { defineSecret } = require("firebase-functions/params");
+const { defineSecret, defineString } = require("firebase-functions/params");
 const admin = require("firebase-admin");
 
 const { createRateLimiter } = require("./src/rateLimit");
 const { lookupFoods } = require("./src/perplexity");
+const { lookupFoodsUsda } = require("./src/lookup");
 const { createQuotaStore } = require("./src/quota");
 const { createAppStore } = require("./src/appStore");
 const { createEntitlementStore } = require("./src/entitlements");
@@ -15,6 +16,9 @@ admin.initializeApp();
 const db = admin.firestore();
 
 const perplexityApiKey = defineSecret("PERPLEXITY_API_KEY");
+const usdaApiKey = defineSecret("USDA_API_KEY");
+// "web" restores the Perplexity-only lookup without a code change (edit functions/.env and redeploy).
+const lookupSource = defineString("LOOKUP_SOURCE", { default: "usda" });
 const appStoreIapKey = defineSecret("APP_STORE_IAP_KEY");
 const appStoreKeyId = defineSecret("APP_STORE_KEY_ID");
 const appStoreIssuerId = defineSecret("APP_STORE_ISSUER_ID");
@@ -70,7 +74,14 @@ function getHandlers() {
     getPremiumStatus: entitlements.getPremiumStatus,
     reserveLookup: quota.reserveLookup,
     releaseLookup: quota.releaseLookup,
-    lookupFoods: (sanitized) => lookupFoods(sanitized, perplexityApiKey.value()),
+    lookupFoods: (sanitized) =>
+      lookupSource.value() === "web"
+        ? lookupFoods(sanitized, perplexityApiKey.value())
+        : lookupFoodsUsda(sanitized, {
+          perplexityKey: perplexityApiKey.value(),
+          // Trimmed like the App Store secrets: a pasted value often ends in a newline.
+          usdaKey: usdaApiKey.value().trim(),
+        }),
     verifyTransaction: appStore.verifyTransaction,
     recordTransaction: entitlements.recordTransaction,
     now,
@@ -96,7 +107,7 @@ exports.validateAppStoreReceipt = onCall(
  */
 exports.getMultipleCarbCounts = onCall(
   {
-    secrets: [perplexityApiKey, ...APP_STORE_SECRETS],
+    secrets: [perplexityApiKey, usdaApiKey, ...APP_STORE_SECRETS],
     timeoutSeconds: 60,
     // Keep one instance warm to avoid cold starts
     minInstances: 1,
