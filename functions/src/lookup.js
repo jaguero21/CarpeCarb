@@ -45,6 +45,9 @@ function usdaItem(food, { candidate, portion, count }) {
 
 const labelled = (item) => ({ ...item, details: `${WEB_PREFIX}${item.details || ""}`.trim() });
 
+const errorCode = (err) =>
+  err instanceof UsdaError || err instanceof ParseError ? err.message : (err && err.name) || "error";
+
 /**
  * Looks up a sanitized food description. Same result shape and billing
  * markers as lookupFoods in perplexity.js.
@@ -62,8 +65,8 @@ async function lookupFoodsUsda(sanitized, { perplexityKey, usdaKey }, options = 
   const left = (budget) => Math.max(0, start + budget - now());
   const billing = { billed: false };
   const stats = { foods: 0, usda: 0, web: 0 };
-  const logDone = () =>
-    console.log(`[lookup] source=usda foods=${stats.foods} usda=${stats.usda} web=${stats.web} ms=${now() - start}`);
+  const logDone = (outcome = "ok") =>
+    console.log(`[lookup] source=usda foods=${stats.foods} usda=${stats.usda} web=${stats.web} ms=${now() - start} outcome=${outcome}`);
 
   /** The web lookup, capped by the overall budget, with billing carried across the request. */
   async function web(text) {
@@ -90,12 +93,17 @@ async function lookupFoodsUsda(sanitized, { perplexityKey, usdaKey }, options = 
       fetchImpl, billing, timeoutMs: Math.min(SONAR_CALL_MS, left(USDA_BUDGET_MS)),
     });
   } catch (err) {
-    if (!(err instanceof ParseError)) throw err;
-    console.log(`[lookup] parse failed: ${err.message}`);
+    console.log(`[lookup] parse failed: ${errorCode(err)}`);
     stats.web = 1;
-    const result = await web(sanitized);
-    logDone();
-    return { items: result.items.map(labelled), citations: result.citations || [] };
+    try {
+      const result = await web(sanitized);
+      logDone();
+      return { items: result.items.map(labelled), citations: result.citations || [] };
+    } catch (webErr) {
+      console.log(`[lookup] parse fallback failed: ${errorCode(webErr)}`);
+      logDone("error");
+      throw webErr;
+    }
   }
   stats.foods = foods.length;
 
@@ -104,8 +112,7 @@ async function lookupFoodsUsda(sanitized, { perplexityKey, usdaKey }, options = 
     const lists = await Promise.all(foods.map((food) =>
       searchCandidates(food.query, usdaKey, { fetchImpl, timeoutMs: Math.min(USDA_CALL_MS, left(USDA_BUDGET_MS)) })
         .catch((err) => {
-          if (!(err instanceof UsdaError)) throw err;
-          console.log(`[lookup] usda search failed: ${err.message}`);
+          console.log(`[lookup] usda search failed: ${errorCode(err)}`);
           return [];
         })
     ));
@@ -116,8 +123,7 @@ async function lookupFoodsUsda(sanitized, { perplexityKey, usdaKey }, options = 
       picks.forEach((pick, i) => { matches[i] = validatePick(pick, lists[i]); });
     }
   } catch (err) {
-    if (!(err instanceof ParseError)) throw err;
-    console.log(`[lookup] pick failed: ${err.message}`);
+    console.log(`[lookup] pick failed: ${errorCode(err)}`);
   }
 
   const items = [];
@@ -141,7 +147,10 @@ async function lookupFoodsUsda(sanitized, { perplexityKey, usdaKey }, options = 
       items.push(...result.items.map(labelled));
       citations.push(...(result.citations || []));
     } catch (err) {
-      if (!(err instanceof WebTimeout) && items.length === 0) throw err;
+      if (!(err instanceof WebTimeout) && items.length === 0) {
+        logDone("error");
+        throw err;
+      }
       const details = err instanceof WebTimeout
         ? "Couldn't look this up in time. Enter the carbs yourself."
         : "Couldn't look this up. Enter the carbs yourself.";

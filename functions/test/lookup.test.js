@@ -236,6 +236,66 @@ test("a web error with no USDA foods is rethrown", async () => {
   await assert.rejects(lookupFoodsUsda("pizza", KEYS, { fetchImpl, webLookup: web(err).webLookup }), (e) => e === err);
 });
 
+test("an unexpected error in USDA search sends the food to the web", async () => {
+  const { fetchImpl } = world({
+    parse: parsed(food("pho")),
+    search: { pho: json({ foods: [{ fdcId: 1, dataType: "SR Legacy", description: "x", foodNutrients: 5 }] }) },
+  });
+  const { webLookup, calls } = web({ items: [{ name: "Pho", carbs: 40, details: "web" }], citations: [] });
+
+  const res = await lookupFoodsUsda("pho", KEYS, { fetchImpl, webLookup });
+
+  assert.deepEqual(calls, ["pho"]);
+  assert.equal(res.items[0].carbs, 40);
+});
+
+test("an unexpected error in the pick call sends the food to the web", async () => {
+  const { fetchImpl } = world({
+    parse: parsed(food("pho")),
+    search: { pho: json({ foods: [PHO] }) },
+    pick: { ok: true, status: 200, json: async () => ({ get choices() { throw new TypeError("boom"); } }) },
+  });
+  const { webLookup, calls } = web({ items: [{ name: "Pho", carbs: 40, details: "web" }], citations: [] });
+
+  const res = await lookupFoodsUsda("pho", KEYS, { fetchImpl, webLookup });
+
+  assert.deepEqual(calls, ["pho"]);
+  assert.equal(res.items[0].carbs, 40);
+});
+
+test("an unexpected error in parse falls back to the whole text", async () => {
+  const { fetchImpl } = world({
+    parse: { ok: true, status: 200, json: async () => ({ get choices() { throw new TypeError("boom"); } }) },
+  });
+  const { webLookup, calls } = web({ items: [{ name: "Pizza", carbs: 35, details: "web" }], citations: [] });
+
+  const res = await lookupFoodsUsda("pizza", KEYS, { fetchImpl, webLookup });
+
+  assert.deepEqual(calls, ["pizza"]);
+  assert.equal(res.items[0].carbs, 35);
+});
+
+test("a failed lookup still logs one line, with no food text", async () => {
+  const lines = [];
+  const orig = { log: console.log, error: console.error };
+  console.log = (...a) => lines.push(a.join(" "));
+  console.error = (...a) => lines.push(a.join(" "));
+  try {
+    const { fetchImpl } = world({
+      parse: completion("no json"),
+    });
+    await assert.rejects(
+      lookupFoodsUsda("pizza", KEYS, { fetchImpl, webLookup: web(new Error("down")).webLookup }),
+      (err) => err.message === "down"
+    );
+  } finally {
+    Object.assign(console, orig);
+  }
+  const all = lines.join("\n");
+  assert.match(all, /\[lookup\] source=usda .* outcome=error/);
+  assert.doesNotMatch(all, /pizza/i);
+});
+
 test("logs carry counts and timing, never food text or keys", async () => {
   const lines = [];
   const orig = { log: console.log, error: console.error };
@@ -254,6 +314,6 @@ test("logs carry counts and timing, never food text or keys", async () => {
     Object.assign(console, orig);
   }
   const all = lines.join("\n");
-  assert.match(all, /\[lookup\] source=usda foods=2 usda=1 web=1 ms=\d+/);
+  assert.match(all, /\[lookup\] source=usda foods=2 usda=1 web=1 ms=\d+.*outcome=ok/);
   assert.doesNotMatch(all, /pho|stew|PKEY|UKEY|Soup/i);
 });
