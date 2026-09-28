@@ -54,7 +54,7 @@ const errorCode = (err) =>
  *
  * @param {string} sanitized - output of sanitizeFoodInput
  * @param {{perplexityKey: string, usdaKey: string}} keys
- * @param {{fetchImpl?: typeof fetch, now?: () => number, webLookup?: (text: string) => Promise<{items: object[], citations: string[]}>}} [options]
+ * @param {{fetchImpl?: typeof fetch, now?: () => number, webLookup?: (text: string) => Promise<{items: object[], citations: string[]}>, sleep?: (ms: number) => Promise<void>}} [options]
  */
 async function lookupFoodsUsda(sanitized, { perplexityKey, usdaKey }, options = {}) {
   const fetchImpl = options.fetchImpl || fetch;
@@ -90,7 +90,7 @@ async function lookupFoodsUsda(sanitized, { perplexityKey, usdaKey }, options = 
   let foods;
   try {
     foods = await parseFoods(sanitized, perplexityKey, {
-      fetchImpl, billing, timeoutMs: Math.min(SONAR_CALL_MS, left(USDA_BUDGET_MS)),
+      fetchImpl, billing, timeoutMs: Math.min(SONAR_CALL_MS, left(USDA_BUDGET_MS)), sleep: options.sleep,
     });
   } catch (err) {
     console.log(`[lookup] parse failed: ${errorCode(err)}`);
@@ -123,7 +123,7 @@ async function lookupFoodsUsda(sanitized, { perplexityKey, usdaKey }, options = 
     }));
     if (lists.some((list) => list.length > 0) && left(USDA_BUDGET_MS) > 0) {
       const picks = await pickMatches(foods, lists, perplexityKey, {
-        fetchImpl, billing, timeoutMs: Math.min(SONAR_CALL_MS, left(USDA_BUDGET_MS)),
+        fetchImpl, billing, timeoutMs: Math.min(SONAR_CALL_MS, left(USDA_BUDGET_MS)), sleep: options.sleep,
       });
       picks.forEach((pick, i) => { matches[i] = validatePick(pick, lists[i], foods[i]); });
     }

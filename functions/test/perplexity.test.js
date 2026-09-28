@@ -42,6 +42,16 @@ function httpError(status) {
   return { status, ok: false, json: async () => ({}), text: async () => "error" };
 }
 
+/** A 429 response carrying a retry-after header, in the shape a real fetch Response would. */
+function rateLimited(retryAfter) {
+  return {
+    status: 429, ok: false,
+    headers: { get: (k) => (k.toLowerCase() === "retry-after" ? retryAfter : null) },
+    json: async () => ({}),
+    text: async () => "rate limited",
+  };
+}
+
 test("lookupFoods does not retry output truncated at max_tokens", async () => {
   const fetchImpl = stubFetch(completion('[{"name":"Egg","carbs":1},{"name":"Ha', "length"));
 
@@ -113,6 +123,42 @@ test("lookupFoods gives up after three unparseable responses, all billed", async
     return true;
   });
   assert.equal(fetchImpl.calls, 3);
+});
+
+// ── 429: one retry after the server's wait ──
+
+test("lookupFoods retries once after a 429 with a short retry-after, then returns the items", async () => {
+  const fetchImpl = stubFetch(
+    rateLimited("1"),
+    completion('[{"name":"Apple","carbs":25}]')
+  );
+
+  const res = await lookupFoods("an apple", "key", { fetchImpl, sleep: noSleep });
+
+  assert.equal(res.items[0].name, "Apple");
+  assert.equal(fetchImpl.calls, 2);
+});
+
+test("lookupFoods does not retry a 429 whose retry-after is over 2 seconds", async () => {
+  const fetchImpl = stubFetch(rateLimited("5"));
+
+  await assert.rejects(lookupFoods("an apple", "key", { fetchImpl, sleep: noSleep }), (err) => {
+    assert.equal(err.code, "resource-exhausted");
+    assert.equal(isNotBilled(err), true);
+    return true;
+  });
+  assert.equal(fetchImpl.calls, 1);
+});
+
+test("lookupFoods gives up after a second 429 in a row", async () => {
+  const fetchImpl = stubFetch(rateLimited("1"), rateLimited("1"));
+
+  await assert.rejects(lookupFoods("an apple", "key", { fetchImpl, sleep: noSleep }), (err) => {
+    assert.equal(err.code, "resource-exhausted");
+    assert.equal(isNotBilled(err), true);
+    return true;
+  });
+  assert.equal(fetchImpl.calls, 2);
 });
 
 test("lookupFoods marks repeated 5xx errors as not billed", async () => {

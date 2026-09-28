@@ -107,6 +107,69 @@ test("a sonar failure is a ParseError, billed only on 2xx", async () => {
   }
 });
 
+// ── callSonar: 429 retry ──
+
+/** A 429 response carrying a retry-after header, in the shape a real fetch Response would. */
+function rateLimited(retryAfter) {
+  return {
+    ok: false, status: 429,
+    headers: { get: (k) => (k.toLowerCase() === "retry-after" ? retryAfter : null) },
+    json: async () => ({}),
+  };
+}
+/** Records the ms passed to each sleep call; resolves immediately, so tests run fast. */
+function spySleep() {
+  const calls = [];
+  const sleep = async (ms) => { calls.push(ms); };
+  return { sleep, calls };
+}
+
+test("a 429 with a short retry-after is retried once, then succeeds", async () => {
+  const { fetchImpl, bodies } = sonar(
+    rateLimited("1"),
+    completion('[{"name":"pizza","query":"pizza","text":"pizza"}]')
+  );
+  const { sleep, calls } = spySleep();
+  const billing = { billed: false };
+
+  const foods = await parseFoods("pizza", "KEY", { fetchImpl, timeoutMs: 6000, billing, sleep });
+
+  assert.equal(foods.length, 1);
+  assert.equal(bodies.length, 2);
+  assert.deepEqual(calls, [1000]);
+  assert.equal(billing.billed, true);
+});
+
+test("a 429 whose retry-after is over 2 seconds is not retried", async () => {
+  const { fetchImpl, bodies } = sonar(rateLimited("5"));
+  const { sleep, calls } = spySleep();
+  const billing = { billed: false };
+
+  await assert.rejects(
+    parseFoods("pizza", "KEY", { fetchImpl, timeoutMs: 6000, billing, sleep }),
+    (err) => err instanceof ParseError && err.message === "status 429"
+  );
+
+  assert.equal(bodies.length, 1);
+  assert.equal(calls.length, 0);
+  assert.equal(billing.billed, false);
+});
+
+test("a second 429 in a row gives up, after two calls", async () => {
+  const { fetchImpl, bodies } = sonar(rateLimited("1"), rateLimited("1"));
+  const { sleep, calls } = spySleep();
+  const billing = { billed: false };
+
+  await assert.rejects(
+    parseFoods("pizza", "KEY", { fetchImpl, timeoutMs: 6000, billing, sleep }),
+    (err) => err instanceof ParseError && err.message === "status 429"
+  );
+
+  assert.equal(bodies.length, 2);
+  assert.equal(calls.length, 1, "only one retry is ever attempted");
+  assert.equal(billing.billed, false);
+});
+
 // ── pickMatches ──
 
 test("pickMatches sends one call for all foods with candidates, IDs, brand and portions only", async () => {

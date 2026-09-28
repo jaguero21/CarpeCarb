@@ -44,26 +44,51 @@ const PICK_PROMPT =
   "If the user gave an amount, choose the portion and count that give it: \"10\" nuggets with a \"4 pieces\" portion is count 2.5. " +
   "If nothing matches, fdcId is null. Never give nutrition values.";
 
-async function callSonar(system, user, apiKey, { fetchImpl = fetch, timeoutMs, billing }) {
-  let res;
-  try {
-    res = await fetchImpl(SONAR_URL, {
-      method: "POST",
-      headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
-      body: JSON.stringify({
-        model: "sonar",
-        disable_search: true,
-        temperature: 0,
-        max_tokens: 1024,
-        messages: [
-          { role: "system", content: system },
-          { role: "user", content: user },
-        ],
-      }),
-      signal: AbortSignal.timeout(timeoutMs),
-    });
-  } catch (err) {
-    throw new ParseError(err && err.name === "TimeoutError" ? "timeout" : "network");
+const realSleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+/**
+ * ms to wait before retrying a 429, or null if this response's retry-after doesn't
+ * qualify (missing, unparseable, or over the 2 s cutoff we're willing to wait).
+ */
+function retryWaitMs(res) {
+  if (!res.headers || typeof res.headers.get !== "function") return null;
+  const raw = res.headers.get("retry-after");
+  if (raw === null || raw === undefined) return null;
+  const seconds = Number(raw);
+  if (!Number.isFinite(seconds) || seconds < 0 || seconds > 2) return null;
+  return Math.max(seconds, 0.5) * 1000;
+}
+
+async function callSonar(system, user, apiKey, { fetchImpl = fetch, timeoutMs, billing, sleep = realSleep }) {
+  const requestInit = {
+    method: "POST",
+    headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+    body: JSON.stringify({
+      model: "sonar",
+      disable_search: true,
+      temperature: 0,
+      max_tokens: 1024,
+      messages: [
+        { role: "system", content: system },
+        { role: "user", content: user },
+      ],
+    }),
+  };
+  async function attempt() {
+    try {
+      return await fetchImpl(SONAR_URL, { ...requestInit, signal: AbortSignal.timeout(timeoutMs) });
+    } catch (err) {
+      throw new ParseError(err && err.name === "TimeoutError" ? "timeout" : "network");
+    }
+  }
+
+  let res = await attempt();
+  if (res.status === 429) {
+    const wait = retryWaitMs(res);
+    if (wait !== null) {
+      await sleep(wait);
+      res = await attempt();
+    }
   }
   if (!res.ok) throw new ParseError(`status ${res.status}`);
   billing.billed = true;
