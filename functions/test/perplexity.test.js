@@ -166,10 +166,37 @@ test("lookupFoods keeps a missing carb value as null, never 0", async () => {
   assert.equal(item.carbs, null);
 });
 
-test("lookupFoods keeps a real zero as zero", async () => {
-  const [item] = await lookUp('[{"name":"Water","carbs":0}]');
+test("lookupFoods keeps a sourced zero as zero", async () => {
+  const [item] = await lookUp('[{"name":"Water","carbs":0,"sourced":true}]');
 
   assert.equal(item.carbs, 0);
+});
+
+test("a zero the model did not source is unknown, not 0 g", async () => {
+  // Seen from the real model: "pizza" came back as carbs 0 with details saying
+  // no value could be sourced. Read as a real 0 g, that under-doses insulin.
+  for (const content of [
+    '[{"name":"Pizza","carbs":0,"sourced":false,"details":"Cannot source a value"}]',
+    '[{"name":"Pizza","carbs":0,"details":"Cannot source a value"}]',
+    '[{"name":"Pizza","carbs":"0 g","sourced":"true"}]',
+  ]) {
+    const [item] = await lookUp(content);
+    assert.equal(item.carbs, null, content);
+  }
+});
+
+test("a nonzero carb value is kept whatever the sourced flag says", async () => {
+  // The model sometimes marks a correctly cited value unsourced. Only a zero
+  // is dangerous enough to discard on the flag alone.
+  const [item] = await lookUp('[{"name":"Pizza","carbs":36,"sourced":false}]');
+
+  assert.equal(item.carbs, 36);
+});
+
+test("the sourced flag stays on the server", async () => {
+  const [item] = await lookUp('[{"name":"Water","carbs":0,"sourced":true}]');
+
+  assert.equal("sourced" in item, false);
 });
 
 test("lookupFoods treats negative and infinite numbers as no value", async () => {
@@ -198,6 +225,13 @@ test("the prompt lets the model say a carb value is unknown", async () => {
   // this the model reads "don't invent" as "refuse", and everyday lookups fail.
   assert.match(system, /A food named generically/);
   assert.match(system, /standard reference serving/);
+  // The server discards a 0 that is not marked sourced, so the prompt must
+  // ask for the flag, and must say 0 never means "not found".
+  assert.match(system, /"sourced" \(boolean/);
+  assert.match(system, /Never use 0 to mean you could not find a value/);
+  // Chains publish different values per country; without a default the model
+  // mixed French, Belgian and US McDonald's figures.
+  assert.match(system, /Assume the United States/);
 });
 
 test("splitUnknownCarbs separates foods with no carb value from the rest", () => {

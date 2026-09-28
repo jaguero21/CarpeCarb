@@ -82,13 +82,16 @@ async function lookupFoods(sanitized, apiKey, { fetchImpl = fetch, sleep = (ms) 
                   "Interpret the input carefully: words may refer to a brand/store name, a style/variety, or the actual food product. " +
                   "For example, 'heb fajita tortilla' means a fajita-style tortilla sold by the brand HEB — NOT a fajita, NOT a taco. " +
                   "Parse the EXACT product the user is describing before looking up nutrition data. " +
+                  "Assume the United States, and US menus and US nutrition data, unless the user names another country — " +
+                  "chains publish different values in different countries. " +
                   "IMPORTANT: Return exactly ONE result per distinct food item the user mentions. " +
                   "If the user says 'tortilla', return only the single best match — do NOT return multiple varieties or sizes. " +
                   "Only return multiple items if the user explicitly lists multiple foods (e.g. 'burger and fries' = 2 items). " +
                   "Respond with ONLY a valid JSON array — no markdown, no code fences, no extra text. " +
                   'Each element must have "name" (string, the full product name including brand if given), "carbs" (number, grams of carbohydrates, or null — see below), ' +
                   '"protein" (number, grams of protein), "fat" (number, grams of total fat), "fiber" (number, grams of dietary fiber), ' +
-                  '"calories" (number, kcal), and "details" (string, cite the specific source and serving size). ' +
+                  '"calories" (number, kcal), and "details" (string, cite the specific source and serving size), ' +
+                  'and "sourced" (boolean: true only if the carbs value comes from a source you name in details). ' +
                   "All numeric fields must be plain numbers — no units, no strings. " +
                   "Priority for data sources: " +
                   "1. Official manufacturer/restaurant/store-brand nutrition info (product packaging, website). " +
@@ -103,7 +106,9 @@ async function lookupFoods(sanitized, apiKey, { fetchImpl = fetch, sleep = (ms) 
                   "Set \"carbs\" to null only when no source gives a value for that food at all — a dish you cannot identify, " +
                   "or one nothing lists — and say in details why. Never invent a number you cannot source: people use these " +
                   "numbers to dose insulin, and a wrong number is worse than none. " +
-                  "A food that genuinely has no carbohydrates (water, black coffee) is 0, not null. " +
+                  "A food that genuinely has no carbohydrates (water, black coffee) is 0, not null, with \"sourced\" true. " +
+                  "Never use 0 to mean you could not find a value: if you cannot source carbs, \"carbs\" must be null " +
+                  "and \"sourced\" false. A 0 there would be read as a real value and could lead someone to under-dose insulin. " +
                   'Example: [{"name":"HEB Fajita Tortilla","carbs":26,"protein":4,"fat":3,"fiber":1,"calories":150,"details":"Per HEB product nutrition label, one fajita-size flour tortilla (1 tortilla, 45g serving)."}]',
               },
               {
@@ -240,11 +245,18 @@ async function lookupFoods(sanitized, apiKey, { fetchImpl = fetch, sleep = (ms) 
           return Number.isFinite(val) && val >= 0 ? val : null;
         };
 
+        // A 0 the model does not vouch for is unknown. The model has been seen
+        // answering 0 while saying in details it found no value, and a 0 g the
+        // app trusts under-doses insulin. Only zero is gated: the model also
+        // marks some well-cited values unsourced, and those stay.
+        let carbs = parseNum(item.carbs);
+        if (carbs === 0 && item.sourced !== true) carbs = null;
+
         return {
           name: String(item.name || "Unknown"),
           // null when the model had no reliable value. Never defaulted to 0:
           // a confident 0 g is worse than no answer for someone dosing insulin.
-          carbs: parseNum(item.carbs),
+          carbs,
           protein: parseNum(item.protein),
           fat: parseNum(item.fat),
           fiber: parseNum(item.fiber),
