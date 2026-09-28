@@ -53,9 +53,9 @@ text ──► parse (sonar, search off) ──► [{name, query, amount}]
             │
             ▼ per food, in parallel
         USDA search: Survey (FNDDS), SR Legacy, Foundation, Branded
-            │ top 8 candidates, each with its portions
+            │ top 8 candidates; one details call adds portions for SR Legacy / Foundation
             ▼
-        pick (sonar, search off) ──► {fdcId, portionId, count} | none
+        pick (sonar, search off, ONE call for all foods) ──► per food {fdcId, portionId, count} | none
             │
    ┌────────┴─────────┐
  valid match        none / invalid / USDA error / deadline
@@ -70,9 +70,16 @@ text ──► parse (sonar, search off) ──► [{name, query, amount}]
   - `searchFoods(query, apiKey, {fetchImpl, signal})` → candidates:
     `{fdcId, description, dataType, carbsPer100g, proteinPer100g,
     fatPer100g, fiberPer100g, kcalPer100g, portions: [{id, label, grams}]}`.
-    Portions come from the search result's `foodMeasures` and, for Branded
-    foods, from `servingSize`/`servingSizeUnit` when the unit is g. Every
-    candidate also gets a synthetic `100 g` portion.
+    Portions come from the search result's `foodMeasures`. SR Legacy and
+    Foundation results have none there, so one batched details call
+    (`POST /foods`, `format: "full"`) fetches their `foodPortions`; if it fails,
+    those candidates keep only the 100 g portion. Branded foods use
+    `servingSize`/`householdServingFullText`, and Branded foods measured in ml
+    are dropped, because their per-100 values are per 100 ml. FNDDS's
+    "Quantity not specified" portion is labelled "typical serving". Every
+    candidate also gets a synthetic `100 g` portion. Nutrients are read from
+    the search result, not the details call: the details call's nutrient filter
+    returned nothing for SR Legacy.
   - `nutritionFor(candidate, portion, count)` → `{carbs, protein, fat, fiber,
     calories}`, where each value = per-100 g × grams × count / 100, rounded to
     1 decimal. A nutrient USDA does not list stays null, never 0. Carbs are
@@ -81,8 +88,9 @@ text ──► parse (sonar, search off) ──► [{name, query, amount}]
   model calls.
   - `parseFoods(text, apiKey, deps)` → `[{name, query, amount}]`, where
     `amount` is the user's words for quantity, or null.
-  - `pickMatch(food, candidates, apiKey, deps)` → `{fdcId, portionId, count}`
-    or `null`.
+  - `pickMatches(foods, candidateLists, apiKey, deps)` → one raw pick per
+    food, from a single call covering every food that has candidates. The model
+    sees descriptions, brands and portions, never nutrition values.
   - `validatePick(pick, candidates)`: `fdcId` must be among the candidates,
     `portionId` must belong to that candidate, and `count` must be a finite
     number with 0.25 ≤ count ≤ 20. Anything else counts as no match.
@@ -105,7 +113,10 @@ text ──► parse (sonar, search off) ──► [{name, query, amount}]
 
 Each food resolves on its own path. For "burger and fries", the burger can
 come from USDA while the fries fall back. All fallback foods go out in one web
-lookup, with their names joined as the input.
+lookup, with the user's words for each joined by " and ". USDA items come
+first, in the order parsed, followed by the fallback's items. If the fallback
+fails after some foods matched USDA, those USDA items still return and the
+rest come back with `carbs: null`.
 
 ## Failure handling
 
@@ -138,8 +149,9 @@ which keeps the existing rule.
 
 - **New secret `USDA_API_KEY`:** a free api.data.gov key (1,000 requests per
   hour), created by the owner and stored in Secret Manager.
-- **New param `LOOKUP_SOURCE`** (`usda` | `web`, default `usda`): a kill switch.
-  Setting `web` restores today's behavior exactly, with no code change.
+- **New param `LOOKUP_SOURCE`** (`usda` | `web`, default `usda`), set in
+  `functions/.env`: a kill switch. Setting `web` and redeploying restores
+  today's behavior exactly, with no code change.
 
 ## Privacy
 
