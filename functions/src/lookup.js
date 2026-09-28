@@ -1,0 +1,156 @@
+/**
+ * Food lookup through USDA FoodData Central, with the web lookup as fallback.
+ *
+ * Numbers for matched foods are calculated here from FDC data; the model only
+ * splits the text and names an entry and portion. Foods FDC can't match go to
+ * the existing Perplexity web lookup, labelled as such.
+ */
+
+const { lookupFoods, sanitizeFoodInput, isNotBilled } = require("./perplexity");
+const { searchCandidates, nutritionFor, UsdaError } = require("./usda");
+const { parseFoods, pickMatches, validatePick, ParseError } = require("./foodParse");
+
+const USDA_BUDGET_MS = 12_000;
+const TOTAL_BUDGET_MS = 25_000;
+const USDA_CALL_MS = 4_000;
+const SONAR_CALL_MS = 6_000;
+const WEB_PREFIX = "Web source, not USDA. ";
+
+class WebTimeout extends Error {}
+
+function unknown(name, details) {
+  return { name, carbs: null, protein: null, fat: null, fiber: null, calories: null, details };
+}
+
+function amountText(count, label) {
+  if (count === 1) return label;
+  return `${Number(count.toFixed(2))} × ${label}`;
+}
+
+function usdaItem(food, { candidate, portion, count }) {
+  const n = nutritionFor(candidate, portion, count);
+  const brand = candidate.brand ? `, ${candidate.brand}` : "";
+  return {
+    name: food.name,
+    carbs: n.carbs,
+    protein: n.protein,
+    fat: n.fat,
+    fiber: n.fiber,
+    calories: n.calories,
+    details:
+      `USDA FoodData Central (${candidate.dataType}): ${candidate.description}${brand}, ` +
+      `${amountText(count, portion.label)} (${n.grams} g).`,
+  };
+}
+
+const labelled = (item) => ({ ...item, details: `${WEB_PREFIX}${item.details || ""}`.trim() });
+
+/**
+ * Looks up a sanitized food description. Same result shape and billing
+ * markers as lookupFoods in perplexity.js.
+ *
+ * @param {string} sanitized - output of sanitizeFoodInput
+ * @param {{perplexityKey: string, usdaKey: string}} keys
+ * @param {{fetchImpl?: typeof fetch, now?: () => number, webLookup?: (text: string) => Promise<{items: object[], citations: string[]}>}} [options]
+ */
+async function lookupFoodsUsda(sanitized, { perplexityKey, usdaKey }, options = {}) {
+  const fetchImpl = options.fetchImpl || fetch;
+  const now = options.now || Date.now;
+  const webLookup = options.webLookup || ((text) => lookupFoods(text, perplexityKey, { fetchImpl }));
+
+  const start = now();
+  const left = (budget) => Math.max(0, start + budget - now());
+  const billing = { billed: false };
+  const stats = { foods: 0, usda: 0, web: 0 };
+  const logDone = () =>
+    console.log(`[lookup] source=usda foods=${stats.foods} usda=${stats.usda} web=${stats.web} ms=${now() - start}`);
+
+  /** The web lookup, capped by the overall budget, with billing carried across the request. */
+  async function web(text) {
+    let timer;
+    try {
+      return await Promise.race([
+        webLookup(text),
+        new Promise((_, reject) => {
+          timer = setTimeout(() => reject(new WebTimeout()), left(TOTAL_BUDGET_MS));
+        }),
+      ]);
+    } catch (err) {
+      // An earlier call in this request was billed, so the lookup counts whatever the web call did.
+      if (billing.billed && isNotBilled(err)) err.notBilled = false;
+      throw err;
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
+  let foods;
+  try {
+    foods = await parseFoods(sanitized, perplexityKey, {
+      fetchImpl, billing, timeoutMs: Math.min(SONAR_CALL_MS, left(USDA_BUDGET_MS)),
+    });
+  } catch (err) {
+    if (!(err instanceof ParseError)) throw err;
+    console.log(`[lookup] parse failed: ${err.message}`);
+    stats.web = 1;
+    const result = await web(sanitized);
+    logDone();
+    return { items: result.items.map(labelled), citations: result.citations || [] };
+  }
+  stats.foods = foods.length;
+
+  const matches = foods.map(() => null);
+  try {
+    const lists = await Promise.all(foods.map((food) =>
+      searchCandidates(food.query, usdaKey, { fetchImpl, timeoutMs: Math.min(USDA_CALL_MS, left(USDA_BUDGET_MS)) })
+        .catch((err) => {
+          if (!(err instanceof UsdaError)) throw err;
+          console.log(`[lookup] usda search failed: ${err.message}`);
+          return [];
+        })
+    ));
+    if (lists.some((list) => list.length > 0) && left(USDA_BUDGET_MS) > 0) {
+      const picks = await pickMatches(foods, lists, perplexityKey, {
+        fetchImpl, billing, timeoutMs: Math.min(SONAR_CALL_MS, left(USDA_BUDGET_MS)),
+      });
+      picks.forEach((pick, i) => { matches[i] = validatePick(pick, lists[i]); });
+    }
+  } catch (err) {
+    if (!(err instanceof ParseError)) throw err;
+    console.log(`[lookup] pick failed: ${err.message}`);
+  }
+
+  const items = [];
+  const citations = [];
+  const leftover = [];
+  foods.forEach((food, i) => {
+    if (!matches[i]) {
+      leftover.push(food);
+      return;
+    }
+    items.push(usdaItem(food, matches[i]));
+    citations.push(`https://fdc.nal.usda.gov/food-details/${matches[i].candidate.fdcId}/nutrients`);
+  });
+  stats.usda = items.length;
+  stats.web = leftover.length;
+
+  if (leftover.length > 0) {
+    try {
+      const text = items.length === 0 ? sanitized : sanitizeFoodInput(leftover.map((f) => f.text).join(" and "));
+      const result = await web(text);
+      items.push(...result.items.map(labelled));
+      citations.push(...(result.citations || []));
+    } catch (err) {
+      if (!(err instanceof WebTimeout) && items.length === 0) throw err;
+      const details = err instanceof WebTimeout
+        ? "Couldn't look this up in time. Enter the carbs yourself."
+        : "Couldn't look this up. Enter the carbs yourself.";
+      for (const food of leftover) items.push(unknown(food.name, details));
+    }
+  }
+
+  logDone();
+  return { items, citations };
+}
+
+module.exports = { lookupFoodsUsda };
