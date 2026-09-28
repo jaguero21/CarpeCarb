@@ -188,11 +188,14 @@ test("the pick prompt requires generic entries by default, forbids other brands,
 // ── validatePick ──
 
 test("validatePick accepts a pick naming a sent candidate, its portion and a sane count", () => {
-  assert.deepEqual(validatePick({ fdcId: 2707124, portionId: "p1", count: 3 }, [PHO], "3"), {
+  assert.deepEqual(validatePick({ fdcId: 2707124, portionId: "p1", count: 3 }, [PHO], { amount: "3", brand: null }), {
     candidate: PHO, portion: PHO.portions[0], count: 3,
   });
   // Some models quote numbers.
-  assert.equal(validatePick({ fdcId: "2707124", portionId: "100g", count: 0.25 }, [PHO], "a taste").count, 0.25);
+  assert.equal(
+    validatePick({ fdcId: "2707124", portionId: "100g", count: 0.25 }, [PHO], { amount: "a taste", brand: null }).count,
+    0.25
+  );
 });
 
 test("validatePick rejects anything else, when the user gave an amount", () => {
@@ -209,7 +212,7 @@ test("validatePick rejects anything else, when the user gave an amount", () => {
     { fdcId: 2707124, portionId: "p1", count: NaN },
     { fdcId: "27x", portionId: "p1", count: 1 },
   ]) {
-    assert.equal(validatePick(pick, [PHO], "some"), null, JSON.stringify(pick));
+    assert.equal(validatePick(pick, [PHO], { amount: "some", brand: null }), null, JSON.stringify(pick));
   }
 });
 
@@ -217,7 +220,7 @@ test("validatePick with no amount ignores the model's portion and count, using t
   // The model picked p1 (1 cup) with count 3; with no amount, the server overrides both.
   const pick = { fdcId: 2707124, portionId: "p1", count: 3 };
 
-  assert.deepEqual(validatePick(pick, [PHO], null), {
+  assert.deepEqual(validatePick(pick, [PHO], { amount: null, brand: null }), {
     candidate: PHO, portion: PHO.portions[1], count: 1,
   });
 });
@@ -228,12 +231,72 @@ test("validatePick with no amount falls back to the candidate's first portion wh
     portions: [{ id: "p1", label: "1 TORTILLA", grams: 45 }, { id: "100g", label: "100 g", grams: 100 }],
   };
 
-  assert.deepEqual(validatePick({ fdcId: 2707124, portionId: "100g", count: 5 }, [candidate], null), {
-    candidate, portion: candidate.portions[0], count: 1,
-  });
+  assert.deepEqual(
+    validatePick({ fdcId: 2707124, portionId: "100g", count: 5 }, [candidate], { amount: null, brand: null }),
+    { candidate, portion: candidate.portions[0], count: 1 }
+  );
 });
 
 test("validatePick with no amount still rejects an fdcId that isn't a sent candidate", () => {
-  assert.equal(validatePick({ fdcId: 999, portionId: "p1", count: 1 }, [PHO], null), null);
-  assert.equal(validatePick(null, [PHO], null), null);
+  assert.equal(validatePick({ fdcId: 999, portionId: "p1", count: 1 }, [PHO], { amount: null, brand: null }), null);
+  assert.equal(validatePick(null, [PHO], { amount: null, brand: null }), null);
+});
+
+// ── validatePick: brand enforcement ──
+
+/** A minimal candidate for brand-matching checks; PHO's portions are reused for convenience. */
+function brandCandidate(description, brand) {
+  return { fdcId: 1, description, dataType: "Branded", brand, portions: PHO.portions };
+}
+
+const MUST_PASS_BRANDS = [
+  { brand: "McDonald's", description: "McDONALD'S, Chicken McNUGGETS", candidateBrand: null },
+  { brand: "McDonald's", description: "Big Mac (McDonalds)", candidateBrand: null },
+  { brand: "H-E-B", description: "Fajita Tortillas", candidateBrand: "H-E-B" },
+  { brand: "Burger King", description: "Hamburger (Burger King)", candidateBrand: null },
+  { brand: "Wendy's", description: "WENDY'S, Jr. Hamburger", candidateBrand: null },
+];
+
+test("validatePick accepts a candidate that carries the named brand, in description or brand field", () => {
+  for (const { brand, description, candidateBrand } of MUST_PASS_BRANDS) {
+    const candidate = brandCandidate(description, candidateBrand);
+    const result = validatePick(
+      { fdcId: 1, portionId: "p1", count: 1 }, [candidate], { amount: "1", brand }
+    );
+    assert.ok(result, `${brand} should match "${description}"`);
+    assert.equal(result.candidate, candidate);
+  }
+});
+
+test("validatePick rejects a candidate that doesn't carry the named brand", () => {
+  const candidate = brandCandidate("Tortillas, ready-to-bake or -fry", null);
+
+  const result = validatePick(
+    { fdcId: 1, portionId: "p1", count: 1 }, [candidate], { amount: "1", brand: "H-E-B" }
+  );
+
+  assert.equal(result, null);
+});
+
+test("validatePick skips the brand check when the food named no brand", () => {
+  const candidate = brandCandidate("Tortillas, ready-to-bake or -fry", null);
+
+  const result = validatePick(
+    { fdcId: 1, portionId: "p1", count: 1 }, [candidate], { amount: "1", brand: null }
+  );
+
+  assert.ok(result);
+  assert.equal(result.candidate, candidate);
+});
+
+test("validatePick applies the brand check with no amount too", () => {
+  const unbranded = brandCandidate("Tortillas, ready-to-bake or -fry", null);
+  const pick = { fdcId: 1, portionId: "p1", count: 3 };
+
+  assert.equal(validatePick(pick, [unbranded], { amount: null, brand: "H-E-B" }), null);
+
+  const branded = brandCandidate("Tortillas, ready-to-bake or -fry", "H-E-B");
+  const result = validatePick(pick, [branded], { amount: null, brand: "H-E-B" });
+  assert.ok(result);
+  assert.equal(result.count, 1);
 });

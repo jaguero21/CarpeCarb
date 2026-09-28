@@ -130,12 +130,12 @@ function bySequenceNumber(foodPortions) {
  *
  * @param {string} query
  * @param {string} apiKey
- * @param {{fetchImpl?: typeof fetch, timeoutMs?: number, includeBranded?: boolean}} [options]
+ * @param {{fetchImpl?: typeof fetch, timeoutMs?: number, surveyOnly?: boolean}} [options]
  * @returns {Promise<object[]>}
  * @throws {UsdaError} when the search itself fails
  */
-async function searchCandidates(query, apiKey, { fetchImpl = fetch, timeoutMs = 4000, includeBranded = true } = {}) {
-  const dataType = includeBranded ? DATA_TYPES : DATA_TYPES.filter((t) => t !== "Branded");
+async function searchCandidates(query, apiKey, { fetchImpl = fetch, timeoutMs = 4000, surveyOnly = false } = {}) {
+  const dataType = surveyOnly ? ["Survey (FNDDS)"] : DATA_TYPES;
   const found = await usdaPost(
     "/foods/search",
     apiKey,

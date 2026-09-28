@@ -77,12 +77,20 @@ test("searchCandidates sends the query to FDC search with the four data types", 
   assert.ok(calls[0].signal, "every FDC call has a timeout");
 });
 
-test("includeBranded false sends the three non-branded data types", async () => {
+test("surveyOnly sends only the Survey (FNDDS) data type", async () => {
   const { fetchImpl, calls } = fdc({ search: { foods: [] } });
 
-  await searchCandidates("pizza", "KEY", { fetchImpl, includeBranded: false });
+  await searchCandidates("banana", "KEY", { fetchImpl, surveyOnly: true });
 
-  assert.deepEqual(calls[0].body.dataType, ["Survey (FNDDS)", "SR Legacy", "Foundation"]);
+  assert.deepEqual(calls[0].body.dataType, ["Survey (FNDDS)"]);
+});
+
+test("surveyOnly false (the default) sends the four data types", async () => {
+  const { fetchImpl, calls } = fdc({ search: { foods: [] } });
+
+  await searchCandidates("pizza", "KEY", { fetchImpl, surveyOnly: false });
+
+  assert.deepEqual(calls[0].body.dataType, ["Survey (FNDDS)", "SR Legacy", "Foundation", "Branded"]);
 });
 
 test("a survey food keeps its per-100 g values and listed portions, plus 100 g", async () => {

@@ -163,21 +163,35 @@ function standardPortion(candidate) {
   return candidate.portions.find((p) => p.label === "typical serving") || candidate.portions[0] || null;
 }
 
+/** Lowercased, alphanumeric-only, for brand matching that ignores punctuation and case. */
+function norm(s) {
+  return String(s).toLowerCase().replace(/[^a-z0-9]/g, "");
+}
+
+/** Whether the candidate's description or brand names the given brand. */
+function carriesBrand(candidate, brand) {
+  const normBrand = norm(brand);
+  if (!normBrand) return false;
+  return norm(candidate.description).includes(normBrand) || norm(candidate.brand || "").includes(normBrand);
+}
+
 /**
  * A pick the server can use, or null. The ID must be a candidate that was
- * sent. When the user gave an amount, the portion must be one of the
- * candidate's portions and the count must be sane. When they gave no amount,
- * the model's portion and count are ignored: the server uses the standard
- * portion with count 1.
+ * sent. When the food names a brand, the candidate must carry it (in its
+ * description or brand field). When the user gave an amount, the portion
+ * must be one of the candidate's portions and the count must be sane. When
+ * they gave no amount, the model's portion and count are ignored: the server
+ * uses the standard portion with count 1.
  *
- * @param {string|null} amount - the user's own words for the amount, or null
+ * @param {{amount: string|null, brand: string|null}} food - the user's amount and named brand
  * @returns {{candidate: object, portion: object, count: number}|null}
  */
-function validatePick(pick, candidates, amount) {
+function validatePick(pick, candidates, food) {
   const candidate = findCandidate(pick, candidates);
   if (!candidate) return null;
+  if (food.brand !== null && !carriesBrand(candidate, food.brand)) return null;
 
-  if (amount === null) {
+  if (food.amount === null) {
     const portion = standardPortion(candidate);
     if (!portion) return null;
     return { candidate, portion, count: 1 };

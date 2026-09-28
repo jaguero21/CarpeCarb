@@ -106,7 +106,7 @@ test("a count of 1 reads as the portion alone, and a brand is named", async () =
   assert.equal(res.items[0].protein, null);
 });
 
-test("a food parsed with no brand searches USDA without Branded", async () => {
+test("a food parsed with no brand searches Survey (FNDDS) only", async () => {
   const { fetchImpl, usdaCalls } = world({
     parse: parsed(food("pho", "a bowl of")),
     search: { pho: json({ foods: [PHO] }) },
@@ -115,19 +115,36 @@ test("a food parsed with no brand searches USDA without Branded", async () => {
 
   await lookupFoodsUsda("a bowl of pho", KEYS, { fetchImpl, webLookup: web({}).webLookup });
 
-  assert.deepEqual(usdaCalls[0].dataType, ["Survey (FNDDS)", "SR Legacy", "Foundation"]);
+  assert.deepEqual(usdaCalls[0].dataType, ["Survey (FNDDS)"]);
 });
 
-test("a food parsed with a brand searches USDA with Branded included", async () => {
+test("a food parsed with a brand searches all four data types", async () => {
+  // Carries the named brand in its description so the pick also validates.
+  const mcnuggets = { ...PHO, description: "MCDONALD'S, Chicken McNUGGETS" };
   const { fetchImpl, usdaCalls } = world({
     parse: parsed(food("mcdonalds nuggets", null, "McDonald's")),
-    search: { "mcdonalds nuggets": json({ foods: [PHO] }) },
+    search: { "mcdonalds nuggets": json({ foods: [mcnuggets] }) },
     pick: completion('[{"index":0,"fdcId":2707124,"portionId":"p1","count":1}]'),
   });
 
   await lookupFoodsUsda("mcdonalds nuggets", KEYS, { fetchImpl, webLookup: web({}).webLookup });
 
   assert.deepEqual(usdaCalls[0].dataType, ["Survey (FNDDS)", "SR Legacy", "Foundation", "Branded"]);
+});
+
+test("a branded food whose pick names a candidate without that brand falls back to the web", async () => {
+  const { fetchImpl } = world({
+    parse: parsed(food("heb fajita tortilla", null, "H-E-B")),
+    // PHO carries no brand at all, so it cannot satisfy the "H-E-B" requirement.
+    search: { "heb fajita tortilla": json({ foods: [PHO] }) },
+    pick: completion('[{"index":0,"fdcId":2707124,"portionId":"p1","count":1}]'),
+  });
+  const { webLookup, calls } = web({ items: [{ name: "Tortilla", carbs: 20, details: "web" }], citations: [] });
+
+  const res = await lookupFoodsUsda("heb fajita tortilla", KEYS, { fetchImpl, webLookup });
+
+  assert.deepEqual(calls, ["heb fajita tortilla"]);
+  assert.equal(res.items[0].carbs, 20);
 });
 
 test("a food with no amount gets the standard portion, not the model's own pick", async () => {
