@@ -70,6 +70,17 @@ test("parseFoods accepts fenced output and a missing amount or brand", async () 
   assert.equal(food.brand, null);
 });
 
+test("parseFoods normalizes a blank brand (empty or whitespace-only) to null instead of rejecting it", async () => {
+  for (const content of [
+    '[{"name":"pizza","query":"pizza","text":"pizza","brand":""}]',
+    '[{"name":"pizza","query":"pizza","text":"pizza","brand":"   "}]',
+  ]) {
+    const { fetchImpl } = sonar(completion(content));
+    const [food] = await parseFoods("pizza", "KEY", opts(fetchImpl));
+    assert.equal(food.brand, null, content);
+  }
+});
+
 test("parseFoods rejects output that is not a usable food list", async () => {
   for (const content of [
     "no json here",

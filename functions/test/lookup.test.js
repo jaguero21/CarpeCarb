@@ -279,6 +279,26 @@ test("when the leftover join is over 100 chars, the web gets the original text a
   assert.equal(res.items[1].carbs, 10);
 });
 
+test("duplicate citations (USDA and web repeating the same URL) are deduplicated", async () => {
+  const { fetchImpl } = world({
+    parse: parsed(food("pho", null, "Pho Palace"), food("grandma's casserole")),
+    search: { pho: json({ foods: [PHO_BRANDED] }) },
+    pick: completion('[{"index":0,"fdcId":2707124,"portionId":"p1","count":1}]'),
+  });
+  const { webLookup } = web({
+    items: [{ name: "Casserole", carbs: 20, details: "Web" }],
+    // Repeats the USDA citation the pho match already added, plus its own.
+    citations: ["https://fdc.nal.usda.gov/food-details/2707124/nutrients", "https://example.com"],
+  });
+
+  const res = await lookupFoodsUsda("pho and grandma's casserole", KEYS, { fetchImpl, webLookup });
+
+  assert.deepEqual(res.citations, [
+    "https://fdc.nal.usda.gov/food-details/2707124/nutrients",
+    "https://example.com",
+  ]);
+});
+
 test("a pick that fails validation falls back instead of trusting it", async () => {
   // A named amount routes validatePick through its strict rules (portionId and count checked).
   for (const pick of [

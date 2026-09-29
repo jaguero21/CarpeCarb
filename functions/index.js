@@ -75,7 +75,9 @@ function getHandlers() {
     reserveLookup: quota.reserveLookup,
     releaseLookup: quota.releaseLookup,
     lookupFoods: (sanitized) =>
-      lookupSource.value() === "web"
+      // Trimmed and case-folded like the other pasted secrets/config: a value
+      // set from a file or the console can carry stray whitespace or casing.
+      lookupSource.value().trim().toLowerCase() === "web"
         ? lookupFoods(sanitized, perplexityApiKey.value())
         : lookupFoodsUsda(sanitized, {
           perplexityKey: perplexityApiKey.value(),

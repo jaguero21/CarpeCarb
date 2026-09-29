@@ -192,7 +192,7 @@ async function lookupFoodsUsda(sanitized, { perplexityKey, usdaKey }, options = 
   }
 
   logDone();
-  return { items, citations };
+  return { items, citations: [...new Set(citations)] };
 }
 
 module.exports = { lookupFoodsUsda };

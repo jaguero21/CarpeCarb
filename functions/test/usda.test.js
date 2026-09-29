@@ -58,19 +58,21 @@ function json(body, status = 200) {
 function fdc({ search, details = [] }) {
   const calls = [];
   const fetchImpl = async (url, init) => {
-    calls.push({ url, body: JSON.parse(init.body), signal: init.signal });
+    calls.push({ url, body: JSON.parse(init.body), signal: init.signal, headers: init.headers });
     if (url.includes("/foods/search")) return typeof search === "function" ? search() : json(search);
     return typeof details === "function" ? details() : json(details);
   };
   return { fetchImpl, calls };
 }
 
-test("searchCandidates sends the query to FDC search with the four data types", async () => {
+test("searchCandidates sends the query to FDC search with the four data types, the key in a header", async () => {
   const { fetchImpl, calls } = fdc({ search: { foods: [PHO_FNDDS] } });
 
   await searchCandidates("pho", "KEY", { fetchImpl });
 
-  assert.match(calls[0].url, /^https:\/\/api\.nal\.usda\.gov\/fdc\/v1\/foods\/search\?api_key=KEY$/);
+  assert.equal(calls[0].url, "https://api.nal.usda.gov/fdc/v1/foods/search");
+  assert.doesNotMatch(calls[0].url, /KEY/, "the key must not appear in the URL, which Cloud Logging can capture");
+  assert.equal(calls[0].headers["X-Api-Key"], "KEY");
   assert.deepEqual(calls[0].body, {
     query: "pho", pageSize: 15, dataType: ["Survey (FNDDS)", "SR Legacy", "Foundation", "Branded"],
   });
@@ -99,7 +101,8 @@ test("an SR Legacy food gets its portions from one details call, ordered by sequ
 
   const [nuggets] = await searchCandidates("McDonald's Chicken McNuggets", "KEY", { fetchImpl });
 
-  assert.match(calls[1].url, /\/fdc\/v1\/foods\?api_key=KEY$/);
+  assert.equal(calls[1].url, "https://api.nal.usda.gov/fdc/v1/foods");
+  assert.equal(calls[1].headers["X-Api-Key"], "KEY");
   assert.deepEqual(calls[1].body, { fdcIds: [173297], format: "full" });
   // FDC's own order (sequenceNumber 1, 2, 3), not the order the portions arrived in.
   assert.deepEqual(nuggets.portions, [

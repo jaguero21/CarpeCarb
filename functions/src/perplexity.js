@@ -347,4 +347,6 @@ function listNames(names) {
   return `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`;
 }
 
-module.exports = { sanitizeFoodInput, lookupFoods, notBilled, isNotBilled, splitUnknownCarbs, listNames };
+module.exports = {
+  sanitizeFoodInput, lookupFoods, notBilled, isNotBilled, splitUnknownCarbs, listNames, retryWaitMs,
+};

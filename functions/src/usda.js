@@ -13,15 +13,17 @@ const NUTRIENT = { carbs: 1005, protein: 1003, fat: 1004, fiber: 1079 };
 const KCAL = [1008, 2047, 2048];
 const HUNDRED_GRAMS = { id: "100g", label: "100 g", grams: 100 };
 
-/** Any FDC failure. The message is a short code and never carries the URL, which holds the key. */
+/** Any FDC failure. The message is a short code and never carries the key. */
 class UsdaError extends Error {}
 
 async function usdaPost(path, apiKey, body, { fetchImpl, timeoutMs }) {
   let res;
   try {
-    res = await fetchImpl(`${USDA_BASE}${path}?api_key=${encodeURIComponent(apiKey)}`, {
+    res = await fetchImpl(`${USDA_BASE}${path}`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      // The key travels in a header, not the query string, so it doesn't land in
+      // request logs (proxies, Cloud Logging) that capture URLs but not headers.
+      headers: { "Content-Type": "application/json", "X-Api-Key": apiKey },
       body: JSON.stringify(body),
       signal: AbortSignal.timeout(timeoutMs),
     });

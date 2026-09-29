@@ -4,6 +4,8 @@
  * never supplies a nutrition number.
  */
 
+const { retryWaitMs } = require("./perplexity");
+
 const SONAR_URL = "https://api.perplexity.ai/chat/completions";
 const MAX_FOODS = 10;
 const MAX_FIELD = 100;
@@ -37,19 +39,6 @@ const PICK_PROMPT =
   "If nothing matches, fdcId is null. Never give nutrition values.";
 
 const realSleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-
-/**
- * ms to wait before retrying a 429, or null if this response's retry-after doesn't
- * qualify (missing, unparseable, or over the 2 s cutoff we're willing to wait).
- */
-function retryWaitMs(res) {
-  if (!res.headers || typeof res.headers.get !== "function") return null;
-  const raw = res.headers.get("retry-after");
-  if (raw === null || raw === undefined) return null;
-  const seconds = Number(raw);
-  if (!Number.isFinite(seconds) || seconds < 0 || seconds > 2) return null;
-  return Math.max(seconds, 0.5) * 1000;
-}
 
 /**
  * @param {{fetchImpl?: typeof fetch, timeoutMs?: number, deadline?: number, now?: () => number,
@@ -141,7 +130,10 @@ async function parseFoods(text, apiKey, options) {
   return raw.map((item) => {
     if (!item || typeof item !== "object") throw new ParseError("item");
     const amount = item.amount === undefined ? null : item.amount;
-    const brand = item.brand === undefined ? null : item.brand;
+    // A brand the model sent as "" or whitespace named no brand; treat it the
+    // same as omitting the field instead of rejecting the whole food.
+    const rawBrand = item.brand === undefined ? null : item.brand;
+    const brand = typeof rawBrand === "string" && rawBrand.trim() === "" ? null : rawBrand;
     if (!isField(item.name) || !isField(item.query) || !isField(item.text)) throw new ParseError("fields");
     if (amount !== null && !isField(amount)) throw new ParseError("amount");
     if (brand !== null && !isField(brand)) throw new ParseError("brand");
