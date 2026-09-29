@@ -149,10 +149,29 @@ async function lookupFoodsUsda(sanitized, { perplexityKey, usdaKey }, options = 
   stats.web = leftover.length;
 
   if (leftover.length > 0) {
+    // When nothing matched, the web gets the original text as-is. Otherwise it gets just the
+    // leftover foods' own words - unless joining them fails sanitizeFoodInput (most likely by
+    // running past its 100-char cap), in which case the original text is the fallback; that
+    // covers foods USDA already matched too, so a web result repeating one of those by name is
+    // dropped rather than reported twice.
+    let text = sanitized;
+    let dedupeUsdaNames = false;
+    if (items.length > 0) {
+      try {
+        text = sanitizeFoodInput(leftover.map((f) => f.text).join(" and "));
+      } catch {
+        text = sanitized;
+        dedupeUsdaNames = true;
+      }
+    }
     try {
-      const text = items.length === 0 ? sanitized : sanitizeFoodInput(leftover.map((f) => f.text).join(" and "));
       const result = await web(text);
-      items.push(...result.items.map(labelled));
+      let webItems = result.items.map(labelled);
+      if (dedupeUsdaNames) {
+        const usdaNames = new Set(items.map((i) => String(i.name || "").trim().toLowerCase()));
+        webItems = webItems.filter((i) => !usdaNames.has(String(i.name || "").trim().toLowerCase()));
+      }
+      items.push(...webItems);
       citations.push(...(result.citations || []));
     } catch (err) {
       if (!(err instanceof WebTimeout) && items.length === 0) {

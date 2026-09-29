@@ -246,6 +246,39 @@ test("foods USDA can't match go to one web lookup, labelled, after the USDA food
   assert.deepEqual(res.citations, ["https://fdc.nal.usda.gov/food-details/2707124/nutrients", "https://chipotle.com"]);
 });
 
+test("when the leftover join is over 100 chars, the web gets the original text and a duplicate USDA name is dropped", async () => {
+  const bigMac = { ...PHO, description: "MCDONALD'S, Big Mac", brandOwner: "McDonald's" };
+  // Each leftover food's own text is within the 100-char field limit, but
+  // joined with " and " they run well past sanitizeFoodInput's 100-char cap.
+  const longA = "steamed dumplings with a side of pickled vegetables and hot must".slice(0, 60);
+  const longB = "a large mixed green salad with grilled chicken and vinaigrette".slice(0, 60);
+  const rawSanitized = `big mac, ${longA} and ${longB}`;
+  const { fetchImpl } = world({
+    parse: parsed(
+      food("big mac", null, "McDonald's"),
+      { name: "dumplings", query: "dumplings", amount: null, brand: null, text: longA },
+      { name: "salad", query: "salad", amount: null, brand: null, text: longB },
+    ),
+    search: { "big mac": json({ foods: [bigMac] }) },
+    pick: completion('[{"index":0,"fdcId":2707124,"portionId":"p1","count":1}]'),
+  });
+  const { webLookup, calls } = web({
+    items: [
+      // Same name as the USDA match (any case) - a duplicate that must be dropped.
+      { name: "BIG MAC", carbs: 45, details: "web dup, must be dropped" },
+      { name: "Salad", carbs: 10, details: "web salad" },
+    ],
+    citations: ["https://example.com"],
+  });
+
+  const res = await lookupFoodsUsda(rawSanitized, KEYS, { fetchImpl, webLookup });
+
+  assert.deepEqual(calls, [rawSanitized], "falls back to the original text instead of the too-long leftover join");
+  assert.deepEqual(res.items.map((i) => i.name), ["big mac", "Salad"]);
+  assert.match(res.items[0].details, /USDA/);
+  assert.equal(res.items[1].carbs, 10);
+});
+
 test("a pick that fails validation falls back instead of trusting it", async () => {
   // A named amount routes validatePick through its strict rules (portionId and count checked).
   for (const pick of [
