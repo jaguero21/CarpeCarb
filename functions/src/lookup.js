@@ -155,39 +155,48 @@ async function lookupFoodsUsda(sanitized, { perplexityKey, usdaKey }, options = 
   stats.web = leftover.length;
 
   if (leftover.length > 0) {
-    // When nothing matched, the web gets the original text as-is. Otherwise it gets just the
-    // leftover foods' own words - unless joining them fails sanitizeFoodInput (most likely by
-    // running past its 100-char cap), in which case the original text is the fallback; that
-    // covers foods USDA already matched too, so a web result repeating one of those by name is
-    // dropped rather than reported twice.
+    // When nothing matched, the web gets the original text as-is - there's nothing USDA already
+    // covered, so nothing can be double-counted. Otherwise the web must never see wording for a
+    // food USDA already matched: the parse and web models can name the same food differently
+    // (e.g. "Big Mac" vs "McDonald's Big Mac"), so a same-name dedupe after the fact can't be
+    // trusted to catch it. Only the leftover foods' own words are ever sent, tried a few ways to
+    // fit sanitizeFoodInput's length cap; if none fit, those foods are reported unknown rather
+    // than risk asking the web about a food USDA already resolved.
     let text = sanitized;
-    let dedupeUsdaNames = false;
     if (items.length > 0) {
-      try {
-        text = sanitizeFoodInput(leftover.map((f) => f.text).join(" and "));
-      } catch {
-        text = sanitized;
-        dedupeUsdaNames = true;
+      const attempts = [
+        () => leftover.map((f) => f.text).join(" and "),
+        () => leftover.map((f) => f.text).join(", "),
+        () => leftover.map((f) => f.name).join(", "),
+      ];
+      text = null;
+      for (const attempt of attempts) {
+        try {
+          text = sanitizeFoodInput(attempt());
+          break;
+        } catch {
+          // try the next fallback
+        }
       }
     }
-    try {
-      const result = await web(text);
-      let webItems = result.items.map(labelled);
-      if (dedupeUsdaNames) {
-        const usdaNames = new Set(items.map((i) => String(i.name || "").trim().toLowerCase()));
-        webItems = webItems.filter((i) => !usdaNames.has(String(i.name || "").trim().toLowerCase()));
-      }
-      items.push(...webItems);
-      citations.push(...(result.citations || []));
-    } catch (err) {
-      if (!(err instanceof WebTimeout) && items.length === 0) {
-        logDone("error");
-        throw err;
-      }
-      const details = err instanceof WebTimeout
-        ? "Couldn't look this up in time. Enter the carbs yourself."
-        : "Couldn't look this up. Enter the carbs yourself.";
+    if (text === null) {
+      const details = "Couldn't look this up. Enter the carbs yourself.";
       for (const food of leftover) items.push(unknown(food.name, details));
+    } else {
+      try {
+        const result = await web(text);
+        items.push(...result.items.map(labelled));
+        citations.push(...(result.citations || []));
+      } catch (err) {
+        if (!(err instanceof WebTimeout) && items.length === 0) {
+          logDone("error");
+          throw err;
+        }
+        const details = err instanceof WebTimeout
+          ? "Couldn't look this up in time. Enter the carbs yourself."
+          : "Couldn't look this up. Enter the carbs yourself.";
+        for (const food of leftover) items.push(unknown(food.name, details));
+      }
     }
   }
 

@@ -246,12 +246,13 @@ test("foods USDA can't match go to one web lookup, labelled, after the USDA food
   assert.deepEqual(res.citations, ["https://fdc.nal.usda.gov/food-details/2707124/nutrients", "https://chipotle.com"]);
 });
 
-test("when the leftover join is over 100 chars, the web gets the original text and a duplicate USDA name is dropped", async () => {
+test("when the primary leftover join is too long, the comma-joined leftover text is tried next - never the original text", async () => {
   const bigMac = { ...PHO, description: "MCDONALD'S, Big Mac", brandOwner: "McDonald's" };
-  // Each leftover food's own text is within the 100-char field limit, but
-  // joined with " and " they run well past sanitizeFoodInput's 100-char cap.
-  const longA = "steamed dumplings with a side of pickled vegetables and hot must".slice(0, 60);
-  const longB = "a large mixed green salad with grilled chicken and vinaigrette".slice(0, 60);
+  // Each leftover food's own text is within the 100-char field limit. Joined with " and " (5
+  // chars) the pair runs 3 over sanitizeFoodInput's 100-char cap; joined with ", " (2 chars)
+  // they fit exactly at 100.
+  const longA = "steamed dumplings with a side of pickled vegetables and hot must".slice(0, 49);
+  const longB = "a large mixed green salad with grilled chicken vinaigrette".slice(0, 49);
   const rawSanitized = `big mac, ${longA} and ${longB}`;
   const { fetchImpl } = world({
     parse: parsed(
@@ -262,21 +263,52 @@ test("when the leftover join is over 100 chars, the web gets the original text a
     search: { "big mac": json({ foods: [bigMac] }) },
     pick: completion('[{"index":0,"fdcId":2707124,"portionId":"p1","count":1}]'),
   });
-  const { webLookup, calls } = web({
+  // The mock answers based on what it's actually asked, the way a real model would: if it were
+  // ever told about "big mac" (the pre-fix bug, which fell back to the original text), it would
+  // name that food differently than USDA/parse did ("McDonald's Big Mac"), producing an
+  // undetected duplicate that a same-name dedupe can't catch.
+  const { webLookup, calls } = web((text) => ({
     items: [
-      // Same name as the USDA match (any case) - a duplicate that must be dropped.
-      { name: "BIG MAC", carbs: 45, details: "web dup, must be dropped" },
-      { name: "Salad", carbs: 10, details: "web salad" },
+      ...(/big mac/i.test(text) ? [{ name: "McDonald's Big Mac", carbs: 45, details: "must not appear" }] : []),
+      ...(/dumpling/i.test(text) ? [{ name: "Dumplings", carbs: 12, details: "web dumplings" }] : []),
+      ...(/salad/i.test(text) ? [{ name: "Salad", carbs: 10, details: "web salad" }] : []),
     ],
-    citations: ["https://example.com"],
-  });
+    citations: [],
+  }));
 
   const res = await lookupFoodsUsda(rawSanitized, KEYS, { fetchImpl, webLookup });
 
-  assert.deepEqual(calls, [rawSanitized], "falls back to the original text instead of the too-long leftover join");
-  assert.deepEqual(res.items.map((i) => i.name), ["big mac", "Salad"]);
-  assert.match(res.items[0].details, /USDA/);
-  assert.equal(res.items[1].carbs, 10);
+  assert.deepEqual(calls, [`${longA}, ${longB}`], "gets the comma-joined leftover text, never the original text");
+  assert.doesNotMatch(calls[0], /big mac/i, "the web is never told about a food USDA already matched");
+  const bigMacCount = res.items.filter((i) => /big mac/i.test(i.name)).length;
+  assert.equal(bigMacCount, 1, "the matched food must appear exactly once");
+  assert.deepEqual(res.items.map((i) => i.name), ["big mac", "Dumplings", "Salad"]);
+});
+
+test("when every leftover join is too long, those foods come back unknown and the web is never called", async () => {
+  const bigMac = { ...PHO, description: "MCDONALD'S, Big Mac", brandOwner: "McDonald's" };
+  // Even the shortest fallback - the leftover foods' own names, comma-joined - still runs past
+  // the 100-char cap, so no fallback text exists at all.
+  const longName1 = "a".repeat(60);
+  const longName2 = "b".repeat(60);
+  const { fetchImpl } = world({
+    parse: parsed(
+      food("big mac", null, "McDonald's"),
+      { name: longName1, query: "x", amount: null, brand: null, text: longName1 },
+      { name: longName2, query: "y", amount: null, brand: null, text: longName2 },
+    ),
+    search: { "big mac": json({ foods: [bigMac] }) },
+    pick: completion('[{"index":0,"fdcId":2707124,"portionId":"p1","count":1}]'),
+  });
+  const { webLookup, calls } = web({ items: [{ name: "must never be requested", carbs: 1, details: "x" }], citations: [] });
+
+  const res = await lookupFoodsUsda(`big mac, ${longName1} and ${longName2}`, KEYS, { fetchImpl, webLookup });
+
+  assert.equal(calls.length, 0, "the web must never be called when no fallback text fits");
+  assert.deepEqual(res.items.map((i) => i.name), ["big mac", longName1, longName2]);
+  assert.equal(res.items[1].carbs, null);
+  assert.equal(res.items[1].details, "Couldn't look this up. Enter the carbs yourself.");
+  assert.equal(res.items[2].carbs, null);
 });
 
 test("duplicate citations (USDA and web repeating the same URL) are deduplicated", async () => {
