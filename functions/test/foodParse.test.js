@@ -236,6 +236,28 @@ test("a retry that does have time left still happens, capped to the time left be
   assert.deepEqual(seenMs, [3500, 2500]);
 });
 
+test("a 429 retry is skipped unless a 1500ms margin is left after the wait, before the deadline", async () => {
+  // retry-after says wait 1000ms, and 2000ms is left before the deadline - enough for the wait
+  // alone (1000 < 2000), but not enough to also leave the retry's own request a fair chance: a
+  // retry that starts with only ~1000ms left before the deadline is asking to time out itself.
+  const { fetchImpl, bodies } = sonar(
+    rateLimited("1"),
+    completion('[{"name":"pizza","query":"pizza","text":"pizza"}]')
+  );
+  const { sleep, calls } = spySleep();
+  const billing = { billed: false };
+  let t = 0;
+  const now = () => t;
+
+  await assert.rejects(
+    parseFoods("pizza", "KEY", { fetchImpl, timeoutMs: 6000, deadline: 2000, now, billing, sleep }),
+    (err) => err instanceof ParseError && err.message === "status 429"
+  );
+
+  assert.equal(bodies.length, 1, "no retry attempted");
+  assert.equal(calls.length, 0, "never slept for a retry it wasn't going to make");
+});
+
 // ── pickMatches ──
 
 test("pickMatches sends one call for all foods with candidates, IDs, brand and portions only", async () => {

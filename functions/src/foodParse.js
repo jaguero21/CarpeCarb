@@ -9,6 +9,9 @@ const { retryWaitMs } = require("./perplexity");
 const SONAR_URL = "https://api.perplexity.ai/chat/completions";
 const MAX_FOODS = 10;
 const MAX_FIELD = 100;
+// A 429 retry needs this much time left after its wait, on top of the wait itself, so the retry
+// attempt gets a fair chance instead of starting already doomed to time out.
+const RETRY_MARGIN_MS = 1500;
 
 /** Any sonar call or output failure. The message is a short code, never model output. */
 class ParseError extends Error {}
@@ -81,7 +84,9 @@ async function callSonar(system, user, apiKey, { fetchImpl = fetch, timeoutMs, d
   if (res.status === 429) {
     const wait = retryWaitMs(res);
     const timeLeft = deadline === undefined ? Infinity : deadline - now();
-    if (wait !== null && wait < timeLeft) {
+    // A margin beyond the wait itself: a retry that starts with barely any time left is asking
+    // its own request to time out, which is no better than not retrying at all.
+    if (wait !== null && wait + RETRY_MARGIN_MS < timeLeft) {
       await sleep(wait);
       res = await attempt();
     }
