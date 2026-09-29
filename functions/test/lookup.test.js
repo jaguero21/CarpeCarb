@@ -361,6 +361,34 @@ test("past the USDA budget, the pick is skipped and foods go to the web", async 
   assert.deepEqual(calls, ["pho"]);
 });
 
+test("a 429 during parse is not retried once the wait would run past the USDA-path deadline", async () => {
+  let t = 0;
+  const now = () => t;
+  let sonarCalls = 0;
+  const fetchImpl = async (url) => {
+    if (!url.startsWith("https://api.perplexity.ai")) throw new Error("unexpected USDA call");
+    sonarCalls += 1;
+    // Near the end of the 12s USDA budget when the 429 comes back, so the
+    // 1s retry-after wait would itself run past the deadline.
+    t = 11_800;
+    return {
+      ok: false, status: 429,
+      headers: { get: (k) => (k.toLowerCase() === "retry-after" ? "1" : null) },
+      json: async () => ({}),
+    };
+  };
+  const sleepCalls = [];
+  const sleep = async (ms) => { sleepCalls.push(ms); };
+  const { webLookup, calls } = web({ items: [{ name: "Pizza", carbs: 35, details: "web" }], citations: [] });
+
+  const res = await lookupFoodsUsda("pizza", KEYS, { fetchImpl, now, webLookup, sleep });
+
+  assert.equal(sonarCalls, 1, "the 429 must not be retried once the wait would exceed the remaining budget");
+  assert.equal(sleepCalls.length, 0);
+  assert.deepEqual(calls, ["pizza"]);
+  assert.equal(res.items[0].carbs, 35);
+});
+
 test("past the overall budget, unresolved foods come back unknown", async () => {
   let t = 0;
   const now = () => t;

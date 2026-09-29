@@ -59,7 +59,15 @@ function retryWaitMs(res) {
   return Math.max(seconds, 0.5) * 1000;
 }
 
-async function callSonar(system, user, apiKey, { fetchImpl = fetch, timeoutMs, billing, sleep = realSleep }) {
+/**
+ * @param {{fetchImpl?: typeof fetch, timeoutMs?: number, deadline?: number, now?: () => number,
+ *   billing: object, sleep?: (ms: number) => Promise<void>}} options - `deadline` is an absolute
+ *   ms timestamp (comparable to `now()`); when given, it caps every attempt's timeout (including
+ *   a retry's, freshly, after any sleep) on top of `timeoutMs`, and a 429 is not retried when the
+ *   server's wait would itself run past it. Without a `deadline`, `timeoutMs` alone is the cap,
+ *   as before.
+ */
+async function callSonar(system, user, apiKey, { fetchImpl = fetch, timeoutMs, deadline, now = Date.now, billing, sleep = realSleep }) {
   const requestInit = {
     method: "POST",
     headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
@@ -74,9 +82,15 @@ async function callSonar(system, user, apiKey, { fetchImpl = fetch, timeoutMs, b
       ],
     }),
   };
+  /** This attempt's timeout: `timeoutMs`, further capped by the time left before `deadline`. */
+  function attemptTimeoutMs() {
+    if (deadline === undefined) return timeoutMs;
+    const left = Math.max(0, deadline - now());
+    return timeoutMs === undefined ? left : Math.min(timeoutMs, left);
+  }
   async function attempt() {
     try {
-      return await fetchImpl(SONAR_URL, { ...requestInit, signal: AbortSignal.timeout(timeoutMs) });
+      return await fetchImpl(SONAR_URL, { ...requestInit, signal: AbortSignal.timeout(attemptTimeoutMs()) });
     } catch (err) {
       throw new ParseError(err && err.name === "TimeoutError" ? "timeout" : "network");
     }
@@ -85,7 +99,8 @@ async function callSonar(system, user, apiKey, { fetchImpl = fetch, timeoutMs, b
   let res = await attempt();
   if (res.status === 429) {
     const wait = retryWaitMs(res);
-    if (wait !== null) {
+    const timeLeft = deadline === undefined ? Infinity : deadline - now();
+    if (wait !== null && wait < timeLeft) {
       await sleep(wait);
       res = await attempt();
     }

@@ -170,6 +170,59 @@ test("a second 429 in a row gives up, after two calls", async () => {
   assert.equal(billing.billed, false);
 });
 
+// ── callSonar: retries and attempts respect a deadline ──
+
+test("a 429 retry is skipped when the wait would run past the deadline, even though retry-after alone allows it", async () => {
+  // Second response is a success: if the (buggy) code retried anyway, this
+  // would resolve instead of throwing, which is how this test tells the
+  // difference.
+  const { fetchImpl, bodies } = sonar(
+    rateLimited("1"), // retry-after says wait 1000ms...
+    completion('[{"name":"pizza","query":"pizza","text":"pizza"}]')
+  );
+  const { sleep, calls } = spySleep();
+  const billing = { billed: false };
+  let t = 0;
+  const now = () => t;
+
+  await assert.rejects(
+    // ...but only 500ms is left before the deadline.
+    parseFoods("pizza", "KEY", { fetchImpl, timeoutMs: 6000, deadline: 500, now, billing, sleep }),
+    (err) => err instanceof ParseError && err.message === "status 429"
+  );
+
+  assert.equal(bodies.length, 1, "no retry attempted");
+  assert.equal(calls.length, 0, "never slept for a retry it wasn't going to make");
+  assert.equal(billing.billed, false);
+});
+
+test("a retry that does have time left still happens, capped to the time left before the deadline", async () => {
+  const { fetchImpl, bodies } = sonar(
+    rateLimited("1"),
+    completion('[{"name":"pizza","query":"pizza","text":"pizza"}]')
+  );
+  const billing = { billed: false };
+  let t = 0;
+  const now = () => t;
+  // The fake clock advances by the sleep duration, the way real time would.
+  const sleep = async (ms) => { t += ms; };
+
+  const origTimeout = AbortSignal.timeout;
+  const seenMs = [];
+  AbortSignal.timeout = (ms) => { seenMs.push(ms); return origTimeout(ms); };
+  try {
+    // Deadline is 3500ms out. The first attempt's cap (timeoutMs 6000) is
+    // reduced to the 3500ms left. The 1000ms sleep for the retry eats into
+    // that budget, so the second attempt only has 2500ms left.
+    await parseFoods("pizza", "KEY", { fetchImpl, timeoutMs: 6000, deadline: 3500, now, billing, sleep });
+  } finally {
+    AbortSignal.timeout = origTimeout;
+  }
+
+  assert.equal(bodies.length, 2);
+  assert.deepEqual(seenMs, [3500, 2500]);
+});
+
 // ── pickMatches ──
 
 test("pickMatches sends one call for all foods with candidates, IDs, brand and portions only", async () => {

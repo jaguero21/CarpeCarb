@@ -63,6 +63,9 @@ async function lookupFoodsUsda(sanitized, { perplexityKey, usdaKey }, options = 
 
   const start = now();
   const left = (budget) => Math.max(0, start + budget - now());
+  // The USDA path's own deadline: passed to parse, search and pick so each one's retries and
+  // sequential calls are capped by the time actually left, not a value frozen at call start.
+  const usdaDeadline = start + USDA_BUDGET_MS;
   const billing = { billed: false };
   const stats = { foods: 0, usda: 0, web: 0 };
   const logDone = (outcome = "ok") =>
@@ -90,7 +93,7 @@ async function lookupFoodsUsda(sanitized, { perplexityKey, usdaKey }, options = 
   let foods;
   try {
     foods = await parseFoods(sanitized, perplexityKey, {
-      fetchImpl, billing, timeoutMs: Math.min(SONAR_CALL_MS, left(USDA_BUDGET_MS)), sleep: options.sleep,
+      fetchImpl, billing, timeoutMs: SONAR_CALL_MS, deadline: usdaDeadline, now, sleep: options.sleep,
     });
   } catch (err) {
     console.log(`[lookup] parse failed: ${errorCode(err)}`);
@@ -115,7 +118,7 @@ async function lookupFoodsUsda(sanitized, { perplexityKey, usdaKey }, options = 
     const lists = await Promise.all(foods.map((food) => {
       if (food.brand === null) return [];
       return searchCandidates(food.query, usdaKey, {
-        fetchImpl, timeoutMs: Math.min(USDA_CALL_MS, left(USDA_BUDGET_MS)),
+        fetchImpl, timeoutMs: USDA_CALL_MS, deadline: usdaDeadline, now,
       }).catch((err) => {
         console.log(`[lookup] usda search failed: ${errorCode(err)}`);
         return [];
@@ -123,7 +126,7 @@ async function lookupFoodsUsda(sanitized, { perplexityKey, usdaKey }, options = 
     }));
     if (lists.some((list) => list.length > 0) && left(USDA_BUDGET_MS) > 0) {
       const picks = await pickMatches(foods, lists, perplexityKey, {
-        fetchImpl, billing, timeoutMs: Math.min(SONAR_CALL_MS, left(USDA_BUDGET_MS)), sleep: options.sleep,
+        fetchImpl, billing, timeoutMs: SONAR_CALL_MS, deadline: usdaDeadline, now, sleep: options.sleep,
       });
       picks.forEach((pick, i) => { matches[i] = validatePick(pick, lists[i], foods[i]); });
     }

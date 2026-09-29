@@ -112,6 +112,57 @@ test("an SR Legacy food gets its portions from one details call, ordered by sequ
   assert.equal(nuggets.per100g.fiber, null);
 });
 
+// ── time budget: deadline caps both calls, freshly ──
+
+test("the details call's timeout is capped by the time left before the deadline, not the original timeoutMs", async () => {
+  let t = 0;
+  const now = () => t;
+  // The search call itself "takes" 3000ms of the fake clock.
+  const search = () => { t = 3000; return json({ foods: [NUGGETS_SR] }); };
+  const { fetchImpl } = fdc({ search, details: NUGGETS_DETAILS });
+
+  const origTimeout = AbortSignal.timeout;
+  const seenMs = [];
+  AbortSignal.timeout = (ms) => { seenMs.push(ms); return origTimeout(ms); };
+  try {
+    // Deadline is 3500ms out. The search call's cap (timeoutMs 4000) is
+    // reduced to the 3500ms left up front; by the time the details call
+    // fires, only 500ms is left before the same deadline.
+    await searchCandidates("nuggets", "KEY", { fetchImpl, timeoutMs: 4000, deadline: 3500, now });
+  } finally {
+    AbortSignal.timeout = origTimeout;
+  }
+
+  assert.deepEqual(seenMs, [3500, 500]);
+});
+
+test("with no time left before the deadline, the details call still fires but with a zero timeout", async () => {
+  let t = 0;
+  const now = () => t;
+  const search = () => { t = 5000; return json({ foods: [NUGGETS_SR] }); };
+  const { fetchImpl, calls } = fdc({ search, details: NUGGETS_DETAILS });
+
+  await searchCandidates("nuggets", "KEY", { fetchImpl, timeoutMs: 4000, deadline: 3500, now });
+
+  // Never negative: AbortSignal.timeout only accepts a non-negative number.
+  assert.equal(calls.length, 2, "the details call is still attempted");
+});
+
+test("without a deadline, both calls use the plain timeoutMs as before", async () => {
+  const { fetchImpl } = fdc({ search: { foods: [NUGGETS_SR] }, details: NUGGETS_DETAILS });
+
+  const origTimeout = AbortSignal.timeout;
+  const seenMs = [];
+  AbortSignal.timeout = (ms) => { seenMs.push(ms); return origTimeout(ms); };
+  try {
+    await searchCandidates("nuggets", "KEY", { fetchImpl, timeoutMs: 4000 });
+  } finally {
+    AbortSignal.timeout = origTimeout;
+  }
+
+  assert.deepEqual(seenMs, [4000, 4000]);
+});
+
 test("details portions without a sequenceNumber sort after those that have one, in received order", async () => {
   const search = {
     fdcId: 999, dataType: "SR Legacy", description: "Mystery Meat", foodMeasures: [],

@@ -130,16 +130,22 @@ function bySequenceNumber(foodPortions) {
  *
  * @param {string} query
  * @param {string} apiKey
- * @param {{fetchImpl?: typeof fetch, timeoutMs?: number}} [options]
+ * @param {{fetchImpl?: typeof fetch, timeoutMs?: number, deadline?: number, now?: () => number}} [options]
+ *   `deadline` is an absolute ms timestamp (comparable to `now()`); when given, it further caps
+ *   both the search call's and the details call's timeout, freshly at each call, on top of
+ *   `timeoutMs`. Without it, `timeoutMs` alone is the cap for both, as before.
  * @returns {Promise<object[]>}
  * @throws {UsdaError} when the search itself fails
  */
-async function searchCandidates(query, apiKey, { fetchImpl = fetch, timeoutMs = 4000 } = {}) {
+async function searchCandidates(query, apiKey, { fetchImpl = fetch, timeoutMs = 4000, deadline, now = Date.now } = {}) {
+  /** `timeoutMs`, further capped by the time left before `deadline`, evaluated now. */
+  const boundedTimeoutMs = () => (deadline === undefined ? timeoutMs : Math.max(0, Math.min(timeoutMs, deadline - now())));
+
   const found = await usdaPost(
     "/foods/search",
     apiKey,
     { query, pageSize: SEARCH_PAGE_SIZE, dataType: DATA_TYPES },
-    { fetchImpl, timeoutMs }
+    { fetchImpl, timeoutMs: boundedTimeoutMs() }
   );
   const candidates = (Array.isArray(found && found.foods) ? found.foods : []).map(toCandidate).filter(Boolean);
 
@@ -151,7 +157,7 @@ async function searchCandidates(query, apiKey, { fetchImpl = fetch, timeoutMs = 
         "/foods",
         apiKey,
         { fdcIds: needPortions.map((c) => c.fdcId), format: "full" },
-        { fetchImpl, timeoutMs }
+        { fetchImpl, timeoutMs: boundedTimeoutMs() }
       );
       for (const food of Array.isArray(details) ? details : []) {
         const c = needPortions.find((x) => food && x.fdcId === food.fdcId);
