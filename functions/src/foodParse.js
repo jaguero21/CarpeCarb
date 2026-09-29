@@ -222,6 +222,9 @@ function carriesBrand(candidate, brand) {
   return wrap(candidate.description).includes(target) || wrap(candidate.brand || "").includes(target);
 }
 
+/** Whether the user's own words for an amount state an actual weight, e.g. "200 g" or "8 oz". */
+const STATES_A_WEIGHT = /\d\s*(g|grams?|oz|ounces?|lbs?|pounds?)\b/i;
+
 /**
  * A pick the server can use, or null. The ID must be a candidate that was
  * sent. When the food names a brand, the candidate must carry it (in its
@@ -243,6 +246,11 @@ function validatePick(pick, candidates, food) {
     if (!portion) return null;
     return { candidate, portion, count: 1 };
   }
+
+  // The 100 g portion is a weighing fallback, not a serving anyone described. With a stated
+  // amount, it's only a sane match when that amount is itself a weight ("200 g", "8 oz") - not a
+  // count or a vague amount ("a", "a bowl of"), which would silently misreport the serving size.
+  if (pick.portionId === "100g" && !STATES_A_WEIGHT.test(food.amount)) return null;
 
   const portion = candidate.portions.find((p) => p.id === pick.portionId);
   if (!portion) return null;

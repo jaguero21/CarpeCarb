@@ -329,8 +329,33 @@ test("validatePick accepts a pick naming a sent candidate, its portion and a san
   });
   // Some models quote numbers.
   assert.equal(
-    validatePick({ fdcId: "2707124", portionId: "100g", count: 0.25 }, [PHO], { amount: "a taste", brand: null }).count,
+    validatePick({ fdcId: "2707124", portionId: "p1", count: 0.25 }, [PHO], { amount: "a taste", brand: null }).count,
     0.25
+  );
+});
+
+test("validatePick accepts the 100 g portion for a stated amount only when the amount itself states a weight", () => {
+  // "a" (as in "a Big Mac") is not a weight; accepting 100 g here would silently report about
+  // half a Big Mac's worth of carbs as if it were a whole one.
+  assert.equal(
+    validatePick({ fdcId: 2707124, portionId: "100g", count: 1 }, [PHO], { amount: "a", brand: null }),
+    null
+  );
+
+  assert.deepEqual(
+    validatePick({ fdcId: 2707124, portionId: "100g", count: 2 }, [PHO], { amount: "200 g", brand: null }),
+    { candidate: PHO, portion: PHO.portions[2], count: 2 }
+  );
+
+  assert.deepEqual(
+    validatePick({ fdcId: 2707124, portionId: "100g", count: 2.27 }, [PHO], { amount: "8 oz", brand: null }),
+    { candidate: PHO, portion: PHO.portions[2], count: 2.27 }
+  );
+
+  // A real (non-100g) portion is unaffected by the weight check, whatever the amount says.
+  assert.deepEqual(
+    validatePick({ fdcId: 2707124, portionId: "p1", count: 3 }, [PHO], { amount: "a big bowl", brand: null }),
+    { candidate: PHO, portion: PHO.portions[0], count: 3 }
   );
 });
 
