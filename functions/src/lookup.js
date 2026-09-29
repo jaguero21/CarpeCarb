@@ -6,7 +6,8 @@
  * the existing Perplexity web lookup, labelled as such.
  */
 
-const { lookupFoods, sanitizeFoodInput, isNotBilled } = require("./perplexity");
+const { HttpsError } = require("firebase-functions/v2/https");
+const { lookupFoods, sanitizeFoodInput, isNotBilled, notBilled } = require("./perplexity");
 const { searchCandidates, nutritionFor, UsdaError } = require("./usda");
 const { parseFoods, pickMatches, validatePick, ParseError } = require("./foodParse");
 
@@ -105,6 +106,11 @@ async function lookupFoodsUsda(sanitized, { perplexityKey, usdaKey }, options = 
     } catch (webErr) {
       console.log(`[lookup] parse fallback failed: ${errorCode(webErr)}`);
       logDone("error");
+      if (webErr instanceof WebTimeout) {
+        const timeoutErr = new HttpsError("deadline-exceeded", "Looking this up took too long. Enter the carbs yourself.");
+        // Billed only if the parse call itself got a 2xx; nothing else on this path can bill us.
+        throw billing.billed ? timeoutErr : notBilled(timeoutErr);
+      }
       throw webErr;
     }
   }

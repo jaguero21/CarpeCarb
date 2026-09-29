@@ -441,6 +441,44 @@ test("a web error with no USDA foods is rethrown", async () => {
   await assert.rejects(lookupFoodsUsda("pizza", KEYS, { fetchImpl, webLookup: web(err).webLookup }), (e) => e === err);
 });
 
+// ── parse-failure path: web fallback timeout ──
+
+test("a parse failure whose web fallback times out surfaces as a friendly deadline-exceeded, refundable when parse was never billed", async () => {
+  let t = 0;
+  const now = () => t;
+  // Parse gets a 500: never billed. By the time the web fallback starts, the overall budget is
+  // already spent, so its internal race times out immediately.
+  const { fetchImpl } = world({ parse: () => { t = 25_000; return json({}, 500); } });
+  const never = () => new Promise(() => {});
+
+  await assert.rejects(
+    lookupFoodsUsda("pizza", KEYS, { fetchImpl, now, webLookup: never }),
+    (err) => {
+      assert.equal(err.code, "deadline-exceeded");
+      assert.match(err.message, /took too long/i);
+      assert.equal(isNotBilled(err), true, "nothing was ever billed on this path");
+      return true;
+    }
+  );
+});
+
+test("a parse failure whose web fallback times out is not refundable once parse itself was billed", async () => {
+  let t = 0;
+  const now = () => t;
+  // Parse gets a 200 with unusable content: billed, but still fails to parse.
+  const { fetchImpl } = world({ parse: () => { t = 25_000; return completion("no json"); } });
+  const never = () => new Promise(() => {});
+
+  await assert.rejects(
+    lookupFoodsUsda("pizza", KEYS, { fetchImpl, now, webLookup: never }),
+    (err) => {
+      assert.equal(err.code, "deadline-exceeded");
+      assert.equal(isNotBilled(err), false, "the parse call was billed, so the lookup isn't refunded");
+      return true;
+    }
+  );
+});
+
 test("an unexpected error in USDA search sends the food to the web", async () => {
   const { fetchImpl } = world({
     parse: parsed(food("pho", null, "Pho Palace")),
