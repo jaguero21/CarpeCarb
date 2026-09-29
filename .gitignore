@@ -19,6 +19,7 @@ migrate_working_dir/
 
 # VS Code related
 .vscode/
+*.code-workspace
 
 # Flutter/Dart/Pub related
 **/doc/api/
@@ -62,6 +63,13 @@ functions/build/
 # macOS
 macos/Pods/
 macos/Flutter/ephemeral/
+
+# Linux (scaffolded but unused — the app ships iOS only)
+linux/flutter/ephemeral/
+linux/flutter/generated_plugin*
+
+# Flutter DevTools (per-machine, not project config)
+devtools_options.yaml
 
 # API keys
 lib/config/api_keys.dart
