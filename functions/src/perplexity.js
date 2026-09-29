@@ -41,6 +41,19 @@ function isNotBilled(err) {
 }
 
 /**
+ * ms to wait before retrying a 429, or null if this response's retry-after doesn't
+ * qualify (missing, unparseable, or over the 2 s cutoff we're willing to wait).
+ */
+function retryWaitMs(response) {
+  if (!response.headers || typeof response.headers.get !== "function") return null;
+  const raw = response.headers.get("retry-after");
+  if (raw === null || raw === undefined) return null;
+  const seconds = Number(raw);
+  if (!Number.isFinite(seconds) || seconds < 0 || seconds > 2) return null;
+  return Math.max(seconds, 0.5) * 1000;
+}
+
+/**
  * Looks up carb counts for a sanitized food description via Perplexity.
  *
  * Errors are marked with notBilled only when no attempt got a 2xx response
@@ -60,6 +73,8 @@ async function lookupFoods(sanitized, apiKey, { fetchImpl = fetch, sleep = (ms) 
   const maxAttempts = 3;
   // True once any attempt got a 2xx response, i.e. Perplexity billed us.
   let billed = false;
+  // True once we've used our one 429 retry, so a second 429 doesn't retry again.
+  let retried429 = false;
   const unbilled = (err) => (billed ? err : notBilled(err));
 
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
@@ -128,6 +143,12 @@ async function lookupFoods(sanitized, apiKey, { fetchImpl = fetch, sleep = (ms) 
       }
       if (response.status === 429) {
         console.error("Perplexity API rate limited (429)");
+        const wait = retried429 ? null : retryWaitMs(response);
+        if (wait !== null) {
+          retried429 = true;
+          await sleep(wait);
+          continue;
+        }
         throw unbilled(new HttpsError(
           "resource-exhausted",
           "Rate limit exceeded. Try again later."
@@ -326,4 +347,6 @@ function listNames(names) {
   return `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`;
 }
 
-module.exports = { sanitizeFoodInput, lookupFoods, notBilled, isNotBilled, splitUnknownCarbs, listNames };
+module.exports = {
+  sanitizeFoodInput, lookupFoods, notBilled, isNotBilled, splitUnknownCarbs, listNames, retryWaitMs,
+};
