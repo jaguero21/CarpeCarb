@@ -55,7 +55,9 @@ test("parseFoods calls sonar with search off and returns the foods", async () =>
   assert.equal(bodies[0].temperature, 0);
   assert.equal(bodies[0].messages[1].content, "a bowl of pho and 10 mcdonalds nuggets");
   assert.match(bodies[0].messages[0].content, /use it with the product name/i);
-  assert.match(bodies[0].messages[0].content, /USDA's own naming style/);
+  // Scope is branded-only now: the generic USDA-style phrasing/examples for a
+  // plain food's query (never used any more) is gone from the prompt.
+  assert.doesNotMatch(bodies[0].messages[0].content, /USDA's own naming style/);
   assert.equal(billing.billed, true);
 });
 
@@ -285,20 +287,27 @@ test("pickMatches ignores picks for indexes it did not send", async () => {
   assert.deepEqual(picks, [null]);
 });
 
-test("the pick prompt requires generic entries by default, forbids other brands, and forbids nutrition values", async () => {
+test("the pick prompt requires the named brand, keeps the no-amount and count rules, and forbids nutrition values", async () => {
   const { fetchImpl, bodies } = sonar(completion("[]"));
   await pickMatches(
     [{ name: "pho", query: "pho", amount: null, text: "pho", brand: null }], [[PHO]], "KEY", opts(fetchImpl)
   );
 
   const system = bodies[0].messages[0].content;
+  assert.match(system, /same food/i);
+  assert.match(system, /different dish/i);
   assert.match(system, /only a candidate from that brand or chain/i);
-  assert.match(system, /choose a generic entry/i);
-  assert.match(system, /Hamburger \(Burger King\)/);
   assert.match(system, /portionId and count to null/i);
-  assert.match(system, /A variant the user did not mention/);
+  assert.match(system, /count 2\.5/);
   assert.match(system, /fdcId is null/);
   assert.match(system, /Never give nutrition values/);
+  // Scope is branded-only now: every candidate sent already comes from a
+  // search restricted to the named brand, so the no-brand/generic-entry
+  // sentence and the plain-food NFS/variant sentence no longer apply.
+  assert.doesNotMatch(system, /choose a generic entry/i);
+  assert.doesNotMatch(system, /Hamburger \(Burger King\)/);
+  assert.doesNotMatch(system, /NFS/);
+  assert.doesNotMatch(system, /A variant the user did not mention/);
 });
 
 // ── validatePick ──
