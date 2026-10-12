@@ -3,6 +3,7 @@ import 'dart:math';
 import 'package:flutter/material.dart';
 
 import '../config/app_colors.dart';
+import 'serving_info.dart';
 
 enum FoodCategory {
   breakfast,
@@ -77,6 +78,14 @@ class FoodItem {
   final FoodCategory category;
   final bool isManualEntry;
 
+  /// The serving a looked-up food was logged at, for the serving picker.
+  /// Null for manual entries and for foods logged before 1.0.4.
+  final ServingInfo? serving;
+
+  /// When the food was last edited; null if never. iCloud merge keeps the
+  /// copy with the later value.
+  final DateTime? updatedAt;
+
   FoodItem({
     String? id,
     required this.name,
@@ -88,6 +97,8 @@ class FoodItem {
     this.details,
     this.citations = const [],
     this.isManualEntry = false,
+    this.serving,
+    this.updatedAt,
     DateTime? loggedAt,
     FoodCategory? category,
   })  : id = id ?? _generateId(),
@@ -109,6 +120,28 @@ class FoodItem {
 
   bool get hasMacros => protein != null || fat != null || fiber != null || calories != null;
 
+  /// This food at [next], with its nutrients recalculated. Identity, time,
+  /// meal, name and details stay; [updatedAt] becomes [now].
+  FoodItem withServing(ServingInfo next, {required DateTime now}) {
+    final n = next.nutrients();
+    return FoodItem(
+      id: id,
+      name: name,
+      carbs: n.carbs,
+      protein: n.protein,
+      fat: n.fat,
+      fiber: n.fiber,
+      calories: n.calories,
+      details: details,
+      citations: citations,
+      isManualEntry: isManualEntry,
+      loggedAt: loggedAt,
+      category: category,
+      serving: next,
+      updatedAt: now,
+    );
+  }
+
   Map<String, dynamic> toJson() {
     return {
       'id': id,
@@ -123,6 +156,8 @@ class FoodItem {
       if (details != null) 'details': details,
       if (citations.isNotEmpty) 'citations': citations,
       if (isManualEntry) 'isManualEntry': true,
+      if (serving != null) 'serving': serving!.toJson(),
+      if (updatedAt != null) 'updatedAt': updatedAt!.toIso8601String(),
     };
   }
 
@@ -162,6 +197,10 @@ class FoodItem {
       isManualEntry: json['isManualEntry'] as bool? ?? false,
       category: json['category'] != null
           ? FoodCategory.fromString(json['category'] as String)
+          : null,
+      serving: ServingInfo.fromJson(json['serving']),
+      updatedAt: json['updatedAt'] is String
+          ? DateTime.tryParse(json['updatedAt'] as String)
           : null,
     );
   }

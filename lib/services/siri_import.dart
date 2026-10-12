@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import '../models/food_item.dart';
+import '../models/serving_info.dart';
 import '../utils/day_key.dart';
 
 /// Parses the `siriLoggedItems` buffer that Siri writes to the App Group
@@ -36,17 +37,28 @@ class SiriImport {
       final details = raw['details'];
       final citations = raw['citations'];
 
+      final carbs = _number(raw['carbs']) ?? 0.0;
+      final protein = _number(raw['protein']);
+      final fat = _number(raw['fat']);
+      final fiber = _number(raw['fiber']);
+      final calories = _number(raw['calories']);
       final item = FoodItem(
         name: name,
-        carbs: _number(raw['carbs']) ?? 0.0,
-        protein: _number(raw['protein']),
-        fat: _number(raw['fat']),
-        fiber: _number(raw['fiber']),
-        calories: _number(raw['calories']),
+        carbs: carbs,
+        protein: protein,
+        fat: fat,
+        fiber: fiber,
+        calories: calories,
         details: details is String ? details : null,
         citations:
             citations is List ? citations.whereType<String>().toList() : const [],
         loggedAt: loggedAt ?? now,
+        // Siri passes the server's serving fields through unchanged
+        // (CarbDataStore.addFood), so they read exactly like an app lookup.
+        serving: ServingInfo.fromServerItem(
+          raw,
+          Nutrients(carbs: carbs, protein: protein, fat: fat, fiber: fiber, calories: calories),
+        ),
       );
 
       final isEarlier =
