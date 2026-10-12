@@ -58,4 +58,16 @@ void main() {
       expect(carbProgressValue(total: 99.5, goal: 100), '99.5 of 100 grams');
     });
   });
+
+  test('serving labels', () {
+    expect(servingsValue(1), '1 serving');
+    expect(servingsValue(2.5), '2.5 servings');
+    expect(portionOptionLabel('1 cup', 120), '1 cup · 120 g');
+    expect(
+      foodRowLabel(name: 'pho', carbs: 41.2, time: '12:00 PM', serving: '3 × 1 cup (735 g)'),
+      'pho, 41.2 grams of carbs, 3 × 1 cup (735 g), logged 12:00 PM',
+    );
+    expect(foodRowLabel(name: 'Apple', carbs: 25, time: '8:30 AM'),
+        foodRowLabel(name: 'Apple', carbs: 25, time: '8:30 AM', serving: null));
+  });
 }

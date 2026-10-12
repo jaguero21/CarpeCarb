@@ -1,0 +1,62 @@
+import 'package:carb_tracker/models/serving_info.dart';
+import 'package:carb_tracker/widgets/serving_picker.dart';
+import 'package:flutter/material.dart';
+import 'package:flutter_test/flutter_test.dart';
+
+void main() {
+  final usda = ServingInfo.usda(
+    fdcId: 1,
+    portions: const [
+      ServingPortion(id: 'p1', label: '1 cup', grams: 120),
+      ServingPortion(id: 'p2', label: 'typical serving', grams: 270),
+      ServingPortion(id: '100g', label: '100 g', grams: 100),
+    ],
+    per100g: const Nutrients(carbs: 10.58),
+    portionId: 'p2',
+    count: 1,
+  );
+
+  Future<List<ServingInfo>> pump(WidgetTester tester, ServingInfo value) async {
+    final changes = <ServingInfo>[];
+    await tester.pumpWidget(MaterialApp(
+      home: Scaffold(body: ServingPicker(value: value, onChanged: changes.add)),
+    ));
+    return changes;
+  }
+
+  testWidgets('USDA: a menu of portions with their weights, and a count', (tester) async {
+    final changes = await pump(tester, usda);
+
+    expect(find.text('typical serving · 270 g'), findsOneWidget);
+    await tester.tap(find.text('typical serving · 270 g'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('1 cup · 120 g').last);
+    await tester.pumpAndSettle();
+    expect(changes.single.portionId, 'p1');
+    expect(changes.single.count, 1);
+  });
+
+  testWidgets('the stepper moves by ½ and labels itself for VoiceOver', (tester) async {
+    final changes = await pump(tester, usda);
+
+    expect(find.byTooltip('More servings'), findsOneWidget);
+    expect(find.byTooltip('Fewer servings'), findsOneWidget);
+    await tester.tap(find.byTooltip('More servings'));
+    expect(changes.last.count, 1.5);
+    await tester.tap(find.byTooltip('Fewer servings'));
+    expect(changes.last.count, 0.5);
+  });
+
+  testWidgets('at ½ the Fewer button is disabled', (tester) async {
+    final changes = await pump(tester, usda.copyWith(count: 0.5));
+    await tester.tap(find.byTooltip('Fewer servings'));
+    expect(changes, isEmpty);
+  });
+
+  testWidgets('web: only the count, labelled as servings of what was looked up', (tester) async {
+    await pump(tester, ServingInfo.web(base: const Nutrients(carbs: 27)));
+    expect(find.byType(DropdownButton<String>), findsNothing);
+    expect(find.text('servings of what was looked up'), findsOneWidget);
+    expect(find.text('1'), findsOneWidget);
+  });
+}
