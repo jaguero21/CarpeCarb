@@ -2,10 +2,30 @@ import 'dart:convert';
 
 import 'package:carb_tracker/main.dart';
 import 'package:carb_tracker/models/food_item.dart';
+import 'package:carb_tracker/services/health_kit_service.dart';
 import 'package:flutter/semantics.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+
+/// Stands in for HealthKit, which the real service only talks to on iOS.
+class _RecordingHealth extends HealthKitService {
+  _RecordingHealth({required this.deleteOk});
+  final bool deleteOk;
+  final calls = <String>[];
+
+  @override
+  Future<bool> deleteFoodItem(FoodItem item) async {
+    calls.add('delete ${item.carbs}');
+    return deleteOk;
+  }
+
+  @override
+  Future<bool> writeFoodItem(FoodItem item) async {
+    calls.add('write ${item.carbs}');
+    return true;
+  }
+}
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -169,6 +189,77 @@ void main() {
     expect(state.foodItems.single.carbs, 99.0);
     expect(find.text('This food changed on another device. Open it again to edit.'),
         findsOneWidget);
+    handle.dispose();
+  });
+
+  testWidgets('Update replaces the Health sample: delete first, then write the new carbs',
+      (tester) async {
+    stubChannels();
+    seedPho();
+    final health = _RecordingHealth(deleteOk: true);
+    final handle = await openRow(tester, 'pho');
+    tester.state<CarbTrackerHomeState>(find.byType(CarbTrackerHome)).healthKitService = health;
+
+    await tester.tap(find.byTooltip('More servings'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Update'));
+    await tester.pumpAndSettle();
+
+    expect(health.calls, ['delete 13.7', 'write 20.6']);
+    expect(find.text('Health sync failed — check permissions in Settings'), findsNothing);
+    handle.dispose();
+  });
+
+  testWidgets('a failed Health delete writes nothing and shows the Health error',
+      (tester) async {
+    stubChannels();
+    seedPho();
+    final health = _RecordingHealth(deleteOk: false);
+    final handle = await openRow(tester, 'pho');
+    tester.state<CarbTrackerHomeState>(find.byType(CarbTrackerHome)).healthKitService = health;
+
+    await tester.tap(find.byTooltip('More servings'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Update'));
+    await tester.pumpAndSettle();
+
+    expect(health.calls, ['delete 13.7']);
+    // The error queues behind the "Updated to" snackbar.
+    await tester.pump(const Duration(seconds: 4));
+    await tester.pumpAndSettle();
+    expect(find.text('Health sync failed — check permissions in Settings'), findsOneWidget);
+    handle.dispose();
+  });
+
+  testWidgets('Update on a food deleted meanwhile says so', (tester) async {
+    stubChannels();
+    seedPho();
+    final handle = await openRow(tester, 'pho');
+    await tester.tap(find.byTooltip('More servings'));
+    await tester.pumpAndSettle();
+    final state = tester.state<CarbTrackerHomeState>(find.byType(CarbTrackerHome));
+    state.foodItems.clear();
+    await tester.tap(find.text('Update'));
+    await tester.pumpAndSettle();
+
+    expect(state.foodItems, isEmpty);
+    expect(find.text('This food was deleted on another device.'), findsOneWidget);
+    handle.dispose();
+  });
+
+  testWidgets('Save to Food list is hidden while a serving change is pending',
+      (tester) async {
+    stubChannels();
+    seedPho();
+    final handle = await openRow(tester, 'pho');
+
+    expect(find.text('Save to Food list'), findsOneWidget);
+    await tester.tap(find.byTooltip('More servings'));
+    await tester.pumpAndSettle();
+    expect(find.text('Save to Food list'), findsNothing);
+    await tester.tap(find.byTooltip('Fewer servings'));
+    await tester.pumpAndSettle();
+    expect(find.text('Save to Food list'), findsOneWidget);
     handle.dispose();
   });
 

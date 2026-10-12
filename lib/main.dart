@@ -107,7 +107,11 @@ class CarbTrackerHomeState extends State<CarbTrackerHome>
   GlobalKey<AnimatedListState> _listKey = GlobalKey<AnimatedListState>();
   final PerplexityFirebaseService _perplexityService =
       PerplexityFirebaseService();
-  final HealthKitService _healthKitService = HealthKitService();
+  HealthKitService _healthKitService = HealthKitService();
+
+  @visibleForTesting
+  set healthKitService(HealthKitService service) => _healthKitService = service;
+
   final PremiumService _premiumService = PremiumService();
   StreamSubscription<PurchaseOutcome>? _purchaseOutcomes;
   final CloudSyncService _cloudSyncService = CloudSyncService();
@@ -899,7 +903,16 @@ class CarbTrackerHomeState extends State<CarbTrackerHome>
   void _updateFoodItem(FoodItem old, FoodItem updated) {
     final index = foodItems.indexWhere((f) => f.id == old.id);
     // Gone already if the list changed while the dialog was open.
-    if (index == -1) return;
+    if (index == -1) {
+      ScaffoldMessenger.of(context).hideCurrentSnackBar();
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('This food was deleted on another device.'),
+          duration: Duration(seconds: 4),
+        ),
+      );
+      return;
+    }
     // An iCloud merge brought in a newer edit while the dialog was open;
     // `updated` was built from the stale copy and would overwrite it.
     if (foodItems[index].updatedAt != old.updatedAt) {
@@ -1145,13 +1158,15 @@ class CarbTrackerHomeState extends State<CarbTrackerHome>
                 ),
               // The same two actions the row offers by swipe, for anyone who can't
               // swipe — with or without VoiceOver.
-              TextButton(
-                onPressed: () {
-                  Navigator.pop(context);
-                  _saveToSavedFoods(item);
-                },
-                child: const Text('Save to Food list'),
-              ),
+              // Saves the logged copy, so not while a different serving is pending.
+              if (!changed)
+                TextButton(
+                  onPressed: () {
+                    Navigator.pop(context);
+                    _saveToSavedFoods(item);
+                  },
+                  child: const Text('Save to Food list'),
+                ),
               TextButton(
                 onPressed: () {
                   Navigator.pop(context);
