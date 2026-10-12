@@ -269,4 +269,49 @@ function validatePick(pick, candidates, food) {
   return { candidate, portion, count };
 }
 
-module.exports = { parseFoods, pickMatches, validatePick, ParseError };
+/** Lowercased whole words of a USDA description, for comparing an entry with its NFS sibling. */
+const wordsOf = (s) => new Set(String(s).toLowerCase().split(/[^a-z0-9]+/).filter(Boolean));
+
+/**
+ * Guards the USDA survey fallback against a component or bare version of a dish.
+ *
+ * USDA's literal entry can be a different dish: "Burrito bowl, chicken" has no rice or
+ * beans (0.27 g carbs per 100 g), and "Beef taco filling" has no shell. When the picked
+ * entry has under half the carbs of the dish's own "…, NFS" (not further specified)
+ * entry, the NFS entry is used instead. It only ever raises a count toward USDA's typical
+ * version, never lowers one, so an accurate specific entry ("Rice, fried, with chicken")
+ * is kept. An NFS entry anchors a pick only when every word before ", NFS" appears in
+ * the picked description.
+ *
+ * With no stated amount the NFS entry's standard serving is used. With one, the same
+ * serving label must exist on the NFS entry; if it doesn't, the match is dropped (null)
+ * rather than keeping the component entry or guessing a serving.
+ *
+ * @param {{candidate: object, portion: object, count: number}} match - a validated pick
+ * @param {object[]} candidates - every candidate the search returned
+ * @param {{amount: string|null}} food
+ * @returns {{candidate: object, portion: object, count: number}|null}
+ */
+function preferTypicalEntry(match, candidates, food) {
+  const picked = match.candidate;
+  const pickedWords = wordsOf(picked.description);
+  const anchors = candidates.filter((c) => {
+    if (c === picked || !/, NFS$/.test(c.description)) return false;
+    const head = wordsOf(c.description.replace(/, NFS$/, ""));
+    return head.size > 0 && [...head].every((w) => pickedWords.has(w));
+  });
+  if (anchors.length === 0) return match;
+  // The most specific anchor: the one whose name shares the most words with the pick.
+  const anchor = anchors.sort((a, b) => wordsOf(b.description).size - wordsOf(a.description).size)[0];
+  const anchorCarbs = anchor.per100g.carbs;
+  if (!(anchorCarbs > 0) || picked.per100g.carbs >= anchorCarbs / 2) return match;
+
+  if (food.amount === null) {
+    const portion = standardPortion(anchor);
+    return portion ? { candidate: anchor, portion, count: 1 } : null;
+  }
+  const portion = anchor.portions.find((p) => p.label === match.portion.label);
+  return portion ? { candidate: anchor, portion, count: match.count } : null;
+}
+
+module.exports = { parseFoods, pickMatches, validatePick, preferTypicalEntry, ParseError };

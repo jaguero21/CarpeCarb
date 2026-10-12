@@ -777,3 +777,23 @@ test("web answers are marked as web, so the serving picker knows it has no USDA 
   assert.equal(res.items[0].source, "web");
   assert.equal("portions" in res.items[0], false);
 });
+
+test("the survey fallback never returns a component of the dish: a bare burrito bowl becomes the NFS bowl", async () => {
+  const fdcFood = (fdcId, description, carbs, measures) => ({
+    fdcId, dataType: "Survey (FNDDS)", description, foodMeasures: measures,
+    foodNutrients: [{ nutrientId: 1005, value: carbs }],
+  });
+  const bare = fdcFood(2708560, "Burrito bowl, chicken", 0.27, [{ disseminationText: "Quantity not specified", gramWeight: 225 }]);
+  const nfs = fdcFood(2708555, "Burrito bowl, NFS", 10.58, [{ disseminationText: "Quantity not specified", gramWeight: 270 }]);
+  const { fetchImpl } = world({
+    parse: parsed(food("chicken burrito bowl")),
+    search: { "chicken burrito bowl": json({ foods: [bare, nfs] }) },
+    pick: completion('[{"index":0,"fdcId":2708560,"portionId":null,"count":null}]'),
+  });
+  const { webLookup } = webAnswers(null);
+
+  const res = await lookupFoodsUsda("chicken burrito bowl", KEYS, { fetchImpl, webLookup });
+
+  assert.equal(res.items[0].carbs, 28.6, "not the 0.6 g of chicken with no rice or beans");
+  assert.equal(res.items[0].details, "USDA FoodData Central (Survey (FNDDS)): Burrito bowl, NFS, typical serving (270 g).");
+});

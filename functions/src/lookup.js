@@ -11,7 +11,7 @@
 const { HttpsError } = require("firebase-functions/v2/https");
 const { lookupFoods, sanitizeFoodInput, isNotBilled, notBilled } = require("./perplexity");
 const { searchCandidates, nutritionFor, UsdaError } = require("./usda");
-const { parseFoods, pickMatches, validatePick, ParseError } = require("./foodParse");
+const { parseFoods, pickMatches, validatePick, preferTypicalEntry, ParseError } = require("./foodParse");
 
 const USDA_BUDGET_MS = 12_000;
 const TOTAL_BUDGET_MS = 25_000;
@@ -211,7 +211,9 @@ async function lookupFoodsUsda(sanitized, { perplexityKey, usdaKey }, options = 
       const [pick] = await pickMatches([food], [list], perplexityKey, {
         fetchImpl, billing, timeoutMs: SONAR_CALL_MS, deadline, now, sleep: options.sleep,
       });
-      const match = validatePick(pick, list, food);
+      const picked = validatePick(pick, list, food);
+      // Never a component of the dish ("Burrito bowl, chicken" has no rice or beans).
+      const match = picked && preferTypicalEntry(picked, list, food);
       if (!match) return null;
       return { item: usdaItem(food, match), citations: [fdcCitation(match.candidate)] };
     } catch (err) {
