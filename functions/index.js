@@ -2,7 +2,8 @@ const fs = require("fs");
 const path = require("path");
 const { onCall, HttpsError } = require("firebase-functions/v2/https");
 const { defineSecret, defineString } = require("firebase-functions/params");
-const admin = require("firebase-admin");
+const { initializeApp } = require("firebase-admin/app");
+const { getFirestore } = require("firebase-admin/firestore");
 
 const { createRateLimiter } = require("./src/rateLimit");
 const { lookupFoods } = require("./src/perplexity");
@@ -12,8 +13,8 @@ const { createAppStore } = require("./src/appStore");
 const { createEntitlementStore } = require("./src/entitlements");
 const { createHandlers } = require("./src/handlers");
 
-admin.initializeApp();
-const db = admin.firestore();
+initializeApp();
+const db = getFirestore();
 
 const perplexityApiKey = defineSecret("PERPLEXITY_API_KEY");
 const usdaApiKey = defineSecret("USDA_API_KEY");
