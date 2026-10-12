@@ -50,10 +50,17 @@ function usdaItem(food, { candidate, portion, count }) {
     details:
       `USDA FoodData Central (${candidate.dataType}): ${candidate.description}${brand}, ` +
       `${amountText(count, portion.label)} (${n.grams} g).`,
+    // For the serving picker: the app can show these servings and recalculate from per100g,
+    // so changing the serving needs no new lookup. Older app versions ignore these fields.
+    source: "usda",
+    fdcId: candidate.fdcId,
+    serving: { portionId: portion.id, label: portion.label, grams: portion.grams, count },
+    portions: candidate.portions,
+    per100g: candidate.per100g,
   };
 }
 
-const labelled = (item) => ({ ...item, details: `${WEB_PREFIX}${item.details || ""}`.trim() });
+const labelled = (item) => ({ ...item, details: `${WEB_PREFIX}${item.details || ""}`.trim(), source: "web" });
 const fdcCitation = (candidate) => `https://fdc.nal.usda.gov/food-details/${candidate.fdcId}/nutrients`;
 
 const errorCode = (err) =>

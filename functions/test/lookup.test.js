@@ -84,6 +84,12 @@ test("a USDA match is calculated by the server and cites FDC", async () => {
     items: [{
       name: "pho", carbs: 41.2, protein: 42.7, fat: 24.5, fiber: 2.9, calories: 566,
       details: "USDA FoodData Central (Survey (FNDDS)): Soup, pho, with meat, Pho Palace, 3 × 1 cup (735 g).",
+      // Everything the serving picker needs to recalculate on the device.
+      source: "usda",
+      fdcId: 2707124,
+      serving: { portionId: "p1", label: "1 cup", grams: 245, count: 3 },
+      portions: [{ id: "p1", label: "1 cup", grams: 245 }, { id: "100g", label: "100 g", grams: 100 }],
+      per100g: { carbs: 5.6, protein: 5.81, fat: 3.33, fiber: 0.4, calories: 77 },
     }],
     citations: ["https://fdc.nal.usda.gov/food-details/2707124/nutrients"],
   });
@@ -760,4 +766,14 @@ test("without time for a USDA survey check, the chain goes straight to the web r
   assert.equal(usdaCalls.length, 0, "7 s left is under the 8 s a survey check needs");
   assert.equal(calls.length, 2);
   assert.equal(res.items[0].carbs, 30);
+});
+
+test("web answers are marked as web, so the serving picker knows it has no USDA servings to offer", async () => {
+  const { fetchImpl } = world({ parse: parsed(food("pad thai")) });
+  const { webLookup } = webAnswers(55);
+
+  const res = await lookupFoodsUsda("pad thai", KEYS, { fetchImpl, webLookup });
+
+  assert.equal(res.items[0].source, "web");
+  assert.equal("portions" in res.items[0], false);
 });
