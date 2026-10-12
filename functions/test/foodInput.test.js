@@ -4,7 +4,7 @@ const cases = require("./fixtures/food-input-cases.json");
 const { validateFoodInput, sanitizeFoodInput } = require("../src/foodInput");
 const perplexity = require("../src/perplexity");
 
-const inputOf = (c) => (c.repeat ? c.repeat[0].repeat(c.repeat[1]) : c.input);
+const inputOf = (c) => (c.repeat ? c.repeat[0].repeat(c.repeat[1]) + (c.suffix || "") : c.input);
 
 test("every shared valid case passes and normalizes as expected", () => {
   for (const c of cases.valid) {

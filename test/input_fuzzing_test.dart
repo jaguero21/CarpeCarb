@@ -22,12 +22,17 @@ void main() {
         expect(InputValidation.validateFoodInput('apple\x00'), isNotNull);
       });
 
-      test('Unicode characters should be rejected', () {
-        expect(InputValidation.validateFoodInput('apple🍎'), isNotNull);
-        expect(InputValidation.validateFoodInput('🍕pizza'), isNotNull);
-        expect(InputValidation.validateFoodInput('café'), isNotNull);
-        expect(InputValidation.validateFoodInput('naïve'), isNotNull);
-        expect(InputValidation.validateFoodInput('日本語'), isNotNull);
+      test('Emoji are rejected', () {
+        expect(InputValidation.validateFoodInput('apple\u{1F34E}'), isNotNull);
+        expect(InputValidation.validateFoodInput('\u{1F355}pizza'), isNotNull);
+      });
+
+      // Letters in any script are food names (café, jalapeño, phở, 日本語), and
+      // the server accepts the same set, so Siri and the app agree.
+      test('Accented and non-Latin letters are accepted', () {
+        expect(InputValidation.validateFoodInput('caf\u00E9'), isNull);
+        expect(InputValidation.validateFoodInput('na\u00EFve'), isNull);
+        expect(InputValidation.validateFoodInput('\u65E5\u672C\u8A9E'), isNull);
       });
 
       test('Control characters should be rejected', () {
@@ -86,13 +91,13 @@ void main() {
             isNotNull);
       });
 
+      // + ("7+ grain") and " (6" sub, as an inch mark) are allowed food punctuation.
       test('Special symbols should be rejected', () {
         expect(InputValidation.validateFoodInput('apple#pie'), isNotNull);
         expect(InputValidation.validateFoodInput('apple@pie'), isNotNull);
         expect(InputValidation.validateFoodInput('apple\$pie'), isNotNull);
         expect(InputValidation.validateFoodInput('apple^pie'), isNotNull);
         expect(InputValidation.validateFoodInput('apple*pie'), isNotNull);
-        expect(InputValidation.validateFoodInput('apple+pie'), isNotNull);
         expect(InputValidation.validateFoodInput('apple=pie'), isNotNull);
         expect(InputValidation.validateFoodInput('apple[pie]'), isNotNull);
         expect(InputValidation.validateFoodInput('apple{pie}'), isNotNull);
@@ -100,7 +105,6 @@ void main() {
         expect(InputValidation.validateFoodInput('apple\\pie'), isNotNull);
         expect(InputValidation.validateFoodInput('apple:pie'), isNotNull);
         expect(InputValidation.validateFoodInput('apple;pie'), isNotNull);
-        expect(InputValidation.validateFoodInput('apple"pie'), isNotNull);
         expect(InputValidation.validateFoodInput('apple<pie>'), isNotNull);
         expect(InputValidation.validateFoodInput('apple?pie'), isNotNull);
         expect(InputValidation.validateFoodInput('apple!pie'), isNotNull);

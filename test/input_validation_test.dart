@@ -74,7 +74,7 @@ void main() {
     final cases = jsonDecode(
         File('functions/test/fixtures/food-input-cases.json').readAsStringSync());
     String inputOf(Map c) => c['repeat'] != null
-        ? (c['repeat'][0] as String) * (c['repeat'][1] as int)
+        ? (c['repeat'][0] as String) * (c['repeat'][1] as int) + ((c['suffix'] ?? '') as String)
         : c['input'] as String;
 
     test('valid cases pass', () {

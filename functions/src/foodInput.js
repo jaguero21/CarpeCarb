@@ -14,18 +14,20 @@ const BLOCKED = /\b(ignore|system|prompts?|instructions?|override|jailbreak|dan 
 
 /**
  * Converts lookalike characters to the allowed ones, composes accents (so "n" plus a
- * combining tilde becomes "ñ"), and tidies whitespace.
+ * combining tilde becomes "ñ"), trims the ends and collapses spaces.
  */
 function normalizeFoodInput(input) {
   return input
     .normalize("NFC")
-    .replace(/[’‘ʼʹˈ`´ˊˋ＇՚׳′]/g, "'")
-    // Double-quote lookalikes and the inch mark (double prime): 6” and 6″ mean 6".
-    .replace(/[“”„″＂]/g, "\"")
-    .replace(/[–—−]/g, "-")
-    .replace(/\0/g, "")
-    .replace(/\s+/g, " ")
-    .trim();
+    // Apostrophe lookalikes. Not the backtick: it's a shell character, so it's rejected, never converted.
+    .replace(/[\u2019\u2018\u02BC\u02B9\u02C8\u00B4\u02CA\u02CB\uFF07\u055A\u05F3\u2032]/g, "'")
+    // Double-quote lookalikes and the inch mark (double prime): 6\u201D and 6\u2033 mean 6".
+    .replace(/[\u201C\u201D\u201E\u2033\uFF02]/g, "\"")
+    .replace(/[\u2013\u2014\u2212]/g, "-")
+    // Only the ends are trimmed and runs of spaces collapsed. A null byte, tab or newline
+    // inside the text stays, so the allow-list rejects it.
+    .trim()
+    .replace(/ +/g, " ");
 }
 
 /**

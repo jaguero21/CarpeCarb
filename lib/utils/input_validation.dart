@@ -45,18 +45,21 @@ class InputValidation {
     return null;
   }
 
-  /// Converts lookalike characters to the ones the rules allow, and tidies
-  /// whitespace. Applied before validation and before sending to the server.
+  /// Converts lookalike characters to the ones the rules allow, trims the
+  /// ends and collapses spaces. Applied before validation and before sending
+  /// to the server.
   static String sanitizeForApi(String input) {
     return input
-        // Apostrophe lookalikes, including the iPhone's curly apostrophe.
-        .replaceAll(RegExp('[’‘ʼʹˈ`´ˊˋ＇՚׳′]'), "'")
-        // Double-quote lookalikes and the inch mark (double prime): 6” and 6″ mean 6".
-        .replaceAll(RegExp('[“”„″＂]'), '"')
+        // Apostrophe lookalikes, including the iPhone's curly apostrophe. Not the
+        // backtick: it's a shell character, so it's rejected, never converted.
+        .replaceAll(RegExp('[\u2019\u2018\u02BC\u02B9\u02C8\u00B4\u02CA\u02CB\uFF07\u055A\u05F3\u2032]'), "'")
+        // Double-quote lookalikes and the inch mark (double prime): 6\u201D and 6\u2033 mean 6".
+        .replaceAll(RegExp('[\u201C\u201D\u201E\u2033\uFF02]'), '"')
         // Dash lookalikes.
-        .replaceAll(RegExp('[–—−]'), '-')
-        .replaceAll('\x00', '')
-        .replaceAll(RegExp(r'\s+'), ' ')
-        .trim();
+        .replaceAll(RegExp('[\u2013\u2014\u2212]'), '-')
+        // Only the ends are trimmed and runs of spaces collapsed. A null byte,
+        // tab or newline inside the text stays, so the allow-list rejects it.
+        .trim()
+        .replaceAll(RegExp(' +'), ' ');
   }
 }
