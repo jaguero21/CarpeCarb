@@ -356,4 +356,33 @@ void main() {
       expect(syncStateDiffers(merge(local, cloud), cloud), isTrue);
     });
   });
+
+  group('an edited food', () {
+    final logged = DateTime(2026, 10, 12, 12);
+    FoodItem copy(double carbs, DateTime? updatedAt) => FoodItem(
+        id: 'same', name: 'pho', carbs: carbs, loggedAt: logged, updatedAt: updatedAt);
+
+    List<FoodItem> mergedItems(FoodItem local, FoodItem cloud) =>
+        merge(state(items: [local]), state(items: [cloud])).items;
+
+    test('the later edit wins, from either side', () {
+      final older = copy(13.7, DateTime(2026, 10, 12, 13));
+      final newer = copy(41.2, DateTime(2026, 10, 12, 13, 5));
+      expect(mergedItems(newer, older).single.carbs, 41.2, reason: 'local newer');
+      expect(mergedItems(older, newer).single.carbs, 41.2, reason: 'cloud newer');
+    });
+
+    test('an edit beats a copy that was never edited (or came from 1.0.3)', () {
+      final edited = copy(41.2, DateTime(2026, 10, 12, 13));
+      final plain = copy(13.7, null);
+      expect(mergedItems(edited, plain).single.carbs, 41.2);
+      expect(mergedItems(plain, edited).single.carbs, 41.2);
+    });
+
+    test('a tie keeps the cloud copy, so both devices agree', () {
+      final t = DateTime(2026, 10, 12, 13);
+      expect(mergedItems(copy(1, t), copy(2, t)).single.carbs, 2);
+      expect(mergedItems(copy(1, null), copy(2, null)).single.carbs, 2);
+    });
+  });
 }
