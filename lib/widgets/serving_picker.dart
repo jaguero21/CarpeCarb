@@ -43,6 +43,7 @@ class ServingPicker extends StatelessWidget {
               button: true,
               label: 'Fewer servings',
               enabled: value.canDecrease,
+              onTap: value.canDecrease ? () => onChanged(value.decreased()) : null,
               excludeSemantics: true,
               child: IconButton(
                 tooltip: 'Fewer servings',
@@ -59,6 +60,7 @@ class ServingPicker extends StatelessWidget {
               button: true,
               label: 'More servings',
               enabled: value.canIncrease,
+              onTap: value.canIncrease ? () => onChanged(value.increased()) : null,
               excludeSemantics: true,
               child: IconButton(
                 tooltip: 'More servings',

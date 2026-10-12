@@ -60,4 +60,38 @@ void main() {
     expect(find.text('servings of what was looked up'), findsOneWidget);
     expect(find.text('1'), findsOneWidget);
   });
+
+  testWidgets('VoiceOver: each stepper node is a button with a working tap action', (tester) async {
+    final handle = tester.ensureSemantics();
+    final changes = await pump(tester, usda);
+
+    expect(
+      tester.getSemantics(find.bySemanticsLabel('More servings')),
+      matchesSemantics(
+        label: 'More servings',
+        isButton: true,
+        hasEnabledState: true,
+        isEnabled: true,
+        hasTapAction: true,
+      ),
+    );
+    tester.semantics.tap(find.semantics.byLabel('More servings'));
+    await tester.pump();
+    expect(changes.single.count, 1.5);
+
+    await tester.pumpWidget(const SizedBox());
+    final low = await pump(tester, usda.copyWith(count: 0.5));
+    expect(
+      tester.getSemantics(find.bySemanticsLabel('Fewer servings')),
+      matchesSemantics(
+        label: 'Fewer servings',
+        isButton: true,
+        hasEnabledState: true,
+        isEnabled: false,
+        hasTapAction: false,
+      ),
+    );
+    expect(low, isEmpty);
+    handle.dispose();
+  });
 }
