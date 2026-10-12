@@ -26,6 +26,7 @@ import 'services/sync_payload.dart';
 import 'services/sync_store.dart';
 import 'models/food_item.dart';
 import 'models/server_quota.dart';
+import 'models/serving_info.dart';
 import 'screens/settings_page.dart';
 import 'config/app_colors.dart';
 import 'config/app_theme.dart';
@@ -36,6 +37,7 @@ import 'utils/day_key.dart';
 import 'utils/input_validation.dart';
 import 'utils/user_facing_exception.dart';
 import 'widgets/food_item_card.dart';
+import 'widgets/serving_picker.dart';
 
 Future<void> main() async {
   // Ensure Flutter is initialized
@@ -892,6 +894,29 @@ class CarbTrackerHomeState extends State<CarbTrackerHome>
     await _saveData();
   }
 
+  /// Replaces a logged food with its edited version: list, total, widget,
+  /// iCloud and Apple Health all follow.
+  void _updateFoodItem(FoodItem old, FoodItem updated) {
+    final index = foodItems.indexWhere((f) => f.id == old.id);
+    // Gone already if the list changed while the dialog was open.
+    if (index == -1) return;
+    setState(() => foodItems[index] = updated);
+    _saveData();
+    _updateWidget();
+    if (_premiumService.isHealthSyncEnabled) {
+      _healthKitService.replaceFoodItem(old, updated).then(_reportHealthResult);
+    }
+    if (mounted) {
+      ScaffoldMessenger.of(context).hideCurrentSnackBar();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Updated to ${updated.carbs.toStringAsFixed(1)} g'),
+          duration: const Duration(seconds: 3),
+        ),
+      );
+    }
+  }
+
   void removeItem(int index) {
     final removedItem = foodItems[index];
     setState(() {
@@ -1033,60 +1058,101 @@ class CarbTrackerHomeState extends State<CarbTrackerHome>
   }
 
   Future<void> _showFoodDetails(FoodItem item) async {
-    final showMacros = _premiumService.isMacrosEnabled && item.hasMacros;
     final recognizers = <TapGestureRecognizer>[];
+    ServingInfo? draft = item.serving;
     await showDialog<void>(
       context: context,
       barrierColor: Colors.black.withValues(alpha: 0.3),
-      builder: (context) => AlertDialog(
-        backgroundColor:
-            Theme.of(context).colorScheme.surface.withValues(alpha: 0.92),
-        title: Text(item.name),
-        content: SingleChildScrollView(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              if (showMacros) ...[
-                _buildMacroGrid(item, context),
-                const SizedBox(height: 16),
-              ],
-              RichText(
-                text: _buildDetailsTextSpan(
-                  item.details ?? 'No details available for this item.',
-                  item.citations,
-                  baseColor: Theme.of(context).colorScheme.onSurface,
-                  recognizers: recognizers,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setDialogState) {
+          // Each build appends a recognizer per citation; drop the last build's.
+          for (final r in recognizers) {
+            r.dispose();
+          }
+          recognizers.clear();
+          final changed = draft != null && draft != item.serving;
+          final shown = changed ? item.withServing(draft!, now: DateTime.now()) : item;
+          final showMacros = _premiumService.isMacrosEnabled && shown.hasMacros;
+          return AlertDialog(
+            backgroundColor:
+                Theme.of(context).colorScheme.surface.withValues(alpha: 0.92),
+            title: Text(item.name),
+            content: SingleChildScrollView(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (draft != null) ...[
+                    ServingPicker(
+                      value: draft!,
+                      onChanged: (next) {
+                        setDialogState(() => draft = next);
+                        SemanticsService.sendAnnouncement(
+                          View.of(context),
+                          '${spokenGrams(next.nutrients().carbs)} of carbs',
+                          TextDirection.ltr,
+                        );
+                      },
+                    ),
+                    if (changed)
+                      Text(
+                        'was ${item.carbs.toStringAsFixed(1)} g',
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                              color: Theme.of(context).colorScheme.onSurfaceVariant,
+                            ),
+                      ),
+                    const SizedBox(height: 12),
+                  ],
+                  if (showMacros) ...[
+                    _buildMacroGrid(shown, context),
+                    const SizedBox(height: 16),
+                  ],
+                  RichText(
+                    text: _buildDetailsTextSpan(
+                      item.details ?? 'No details available for this item.',
+                      item.citations,
+                      baseColor: Theme.of(context).colorScheme.onSurface,
+                      recognizers: recognizers,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            actions: [
+              if (changed)
+                TextButton(
+                  onPressed: () {
+                    Navigator.pop(context);
+                    _updateFoodItem(item, shown);
+                  },
+                  child: const Text('Update'),
                 ),
+              // The same two actions the row offers by swipe, for anyone who can't
+              // swipe — with or without VoiceOver.
+              TextButton(
+                onPressed: () {
+                  Navigator.pop(context);
+                  _saveToSavedFoods(item);
+                },
+                child: const Text('Save to Food list'),
+              ),
+              TextButton(
+                onPressed: () {
+                  Navigator.pop(context);
+                  final index = foodItems.indexWhere((f) => f.id == item.id);
+                  // Gone already if the list changed while the dialog was open.
+                  if (index != -1) removeItem(index);
+                },
+                style: TextButton.styleFrom(foregroundColor: AppColors.terracotta),
+                child: const Text('Delete'),
+              ),
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('Close'),
               ),
             ],
-          ),
-        ),
-        actions: [
-          // The same two actions the row offers by swipe, for anyone who can't
-          // swipe — with or without VoiceOver.
-          TextButton(
-            onPressed: () {
-              Navigator.pop(context);
-              _saveToSavedFoods(item);
-            },
-            child: const Text('Save to Food list'),
-          ),
-          TextButton(
-            onPressed: () {
-              Navigator.pop(context);
-              final index = foodItems.indexWhere((f) => f.id == item.id);
-              // Gone already if the list changed while the dialog was open.
-              if (index != -1) removeItem(index);
-            },
-            style: TextButton.styleFrom(foregroundColor: AppColors.terracotta),
-            child: const Text('Delete'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Close'),
-          ),
-        ],
+          );
+        },
       ),
     );
     for (final r in recognizers) {
@@ -1136,62 +1202,40 @@ class CarbTrackerHomeState extends State<CarbTrackerHome>
     );
   }
 
-  /// Writes a food item to HealthKit and tracks sync status.
-  /// Only notifies the user the first time a failure occurs (when transitioning
-  /// from OK → failed) so batch writes don't stack up multiple snackbars.
-  void _writeToHealthKit(FoodItem item) {
-    _healthKitService.writeFoodItem(item).then((success) {
-      if (!mounted) return;
-      if (!success) {
-        final wasOk = !_healthKitSyncError;
-        setState(() => _healthKitSyncError = true);
-        if (wasOk) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: const Text(
-                  'Health sync failed — check permissions in Settings'),
-              backgroundColor: AppColors.terracotta.withValues(alpha: 0.9),
-              duration: const Duration(seconds: 4),
-              action: SnackBarAction(
-                label: 'Settings',
-                textColor: Colors.white,
-                onPressed: () => setState(() => _currentPage = 1),
-              ),
+  /// Tracks Apple Health sync status, telling the user only on the first
+  /// failure (OK → failed) so batch writes don't stack snackbars.
+  void _reportHealthResult(bool success) {
+    if (!mounted) return;
+    if (!success) {
+      final wasOk = !_healthKitSyncError;
+      setState(() => _healthKitSyncError = true);
+      if (wasOk) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: const Text('Health sync failed — check permissions in Settings'),
+            backgroundColor: AppColors.terracotta.withValues(alpha: 0.9),
+            duration: const Duration(seconds: 4),
+            action: SnackBarAction(
+              label: 'Settings',
+              textColor: Colors.white,
+              onPressed: () => setState(() => _currentPage = 1),
             ),
-          );
-        }
-      } else if (_healthKitSyncError) {
-        setState(() => _healthKitSyncError = false);
+          ),
+        );
       }
-    });
+    } else if (_healthKitSyncError) {
+      setState(() => _healthKitSyncError = false);
+    }
+  }
+
+  /// Writes a food item to HealthKit and tracks sync status.
+  void _writeToHealthKit(FoodItem item) {
+    _healthKitService.writeFoodItem(item).then(_reportHealthResult);
   }
 
   /// Deletes a food item from HealthKit and tracks sync status.
   void _deleteFromHealthKit(FoodItem item) {
-    _healthKitService.deleteFoodItem(item).then((success) {
-      if (!mounted) return;
-      if (!success) {
-        final wasOk = !_healthKitSyncError;
-        setState(() => _healthKitSyncError = true);
-        if (wasOk) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: const Text(
-                  'Health sync failed — check permissions in Settings'),
-              backgroundColor: AppColors.terracotta.withValues(alpha: 0.9),
-              duration: const Duration(seconds: 4),
-              action: SnackBarAction(
-                label: 'Settings',
-                textColor: Colors.white,
-                onPressed: () => setState(() => _currentPage = 1),
-              ),
-            ),
-          );
-        }
-      } else if (_healthKitSyncError) {
-        setState(() => _healthKitSyncError = false);
-      }
-    });
+    _healthKitService.deleteFoodItem(item).then(_reportHealthResult);
   }
 
   /// Pushes [payload] to iCloud and tracks sync state for the UI indicator.
@@ -1418,13 +1462,16 @@ class CarbTrackerHomeState extends State<CarbTrackerHome>
   /// needs. It is null while a row animates out, where the actions would have
   /// nothing to act on.
   Widget _buildFoodTile(FoodItem item, {int? index}) {
+    final serving = item.serving?.rowLabel();
+    final time = formatTime(item.loggedAt);
     return Semantics(
       // One stop that reads like a sentence. Without this the name, the time
       // and the number are three separate stops, and the number has no unit.
       label: foodRowLabel(
         name: item.name,
         carbs: item.carbs,
-        time: formatTime(item.loggedAt),
+        time: time,
+        serving: serving,
       ),
       hint: 'Double tap for details',
       onTap: () => _showFoodDetails(item),
@@ -1448,7 +1495,7 @@ class CarbTrackerHomeState extends State<CarbTrackerHome>
       excludeSemantics: true,
       child: FoodItemCard(
         name: item.name,
-        subtitle: formatTime(item.loggedAt),
+        subtitle: serving == null ? time : '$time · $serving',
         carbs: item.carbs,
         category: item.category,
         onLongPress: () => _showFoodDetails(item),
@@ -1563,6 +1610,7 @@ class CarbTrackerHomeState extends State<CarbTrackerHome>
       details: saved.details,
       citations: saved.citations,
       isManualEntry: saved.isManualEntry,
+      serving: saved.serving,
     );
     setState(() {
       foodItems.insert(0, item);
