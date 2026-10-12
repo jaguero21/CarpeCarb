@@ -39,20 +39,32 @@ class ServingPicker extends StatelessWidget {
           ),
         Row(
           children: [
-            IconButton(
-              tooltip: 'Fewer servings',
-              icon: const Icon(Icons.remove_circle_outline),
-              onPressed: value.canDecrease ? () => onChanged(value.decreased()) : null,
+            Semantics(
+              button: true,
+              label: 'Fewer servings',
+              enabled: value.canDecrease,
+              excludeSemantics: true,
+              child: IconButton(
+                tooltip: 'Fewer servings',
+                icon: const Icon(Icons.remove_circle_outline),
+                onPressed: value.canDecrease ? () => onChanged(value.decreased()) : null,
+              ),
             ),
             Semantics(
               value: servingsValue(value.count),
               excludeSemantics: true,
               child: Text(formatCount(value.count), style: theme.textTheme.titleMedium),
             ),
-            IconButton(
-              tooltip: 'More servings',
-              icon: const Icon(Icons.add_circle_outline),
-              onPressed: value.canIncrease ? () => onChanged(value.increased()) : null,
+            Semantics(
+              button: true,
+              label: 'More servings',
+              enabled: value.canIncrease,
+              excludeSemantics: true,
+              child: IconButton(
+                tooltip: 'More servings',
+                icon: const Icon(Icons.add_circle_outline),
+                onPressed: value.canIncrease ? () => onChanged(value.increased()) : null,
+              ),
             ),
             if (!value.isUsda) ...[
               const SizedBox(width: 4),

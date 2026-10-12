@@ -39,17 +39,18 @@ void main() {
   testWidgets('the stepper moves by ½ and labels itself for VoiceOver', (tester) async {
     final changes = await pump(tester, usda);
 
-    expect(find.byTooltip('More servings'), findsOneWidget);
-    expect(find.byTooltip('Fewer servings'), findsOneWidget);
-    await tester.tap(find.byTooltip('More servings'));
+    expect(find.bySemanticsLabel('More servings'), findsOneWidget);
+    expect(find.bySemanticsLabel('Fewer servings'), findsOneWidget);
+    expect(tester.getSemantics(find.text('1')), matchesSemantics(value: '1 serving'));
+    await tester.tap(find.bySemanticsLabel('More servings'));
     expect(changes.last.count, 1.5);
-    await tester.tap(find.byTooltip('Fewer servings'));
+    await tester.tap(find.bySemanticsLabel('Fewer servings'));
     expect(changes.last.count, 0.5);
   });
 
   testWidgets('at ½ the Fewer button is disabled', (tester) async {
     final changes = await pump(tester, usda.copyWith(count: 0.5));
-    await tester.tap(find.byTooltip('Fewer servings'));
+    await tester.tap(find.bySemanticsLabel('Fewer servings'));
     expect(changes, isEmpty);
   });
 
