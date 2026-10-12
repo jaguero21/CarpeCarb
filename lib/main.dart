@@ -900,6 +900,18 @@ class CarbTrackerHomeState extends State<CarbTrackerHome>
     final index = foodItems.indexWhere((f) => f.id == old.id);
     // Gone already if the list changed while the dialog was open.
     if (index == -1) return;
+    // An iCloud merge brought in a newer edit while the dialog was open;
+    // `updated` was built from the stale copy and would overwrite it.
+    if (foodItems[index].updatedAt != old.updatedAt) {
+      ScaffoldMessenger.of(context).hideCurrentSnackBar();
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('This food changed on another device. Open it again to edit.'),
+          duration: Duration(seconds: 4),
+        ),
+      );
+      return;
+    }
     setState(() => foodItems[index] = updated);
     _saveData();
     _updateWidget();
@@ -1093,6 +1105,10 @@ class CarbTrackerHomeState extends State<CarbTrackerHome>
                           TextDirection.ltr,
                         );
                       },
+                    ),
+                    Text(
+                      '${shown.carbs.toStringAsFixed(1)} g carbs',
+                      style: Theme.of(context).textTheme.titleSmall,
                     ),
                     if (changed)
                       Text(

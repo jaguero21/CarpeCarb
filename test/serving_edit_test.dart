@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:carb_tracker/main.dart';
+import 'package:carb_tracker/models/food_item.dart';
 import 'package:flutter/semantics.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -101,9 +102,11 @@ void main() {
     final handle = await openRow(tester, 'pho');
 
     expect(find.text('Update'), findsNothing);
+    expect(find.text('13.7 g carbs'), findsOneWidget);
     await tester.tap(find.byTooltip('More servings'));
     await tester.pumpAndSettle();
     expect(find.text('Update'), findsOneWidget);
+    expect(find.text('20.6 g carbs'), findsOneWidget);
     expect(find.text('was 13.7 g'), findsOneWidget);
 
     await tester.tap(find.text('Close'));
@@ -136,6 +139,34 @@ void main() {
     final prefs = await SharedPreferences.getInstance();
     final saved = jsonDecode(prefs.getString('food_items')!) as List;
     expect((saved.single as Map)['carbs'], 27.4);
+    handle.dispose();
+  });
+
+  testWidgets('Update does not overwrite a copy that changed meanwhile', (tester) async {
+    stubChannels();
+    seedPho();
+    final handle = await openRow(tester, 'pho');
+
+    await tester.tap(find.byTooltip('More servings'));
+    await tester.pumpAndSettle();
+    final state = tester.state<CarbTrackerHomeState>(find.byType(CarbTrackerHome));
+    final old = state.foodItems[0];
+    state.foodItems[0] = FoodItem(
+      id: old.id,
+      name: old.name,
+      carbs: 99.0,
+      loggedAt: old.loggedAt,
+      category: old.category,
+      details: old.details,
+      serving: old.serving,
+      updatedAt: DateTime(2026, 1, 1),
+    );
+    await tester.tap(find.text('Update'));
+    await tester.pumpAndSettle();
+
+    expect(state.foodItems.single.carbs, 99.0);
+    expect(find.text('This food changed on another device. Open it again to edit.'),
+        findsOneWidget);
     handle.dispose();
   });
 
