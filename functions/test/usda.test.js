@@ -65,6 +65,14 @@ function fdc({ search, details = [] }) {
   return { fetchImpl, calls };
 }
 
+test("dataTypes limits the search, for the USDA survey fallback", async () => {
+  const { fetchImpl, calls } = fdc({ search: { foods: [PHO_FNDDS] } });
+
+  await searchCandidates("Burrito bowl, chicken", "KEY", { fetchImpl, dataTypes: ["Survey (FNDDS)"] });
+
+  assert.deepEqual(calls[0].body.dataType, ["Survey (FNDDS)"]);
+});
+
 test("searchCandidates sends the query to FDC search with the four data types, the key in a header", async () => {
   const { fetchImpl, calls } = fdc({ search: { foods: [PHO_FNDDS] } });
 

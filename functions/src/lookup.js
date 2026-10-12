@@ -1,9 +1,11 @@
 /**
  * Food lookup through USDA FoodData Central, with the web lookup as fallback.
  *
- * Numbers for matched foods are calculated here from FDC data; the model only
- * splits the text and names an entry and portion. Foods FDC can't match go to
- * the existing Perplexity web lookup, labelled as such.
+ * Brand and chain foods are matched in USDA FoodData Central first. Every other
+ * food, and any brand food USDA can't match, goes through a chain: the web lookup,
+ * then USDA survey data, then the web lookup once more. A 0 g answer needs two
+ * sources to agree. Numbers from USDA are calculated here from FDC data; the
+ * model only splits the text and names an entry and portion.
  */
 
 const { HttpsError } = require("firebase-functions/v2/https");
@@ -15,7 +17,14 @@ const USDA_BUDGET_MS = 12_000;
 const TOTAL_BUDGET_MS = 25_000;
 const USDA_CALL_MS = 4_000;
 const SONAR_CALL_MS = 6_000;
+// The chain only starts a step it has time to finish: a USDA survey check needs room for its
+// search and pick plus a web retry after it; a web call needs a few seconds on its own.
+const MIN_SURVEY_MS = 8_000;
+const MIN_WEB_MS = 3_000;
+const SURVEY = ["Survey (FNDDS)"];
 const WEB_PREFIX = "Web source, not USDA. ";
+const NOT_FOUND = "Couldn't look this up. Enter the carbs yourself.";
+const NOT_IN_TIME = "Couldn't look this up in time. Enter the carbs yourself.";
 
 class WebTimeout extends Error {}
 
@@ -45,6 +54,7 @@ function usdaItem(food, { candidate, portion, count }) {
 }
 
 const labelled = (item) => ({ ...item, details: `${WEB_PREFIX}${item.details || ""}`.trim() });
+const fdcCitation = (candidate) => `https://fdc.nal.usda.gov/food-details/${candidate.fdcId}/nutrients`;
 
 const errorCode = (err) =>
   err instanceof UsdaError || err instanceof ParseError ? err.message : (err && err.name) || "error";
@@ -68,9 +78,12 @@ async function lookupFoodsUsda(sanitized, { perplexityKey, usdaKey }, options = 
   // sequential calls are capped by the time actually left, not a value frozen at call start.
   const usdaDeadline = start + USDA_BUDGET_MS;
   const billing = { billed: false };
-  const stats = { foods: 0, usda: 0, web: 0 };
+  const stats = { foods: 0, usda: 0, survey: 0, web: 0, unknown: 0, webCalls: 0 };
   const logDone = (outcome = "ok") =>
-    console.log(`[lookup] source=usda foods=${stats.foods} usda=${stats.usda} web=${stats.web} ms=${now() - start} outcome=${outcome}`);
+    console.log(
+      `[lookup] source=usda foods=${stats.foods} usda=${stats.usda} survey=${stats.survey} web=${stats.web} ` +
+      `unknown=${stats.unknown} webCalls=${stats.webCalls} ms=${now() - start} outcome=${outcome}`
+    );
 
   /** The web lookup, capped by the overall budget, with billing carried across the request. */
   async function web(text) {
@@ -120,7 +133,7 @@ async function lookupFoodsUsda(sanitized, { perplexityKey, usdaKey }, options = 
   try {
     // Only a food with a named brand or chain is reliable enough for USDA. A plain food
     // ("pizza", "an apple") gets an empty candidate list, which pickMatches skips, so it
-    // falls straight through to the web leftover below without ever being searched.
+    // goes straight to the chain below without a brand search.
     const lists = await Promise.all(foods.map((food) => {
       if (food.brand === null) return [];
       return searchCandidates(food.query, usdaKey, {
@@ -140,66 +153,109 @@ async function lookupFoodsUsda(sanitized, { perplexityKey, usdaKey }, options = 
     console.log(`[lookup] pick failed: ${errorCode(err)}`);
   }
 
-  const items = [];
-  const citations = [];
-  const leftover = [];
-  foods.forEach((food, i) => {
-    if (!matches[i]) {
-      leftover.push(food);
-      return;
-    }
-    items.push(usdaItem(food, matches[i]));
-    citations.push(`https://fdc.nal.usda.gov/food-details/${matches[i].candidate.fdcId}/nutrients`);
-  });
-  stats.usda = items.length;
-  stats.web = leftover.length;
+  // Brand foods USDA matched are done. Every other food goes through the chain on its own, so
+  // each answer maps back to the food, and the amount, the user typed.
+  const results = foods.map((food, i) =>
+    matches[i] ? { item: usdaItem(food, matches[i]), citations: [fdcCitation(matches[i].candidate)] } : null
+  );
+  stats.usda = results.filter(Boolean).length;
+  let firstWebError = null;
 
-  if (leftover.length > 0) {
-    // When nothing matched, the web gets the original text as-is - there's nothing USDA already
-    // covered, so nothing can be double-counted. Otherwise the web must never see wording for a
-    // food USDA already matched: the parse and web models can name the same food differently
-    // (e.g. "Big Mac" vs "McDonald's Big Mac"), so a same-name dedupe after the fact can't be
-    // trusted to catch it. Only the leftover foods' own words are ever sent, tried a few ways to
-    // fit sanitizeFoodInput's length cap; if none fit, those foods are reported unknown rather
-    // than risk asking the web about a food USDA already resolved.
-    let text = sanitized;
-    if (items.length > 0) {
-      const attempts = [
-        () => leftover.map((f) => f.text).join(" and "),
-        () => leftover.map((f) => f.text).join(", "),
-        () => leftover.map((f) => f.name).join(", "),
-      ];
-      text = null;
-      for (const attempt of attempts) {
-        try {
-          text = sanitizeFoodInput(attempt());
-          break;
-        } catch {
-          // try the next fallback
-        }
+  /** One food's own words for the web, or null if neither its text nor its name passes the rules. */
+  function lookupText(food) {
+    for (const t of [food.text, food.name]) {
+      try {
+        return sanitizeFoodInput(t);
+      } catch {
+        // try the next one
       }
     }
-    if (text === null) {
-      const details = "Couldn't look this up. Enter the carbs yourself.";
-      for (const food of leftover) items.push(unknown(food.name, details));
-    } else {
-      try {
-        const result = await web(text);
-        items.push(...result.items.map(labelled));
-        citations.push(...(result.citations || []));
-      } catch (err) {
-        if (!(err instanceof WebTimeout) && items.length === 0) {
-          logDone("error");
-          throw err;
-        }
-        const details = err instanceof WebTimeout
-          ? "Couldn't look this up in time. Enter the carbs yourself."
-          : "Couldn't look this up. Enter the carbs yourself.";
-        for (const food of leftover) items.push(unknown(food.name, details));
-      }
+    return null;
+  }
+
+  /** One web lookup for one food: {item, citations} | {timeout} | {error} | {none}. */
+  async function webOnce(food) {
+    const text = lookupText(food);
+    if (text === null) return { none: true };
+    if (left(TOTAL_BUDGET_MS) < MIN_WEB_MS) return { timeout: true };
+    stats.webCalls += 1;
+    try {
+      const result = await web(text);
+      const item = result.items[0];
+      return item ? { item: labelled(item), citations: result.citations || [] } : { none: true };
+    } catch (err) {
+      if (err instanceof WebTimeout) return { timeout: true };
+      if (!firstWebError) firstWebError = err;
+      console.log(`[lookup] web failed: ${errorCode(err)}`);
+      return { error: err };
     }
   }
 
+  /** The USDA survey (FNDDS) entry for a food, as {item, citations}, or null. */
+  async function surveyOnce(food) {
+    if (left(TOTAL_BUDGET_MS) < MIN_SURVEY_MS) return null;
+    // Leave room for the web retry that follows a miss.
+    const deadline = start + TOTAL_BUDGET_MS - MIN_WEB_MS;
+    try {
+      const list = await searchCandidates(food.query, usdaKey, {
+        fetchImpl, timeoutMs: USDA_CALL_MS, deadline, now, dataTypes: SURVEY,
+      });
+      if (list.length === 0) return null;
+      const [pick] = await pickMatches([food], [list], perplexityKey, {
+        fetchImpl, billing, timeoutMs: SONAR_CALL_MS, deadline, now, sleep: options.sleep,
+      });
+      const match = validatePick(pick, list, food);
+      if (!match) return null;
+      return { item: usdaItem(food, match), citations: [fdcCitation(match.candidate)] };
+    } catch (err) {
+      console.log(`[lookup] survey failed: ${errorCode(err)}`);
+      return null;
+    }
+  }
+
+  const carbsOf = (r) => (r && r.item ? r.item.carbs : undefined);
+
+  /**
+   * web → USDA survey → web again. A 0 is never returned on one source's word: USDA must
+   * confirm it (or replace it with its own number), or a second web lookup must say 0 too.
+   */
+  async function resolveFood(food) {
+    const first = await webOnce(food);
+    if (carbsOf(first) > 0) {
+      stats.web += 1;
+      return first;
+    }
+    const survey = await surveyOnce(food);
+    if (survey) {
+      stats.survey += 1;
+      return survey;
+    }
+    const second = await webOnce(food);
+    if (carbsOf(second) > 0) {
+      stats.web += 1;
+      return second;
+    }
+    if (carbsOf(first) === 0 && carbsOf(second) === 0) {
+      stats.web += 1;
+      return { item: { ...first.item, details: `${first.item.details} Checked twice: 0 g.` }, citations: first.citations };
+    }
+    stats.unknown += 1;
+    return { item: unknown(food.name, first.timeout || second.timeout ? NOT_IN_TIME : NOT_FOUND), citations: [] };
+  }
+
+  for (let i = 0; i < foods.length; i++) {
+    if (!results[i]) results[i] = await resolveFood(foods[i]);
+  }
+
+  // Nothing found anywhere because the web lookup itself failed (rate limit, auth, outage):
+  // surface that error, with its billing marker, instead of a list of unknowns.
+  if (firstWebError && results.every((r) => r.item.carbs === null)) {
+    logDone("error");
+    throw firstWebError;
+  }
+
+  const items = results.map((r) => r.item);
+  const citations = results.flatMap((r) => r.citations);
   logDone();
   return { items, citations: [...new Set(citations)] };
 }

@@ -55,9 +55,10 @@ test("parseFoods calls sonar with search off and returns the foods", async () =>
   assert.equal(bodies[0].temperature, 0);
   assert.equal(bodies[0].messages[1].content, "a bowl of pho and 10 mcdonalds nuggets");
   assert.match(bodies[0].messages[0].content, /use it with the product name/i);
-  // Scope is branded-only now: the generic USDA-style phrasing/examples for a
-  // plain food's query (never used any more) is gone from the prompt.
-  assert.doesNotMatch(bodies[0].messages[0].content, /USDA's own naming style/);
+  // A plain food's query feeds the USDA survey fallback, which only finds the
+  // ordinary entry when the phrase is in USDA's own naming style.
+  assert.match(bodies[0].messages[0].content, /USDA's own naming style/);
+  assert.match(bodies[0].messages[0].content, /"Burrito bowl, chicken"/);
   assert.equal(billing.billed, true);
 });
 
@@ -334,13 +335,11 @@ test("the pick prompt requires the named brand, keeps the no-amount and count ru
   assert.match(system, /count 2\.5/);
   assert.match(system, /fdcId is null/);
   assert.match(system, /Never give nutrition values/);
-  // Scope is branded-only now: every candidate sent already comes from a
-  // search restricted to the named brand, so the no-brand/generic-entry
-  // sentence and the plain-food NFS/variant sentence no longer apply.
-  assert.doesNotMatch(system, /choose a generic entry/i);
-  assert.doesNotMatch(system, /Hamburger \(Burger King\)/);
-  assert.doesNotMatch(system, /NFS/);
-  assert.doesNotMatch(system, /A variant the user did not mention/);
+  // Plain foods reach the pick through the USDA survey fallback, where "pizza"
+  // must not become "Dessert pizza" or "Pizza, cheese, stuffed crust".
+  assert.match(system, /plain, ordinary version/);
+  assert.match(system, /NFS/);
+  assert.match(system, /A variant the user did not mention/);
 });
 
 // ── validatePick ──

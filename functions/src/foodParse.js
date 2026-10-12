@@ -22,7 +22,9 @@ const PARSE_PROMPT =
   "('burger and fries' is 2; 'tortilla' is 1). Each element has: " +
   '"name" (string: the food as the user would recognise it, with the brand if they gave one), ' +
   '"query" (string: a FoodData Central search phrase; if the user named a brand or chain, use it with the ' +
-  "product name, e.g. \"McDonald's Chicken McNuggets\"; no quantities), " +
+  "product name, e.g. \"McDonald's Chicken McNuggets\"; otherwise use USDA's own naming style, the main food " +
+  'first, then its kind and preparation, comma-separated, e.g. "Burrito bowl, chicken", "Taco, beef", ' +
+  '"Rice, white, cooked"; no quantities), ' +
   '"amount" (string: the user\'s own words for how much, e.g. "a bowl of", "10", "2 slices"; null if they gave none), ' +
   '"text" (string: the user\'s words for this food, amount included, copied exactly), ' +
   '"brand" (string: the brand, chain, restaurant or store the user named, e.g. "McDonald\'s", "H-E-B"; ' +
@@ -37,6 +39,9 @@ const PICK_PROMPT =
   "Rules: Choose a candidate only if it is the same food. A different dish, a different form (broth for a soup, " +
   "raw for cooked) or an ingredient of it is not a match. " +
   "If the user named a brand or chain, only a candidate from that brand or chain matches; if there is none, fdcId is null. " +
+  'If the user named no brand, only the plain, ordinary version matches: prefer an entry marked NFS, "from restaurant ' +
+  'or fast food", or the most ordinary preparation. A variant the user did not mention (dessert pizza, pizza with ' +
+  "fruit, stuffed crust, veggie burger, from school lunch) is not a match; if only variants are listed, fdcId is null. " +
   "If the user gave no amount, set portionId and count to null; the server uses the standard portion. " +
   "If the user gave an amount, choose the portion and count that give it: \"10\" nuggets with a \"4 pieces\" portion is count 2.5. " +
   "If nothing matches, fdcId is null. Never give nutrition values.";
