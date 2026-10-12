@@ -33,10 +33,12 @@ public struct LoggedFood: Equatable, Sendable {
     public let calories: Double?
     public let details: String?
     public let citations: [String]
+    /// The server's serving fields as JSON; see `LookupItem.servingJSON`.
+    public let servingJSON: String?
 
     public init(name: String, carbs: Double, protein: Double? = nil, fat: Double? = nil,
                 fiber: Double? = nil, calories: Double? = nil, details: String? = nil,
-                citations: [String] = []) {
+                citations: [String] = [], servingJSON: String? = nil) {
         self.name = name
         self.carbs = carbs
         self.protein = protein
@@ -45,6 +47,7 @@ public struct LoggedFood: Equatable, Sendable {
         self.calories = calories
         self.details = details
         self.citations = citations
+        self.servingJSON = servingJSON
     }
 }
 
@@ -170,6 +173,14 @@ public struct CarbDataStore: @unchecked Sendable {
         if let calories = food.calories { entry["calories"] = calories }
         if let details = food.details { entry["details"] = details }
         if !food.citations.isEmpty { entry["citations"] = food.citations }
+        // Written at the top level, in the server's own shape, so the app reads
+        // a Siri entry exactly like a lookup item (siri_import.dart).
+        if let json = food.servingJSON,
+           let fields = try? JSONSerialization.jsonObject(with: Data(json.utf8)) as? [String: Any] {
+            for (key, value) in fields where PerplexityClient.servingKeys.contains(key) {
+                entry[key] = value
+            }
+        }
         buffer.append(entry)
         if let data = try? JSONSerialization.data(withJSONObject: buffer),
            let json = String(data: data, encoding: .utf8) {

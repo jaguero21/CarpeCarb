@@ -153,4 +153,16 @@ struct CarbDataStoreTests {
         // say "your total today is 0.0 grams" right after logging.
         #expect(total == 10)
     }
+
+    @Test func storesTheServingFieldsAtTheTopOfTheEntry() throws {
+        let serving = #"{"source":"usda","fdcId":2707124,"serving":{"portionId":"p1","count":1},"portions":[{"id":"p1","label":"1 cup","grams":245}],"per100g":{"carbs":5.6}}"#
+        store.addFood(LoggedFood(name: "pho", carbs: 13.7, servingJSON: serving), now: noon)
+        store.addFood(LoggedFood(name: "Apple", carbs: 25), now: noon)
+
+        let entries = store.siriLoggedItems()
+        #expect(entries[0]["source"] as? String == "usda")
+        #expect(entries[0]["fdcId"] as? Int == 2707124)
+        #expect(entries[0]["name"] as? String == "pho", "the food's own fields are untouched")
+        #expect(entries[1]["source"] == nil)
+    }
 }
