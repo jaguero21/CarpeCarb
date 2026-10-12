@@ -1083,7 +1083,7 @@ class CarbTrackerHomeState extends State<CarbTrackerHome>
           }
           recognizers.clear();
           final changed = draft != null && draft != item.serving;
-          final shown = changed ? item.withServing(draft!, now: DateTime.now()) : item;
+          final shown = changed ? item.withServing(draft!, now: DateTime.now().toUtc()) : item;
           final showMacros = _premiumService.isMacrosEnabled && shown.hasMacros;
           return AlertDialog(
             backgroundColor:

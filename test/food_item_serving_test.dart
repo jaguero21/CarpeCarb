@@ -47,6 +47,8 @@ void main() {
     final back = FoodItem.fromJson(edited.toJson());
     expect(back.serving, edited.serving);
     expect(back.updatedAt, edited.updatedAt);
+    expect(edited.toJson()['updatedAt'], endsWith('Z'),
+        reason: 'a UTC stamp keeps its zone, so devices compare the same moment');
   });
 
   test('a food without them writes neither key, and old JSON still loads', () {

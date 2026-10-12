@@ -133,6 +133,8 @@ void main() {
     expect(state.foodItems.single.carbs, 27.4, reason: '2 cups: 5.6 × 490 / 100 = 27.44');
     expect(state.foodItems.single.serving!.count, 2);
     expect(state.foodItems.single.updatedAt, isNotNull);
+    expect(state.foodItems.single.updatedAt!.isUtc, isTrue,
+        reason: 'a local stamp serializes without a zone and syncs wrongly');
     expect(state.totalCarbs, 27.4);
     expect(find.text('Updated to 27.4 g'), findsOneWidget);
 

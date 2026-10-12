@@ -379,6 +379,14 @@ void main() {
       expect(mergedItems(plain, edited).single.carbs, 41.2);
     });
 
+    test('compares the moment, not the wall-clock digits, across time zones', () {
+      // 13:30 at -05:00 is 18:30Z, later than 14:00Z although 13 < 14.
+      final utc = copy(1, DateTime.parse('2026-10-12T14:00:00.000Z'));
+      final offset = copy(2, DateTime.parse('2026-10-12T13:30:00.000-05:00'));
+      expect(mergedItems(utc, offset).single.carbs, 2, reason: 'local older');
+      expect(mergedItems(offset, utc).single.carbs, 2, reason: 'cloud older');
+    });
+
     test('a tie keeps the cloud copy, so both devices agree', () {
       final t = DateTime(2026, 10, 12, 13);
       expect(mergedItems(copy(1, t), copy(2, t)).single.carbs, 2);
