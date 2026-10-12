@@ -37,6 +37,18 @@ String foodRowLabel({
 String servingsValue(double count) =>
     count == 1 ? '1 serving' : '${formatCount(count)} servings';
 
+/// A logged food's serving as it should be spoken, where the row's subtitle
+/// ([ServingInfo.rowLabel]) draws "×" and "g": "2 servings of 1 cup, 480 grams".
+/// Null when there is nothing to add, like the subtitle.
+String? spokenServing(ServingInfo s) {
+  if (!s.isUsda) return s.count == 1 ? null : servingsValue(s.count);
+  final p = s.portion!;
+  final grams = spokenGrams((p.grams * s.count).roundToDouble());
+  return s.count == 1
+      ? '${p.label}, $grams'
+      : '${servingsValue(s.count)} of ${p.label}, $grams';
+}
+
 /// One option in the portion menu, with its weight: "1 cup · 120 g".
 String portionOptionLabel(String label, double grams) => '$label · ${grams.round()} g';
 

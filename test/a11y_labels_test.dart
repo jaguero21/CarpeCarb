@@ -1,3 +1,4 @@
+import 'package:carb_tracker/models/serving_info.dart';
 import 'package:carb_tracker/utils/a11y_labels.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -56,6 +57,33 @@ void main() {
 
     test('says nothing about being over when under the goal', () {
       expect(carbProgressValue(total: 99.5, goal: 100), '99.5 of 100 grams');
+    });
+  });
+
+  group('spokenServing', () {
+    ServingInfo usda(double count) => ServingInfo.usda(
+          fdcId: 1,
+          portions: const [ServingPortion(id: 'p1', label: '1 cup', grams: 240)],
+          per100g: const Nutrients(carbs: 5),
+          portionId: 'p1',
+          count: count,
+        );
+    ServingInfo web(double count) =>
+        ServingInfo.web(base: const Nutrients(carbs: 10), count: count);
+
+    test('USDA, one portion: the portion and its weight in words', () {
+      expect(spokenServing(usda(1)), '1 cup, 240 grams');
+    });
+
+    test('USDA, several: the count in words, not "×"', () {
+      expect(spokenServing(usda(2)), '2 servings of 1 cup, 480 grams');
+      expect(spokenServing(usda(2.5)), '2.5 servings of 1 cup, 600 grams');
+    });
+
+    test('web: nothing extra for one, the count for more', () {
+      expect(spokenServing(web(1)), isNull);
+      expect(spokenServing(web(2)), '2 servings');
+      expect(spokenServing(web(0.5)), '0.5 servings');
     });
   });
 

@@ -116,6 +116,17 @@ void main() {
     expect(find.textContaining('· 1 cup (245 g)'), findsOneWidget);
   });
 
+  testWidgets('the row reads its serving in words to VoiceOver', (tester) async {
+    stubChannels();
+    seedPho();
+    final handle = tester.ensureSemantics();
+    await tester.pumpWidget(const CarbTrackerApp());
+    await tester.pumpAndSettle();
+    expect(find.semantics.byLabel(RegExp(r'^pho, .*1 cup, 245 grams, logged')),
+        findsOneWidget);
+    handle.dispose();
+  });
+
   testWidgets('Update appears only after a change; Close throws the change away', (tester) async {
     stubChannels();
     seedPho();

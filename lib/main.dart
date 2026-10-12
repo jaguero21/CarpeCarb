@@ -1494,6 +1494,7 @@ class CarbTrackerHomeState extends State<CarbTrackerHome>
   /// nothing to act on.
   Widget _buildFoodTile(FoodItem item, {int? index}) {
     final serving = item.serving?.rowLabel();
+    final spokenServingLabel = item.serving == null ? null : spokenServing(item.serving!);
     final time = formatTime(item.loggedAt);
     return Semantics(
       // One stop that reads like a sentence. Without this the name, the time
@@ -1502,7 +1503,7 @@ class CarbTrackerHomeState extends State<CarbTrackerHome>
         name: item.name,
         carbs: item.carbs,
         time: time,
-        serving: serving,
+        serving: spokenServingLabel,
       ),
       hint: 'Double tap for details',
       onTap: () => _showFoodDetails(item),
