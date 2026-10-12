@@ -1,34 +1,13 @@
+import 'dart:convert';
+import 'dart:io';
+import 'package:carb_tracker/utils/input_validation.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
   group('Input Validation Tests', () {
-    // Helper function to simulate validation logic
-    String? validateFoodInput(String input) {
-      final trimmed = input.trim();
-
-      if (trimmed.isEmpty) {
-        return 'Please enter a food item';
-      }
-
-      if (trimmed.length < 2) {
-        return 'Food name must be at least 2 characters';
-      }
-
-      if (trimmed.length > 100) {
-        return 'Food name is too long (max 100 characters)';
-      }
-
-      final validPattern = RegExp(r"^[a-zA-Z0-9\s\-,.()'/&%]+$");
-      if (!validPattern.hasMatch(trimmed)) {
-        return 'Please use only letters, numbers, and common punctuation';
-      }
-
-      if (RegExp(r'^[\d\s\-,.()]+$').hasMatch(trimmed)) {
-        return 'Please enter a valid food name';
-      }
-
-      return null;
-    }
+    // The real validator, not a copy of it.
+    String? validateFoodInput(String input) =>
+        InputValidation.validateFoodInput(input);
 
     test('accepts valid food names', () {
       expect(validateFoodInput('Apple'), null);
@@ -86,6 +65,37 @@ void main() {
       expect(validateFoodInput('Salt & Pepper'), null);
       expect(validateFoodInput('Bread, Wheat'), null);
       expect(validateFoodInput('Pasta (whole wheat)'), null);
+    });
+  });
+
+  // The same cases the server runs (functions/test/foodInput.test.js), so the
+  // app and the server can't drift apart again.
+  group('shared rules with the server', () {
+    final cases = jsonDecode(
+        File('functions/test/fixtures/food-input-cases.json').readAsStringSync());
+    String inputOf(Map c) => c['repeat'] != null
+        ? (c['repeat'][0] as String) * (c['repeat'][1] as int) + ((c['suffix'] ?? '') as String)
+        : c['input'] as String;
+
+    test('valid cases pass', () {
+      for (final c in cases['valid']) {
+        expect(InputValidation.validateFoodInput(c['input']), isNull,
+            reason: jsonEncode(c['input']));
+      }
+    });
+
+    test('invalid cases are rejected with the same message', () {
+      for (final c in cases['invalid']) {
+        final input = inputOf(c);
+        expect(InputValidation.validateFoodInput(input), c['error'],
+            reason: jsonEncode(input));
+      }
+    });
+
+    test('curly quotes and the inch mark become a straight quote for the API', () {
+      expect(InputValidation.sanitizeForApi('6\u201D sub'), '6" sub');
+      expect(InputValidation.sanitizeForApi('6\u2033 sub'), '6" sub');
+      expect(InputValidation.sanitizeForApi('\u201C6 inch\u201D sub'), '"6 inch" sub');
     });
   });
 }

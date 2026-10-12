@@ -22,7 +22,9 @@ const PARSE_PROMPT =
   "('burger and fries' is 2; 'tortilla' is 1). Each element has: " +
   '"name" (string: the food as the user would recognise it, with the brand if they gave one), ' +
   '"query" (string: a FoodData Central search phrase; if the user named a brand or chain, use it with the ' +
-  "product name, e.g. \"McDonald's Chicken McNuggets\"; no quantities), " +
+  "product name, e.g. \"McDonald's Chicken McNuggets\"; otherwise use USDA's own naming style, the main food " +
+  'first, then its kind and preparation, comma-separated, e.g. "Burrito bowl, chicken", "Taco, beef", ' +
+  '"Rice, white, cooked"; no quantities), ' +
   '"amount" (string: the user\'s own words for how much, e.g. "a bowl of", "10", "2 slices"; null if they gave none), ' +
   '"text" (string: the user\'s words for this food, amount included, copied exactly), ' +
   '"brand" (string: the brand, chain, restaurant or store the user named, e.g. "McDonald\'s", "H-E-B"; ' +
@@ -37,6 +39,9 @@ const PICK_PROMPT =
   "Rules: Choose a candidate only if it is the same food. A different dish, a different form (broth for a soup, " +
   "raw for cooked) or an ingredient of it is not a match. " +
   "If the user named a brand or chain, only a candidate from that brand or chain matches; if there is none, fdcId is null. " +
+  'If the user named no brand, only the plain, ordinary version matches: prefer an entry marked NFS, "from restaurant ' +
+  'or fast food", or the most ordinary preparation. A variant the user did not mention (dessert pizza, pizza with ' +
+  "fruit, stuffed crust, veggie burger, from school lunch) is not a match; if only variants are listed, fdcId is null. " +
   "If the user gave no amount, set portionId and count to null; the server uses the standard portion. " +
   "If the user gave an amount, choose the portion and count that give it: \"10\" nuggets with a \"4 pieces\" portion is count 2.5. " +
   "If nothing matches, fdcId is null. Never give nutrition values.";
@@ -264,4 +269,49 @@ function validatePick(pick, candidates, food) {
   return { candidate, portion, count };
 }
 
-module.exports = { parseFoods, pickMatches, validatePick, ParseError };
+/** Lowercased whole words of a USDA description, for comparing an entry with its NFS sibling. */
+const wordsOf = (s) => new Set(String(s).toLowerCase().split(/[^a-z0-9]+/).filter(Boolean));
+
+/**
+ * Guards the USDA survey fallback against a component or bare version of a dish.
+ *
+ * USDA's literal entry can be a different dish: "Burrito bowl, chicken" has no rice or
+ * beans (0.27 g carbs per 100 g), and "Beef taco filling" has no shell. When the picked
+ * entry has under half the carbs of the dish's own "…, NFS" (not further specified)
+ * entry, the NFS entry is used instead. It only ever raises a count toward USDA's typical
+ * version, never lowers one, so an accurate specific entry ("Rice, fried, with chicken")
+ * is kept. An NFS entry anchors a pick only when every word before ", NFS" appears in
+ * the picked description.
+ *
+ * With no stated amount the NFS entry's standard serving is used. With one, the same
+ * serving label must exist on the NFS entry; if it doesn't, the match is dropped (null)
+ * rather than keeping the component entry or guessing a serving.
+ *
+ * @param {{candidate: object, portion: object, count: number}} match - a validated pick
+ * @param {object[]} candidates - every candidate the search returned
+ * @param {{amount: string|null}} food
+ * @returns {{candidate: object, portion: object, count: number}|null}
+ */
+function preferTypicalEntry(match, candidates, food) {
+  const picked = match.candidate;
+  const pickedWords = wordsOf(picked.description);
+  const anchors = candidates.filter((c) => {
+    if (c === picked || !/, NFS$/.test(c.description)) return false;
+    const head = wordsOf(c.description.replace(/, NFS$/, ""));
+    return head.size > 0 && [...head].every((w) => pickedWords.has(w));
+  });
+  if (anchors.length === 0) return match;
+  // The most specific anchor: the one whose name shares the most words with the pick.
+  const anchor = anchors.sort((a, b) => wordsOf(b.description).size - wordsOf(a.description).size)[0];
+  const anchorCarbs = anchor.per100g.carbs;
+  if (!(anchorCarbs > 0) || picked.per100g.carbs >= anchorCarbs / 2) return match;
+
+  if (food.amount === null) {
+    const portion = standardPortion(anchor);
+    return portion ? { candidate: anchor, portion, count: 1 } : null;
+  }
+  const portion = anchor.portions.find((p) => p.label === match.portion.label);
+  return portion ? { candidate: anchor, portion, count: match.count } : null;
+}
+
+module.exports = { parseFoods, pickMatches, validatePick, preferTypicalEntry, ParseError };

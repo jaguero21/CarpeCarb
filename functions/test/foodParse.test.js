@@ -55,9 +55,10 @@ test("parseFoods calls sonar with search off and returns the foods", async () =>
   assert.equal(bodies[0].temperature, 0);
   assert.equal(bodies[0].messages[1].content, "a bowl of pho and 10 mcdonalds nuggets");
   assert.match(bodies[0].messages[0].content, /use it with the product name/i);
-  // Scope is branded-only now: the generic USDA-style phrasing/examples for a
-  // plain food's query (never used any more) is gone from the prompt.
-  assert.doesNotMatch(bodies[0].messages[0].content, /USDA's own naming style/);
+  // A plain food's query feeds the USDA survey fallback, which only finds the
+  // ordinary entry when the phrase is in USDA's own naming style.
+  assert.match(bodies[0].messages[0].content, /USDA's own naming style/);
+  assert.match(bodies[0].messages[0].content, /"Burrito bowl, chicken"/);
   assert.equal(billing.billed, true);
 });
 
@@ -334,13 +335,11 @@ test("the pick prompt requires the named brand, keeps the no-amount and count ru
   assert.match(system, /count 2\.5/);
   assert.match(system, /fdcId is null/);
   assert.match(system, /Never give nutrition values/);
-  // Scope is branded-only now: every candidate sent already comes from a
-  // search restricted to the named brand, so the no-brand/generic-entry
-  // sentence and the plain-food NFS/variant sentence no longer apply.
-  assert.doesNotMatch(system, /choose a generic entry/i);
-  assert.doesNotMatch(system, /Hamburger \(Burger King\)/);
-  assert.doesNotMatch(system, /NFS/);
-  assert.doesNotMatch(system, /A variant the user did not mention/);
+  // Plain foods reach the pick through the USDA survey fallback, where "pizza"
+  // must not become "Dessert pizza" or "Pizza, cheese, stuffed crust".
+  assert.match(system, /plain, ordinary version/);
+  assert.match(system, /NFS/);
+  assert.match(system, /A variant the user did not mention/);
 });
 
 // ── validatePick ──
@@ -513,4 +512,62 @@ test("validatePick applies the brand check with no amount too", () => {
   const result = validatePick(pick, [branded], { amount: null, brand: "H-E-B" });
   assert.ok(result);
   assert.equal(result.count, 1);
+});
+
+// ── preferTypicalEntry: never a component or bare version of the dish ──
+
+const { preferTypicalEntry } = require("../src/foodParse");
+
+const entry = (fdcId, description, carbs, portions) => ({
+  fdcId, description, dataType: "Survey (FNDDS)", brand: null,
+  per100g: { carbs, protein: null, fat: null, fiber: null, calories: null },
+  portions: [...portions, { id: "100g", label: "100 g", grams: 100 }],
+});
+const BOWL_BARE = entry(2708560, "Burrito bowl, chicken", 0.27, [{ id: "p1", label: "1 cup", grams: 120 }, { id: "p2", label: "typical serving", grams: 225 }]);
+const BOWL_NFS = entry(2708555, "Burrito bowl, NFS", 10.58, [{ id: "p1", label: "typical serving", grams: 270 }, { id: "p2", label: "1 cup", grams: 120 }]);
+const TACO_FILLING = entry(1, "Beef taco filling: beef, cheese, tomato, taco sauce", 6.37, [{ id: "p1", label: "typical serving", grams: 153 }]);
+const TACO_NFS = entry(2, "Taco, NFS", 15.62, [{ id: "p1", label: "typical serving", grams: 105 }]);
+const FRIED_RICE = entry(3, "Rice, fried, with chicken", 27.62, [{ id: "p1", label: "typical serving", grams: 198 }]);
+const FRIED_RICE_NFS = entry(4, "Rice, fried, NFS", 32.5, [{ id: "p1", label: "typical serving", grams: 198 }]);
+const WATER_TAP = entry(5, "Water, tap", 0, [{ id: "p1", label: "typical serving", grams: 360 }]);
+const WATER_NFS = entry(6, "Water, NFS", 0, [{ id: "p1", label: "typical serving", grams: 360 }]);
+const plainFood = (amount = null) => ({ name: "x", query: "x", amount, text: "x", brand: null });
+
+test("a bare or component entry with under half the dish's NFS carbs is replaced by the NFS entry", () => {
+  const got = preferTypicalEntry({ candidate: BOWL_BARE, portion: BOWL_BARE.portions[1], count: 1 }, [BOWL_BARE, BOWL_NFS], plainFood());
+  assert.equal(got.candidate, BOWL_NFS);
+  assert.deepEqual(got.portion, BOWL_NFS.portions[0], "the NFS entry's own typical serving");
+  assert.equal(got.count, 1);
+
+  const taco = preferTypicalEntry({ candidate: TACO_FILLING, portion: TACO_FILLING.portions[0], count: 1 }, [TACO_FILLING, TACO_NFS], plainFood());
+  assert.equal(taco.candidate, TACO_NFS, "filling without the shell is not a taco");
+});
+
+test("a specific entry close to the NFS entry is kept: the user's details matter", () => {
+  const m = { candidate: FRIED_RICE, portion: FRIED_RICE.portions[0], count: 1 };
+  assert.equal(preferTypicalEntry(m, [FRIED_RICE, FRIED_RICE_NFS], plainFood()), m);
+});
+
+test("zero-carb foods and entries with no NFS sibling are left alone", () => {
+  const water = { candidate: WATER_TAP, portion: WATER_TAP.portions[0], count: 1 };
+  assert.equal(preferTypicalEntry(water, [WATER_TAP, WATER_NFS], plainFood()), water);
+  const lone = { candidate: BOWL_BARE, portion: BOWL_BARE.portions[1], count: 1 };
+  assert.equal(preferTypicalEntry(lone, [BOWL_BARE], plainFood()), lone);
+});
+
+test("an NFS entry only anchors a pick whose description has all its words", () => {
+  const unrelated = entry(7, "Sandwich, NFS", 40, [{ id: "p1", label: "typical serving", grams: 100 }]);
+  const m = { candidate: BOWL_BARE, portion: BOWL_BARE.portions[1], count: 1 };
+  assert.equal(preferTypicalEntry(m, [BOWL_BARE, unrelated], plainFood()), m);
+});
+
+test("with a stated amount, the same serving is kept on the NFS entry, or the match is dropped", () => {
+  const twoCups = { candidate: BOWL_BARE, portion: BOWL_BARE.portions[0], count: 2 };
+  const got = preferTypicalEntry(twoCups, [BOWL_BARE, BOWL_NFS], plainFood("2 cups"));
+  assert.equal(got.candidate, BOWL_NFS);
+  assert.deepEqual([got.portion.label, got.count], ["1 cup", 2]);
+
+  const noCupOnNfs = { ...BOWL_NFS, portions: [BOWL_NFS.portions[0], { id: "100g", label: "100 g", grams: 100 }] };
+  assert.equal(preferTypicalEntry(twoCups, [BOWL_BARE, noCupOnNfs], plainFood("2 cups")), null,
+    "never keep the component entry, and never guess a serving the NFS entry doesn't list");
 });

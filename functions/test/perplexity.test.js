@@ -6,8 +6,8 @@ const {
 
 const isInvalidArgument = (err) => err.code === "invalid-argument";
 
-test("sanitizeFoodInput trims and collapses whitespace", () => {
-  assert.equal(sanitizeFoodInput("  big   mac\tand fries \n"), "big mac and fries");
+test("sanitizeFoodInput trims the ends and collapses spaces", () => {
+  assert.equal(sanitizeFoodInput("  big   mac and fries \n"), "big mac and fries");
 });
 
 test("sanitizeFoodInput normalizes apostrophe and dash lookalikes", () => {

@@ -1,33 +1,7 @@
 const { HttpsError } = require("firebase-functions/v2/https");
 
-/**
- * Validates and sanitizes the raw `input` from a lookup request.
- * Mirrors InputValidation.sanitizeForApi + _normalizeUnicode in the Flutter app.
- *
- * @param {unknown} input
- * @returns {string} sanitized input
- */
-function sanitizeFoodInput(input) {
-  if (!input || typeof input !== "string") {
-    throw new HttpsError("invalid-argument", "input is required");
-  }
-  const trimmed = input.trim();
-  if (trimmed.length < 2 || trimmed.length > 100) {
-    throw new HttpsError(
-      "invalid-argument",
-      "input must be 2-100 characters"
-    );
-  }
-
-  return trimmed
-    // Normalize Unicode confusables before allow-list enforcement
-    .replace(/[\u2019\u2018\u02BC\u0060\u00B4]/g, "'") // apostrophe lookalikes
-    .replace(/[\u2013\u2014\u2212]/g, "-")              // dash lookalikes
-    .replace(/[\n\r\t]/g, " ")
-    .replace(/\0/g, "")
-    .replace(/\s+/g, " ")
-    .trim();
-}
+// Input rules live in foodInput.js, shared in spirit and in test cases with the app.
+const { sanitizeFoodInput } = require("./foodInput");
 
 /** Marks an error as one where Perplexity did not bill us, so the caller may refund the lookup. */
 function notBilled(err) {
