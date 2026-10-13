@@ -171,4 +171,31 @@ void main() {
       expect(data['tzOffsetMinutes'], -300);
     });
   });
+
+  group('serving data from the server', () {
+    test('a USDA item carries its serving; a web item gets its own values as the base', () {
+      final result = parseLookupResponse(callableResult({
+        'items': [
+          {
+            'name': 'pho', 'carbs': 41.2, 'protein': 42.7, 'details': 'USDA',
+            'source': 'usda', 'fdcId': 2707124,
+            'serving': {'portionId': 'p1', 'label': '1 cup', 'grams': 245, 'count': 3},
+            'portions': [{'id': 'p1', 'label': '1 cup', 'grams': 245}],
+            'per100g': {'carbs': 5.6, 'protein': 5.81},
+          },
+          {'name': 'Pad Thai', 'carbs': 55, 'fiber': 3, 'details': 'web', 'source': 'web'},
+          {'name': 'Old', 'carbs': 10},
+        ],
+        'citations': [],
+      }));
+
+      expect(result.items[0].serving!.isUsda, isTrue);
+      expect(result.items[0].serving!.count, 3);
+      expect(result.items[1].serving!.isUsda, isFalse);
+      expect(result.items[1].serving!.base!.carbs, 55);
+      expect(result.items[1].serving!.base!.fiber, 3);
+      expect(result.items[1].serving!.count, 1);
+      expect(result.items[2].serving, isNull, reason: 'no source: an older server response');
+    });
+  });
 }

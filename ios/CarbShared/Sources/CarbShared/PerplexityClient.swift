@@ -9,9 +9,14 @@ public struct LookupItem: Equatable, Sendable {
     public let fiber: Double?
     public let calories: Double?
     public let details: String?
+    /// The server's serving fields (source, fdcId, serving, portions, per100g)
+    /// as JSON, passed through unchanged so the app parses Siri foods with the
+    /// same code as its own lookups. Nil when the server sent none.
+    public let servingJSON: String?
 
     public init(name: String, carbs: Double, protein: Double? = nil, fat: Double? = nil,
-                fiber: Double? = nil, calories: Double? = nil, details: String? = nil) {
+                fiber: Double? = nil, calories: Double? = nil, details: String? = nil,
+                servingJSON: String? = nil) {
         self.name = name
         self.carbs = carbs
         self.protein = protein
@@ -19,6 +24,7 @@ public struct LookupItem: Equatable, Sendable {
         self.fiber = fiber
         self.calories = calories
         self.details = details
+        self.servingJSON = servingJSON
     }
 }
 
@@ -43,7 +49,7 @@ extension LoggedFood {
     public init(item: LookupItem, citations: [String]) {
         self.init(name: item.name, carbs: item.carbs, protein: item.protein, fat: item.fat,
                   fiber: item.fiber, calories: item.calories, details: item.details,
-                  citations: citations)
+                  citations: citations, servingJSON: item.servingJSON)
     }
 }
 
@@ -157,6 +163,18 @@ public struct PerplexityClient {
         ]
     }
 
+    static let servingKeys = ["source", "fdcId", "serving", "portions", "per100g"]
+
+    /// The serving fields of one response item, re-encoded as JSON.
+    static func servingJSON(from raw: [String: Any]) -> String? {
+        let fields = raw.filter { servingKeys.contains($0.key) }
+        guard !fields.isEmpty,
+              let data = try? JSONSerialization.data(withJSONObject: fields, options: [.sortedKeys]) else {
+            return nil
+        }
+        return String(data: data, encoding: .utf8)
+    }
+
     /// Parses a 200 response. Firebase callable functions wrap it in
     /// `{"result": {"items": [...], "citations": [...]}}`.
     static func parseResponse(_ data: Data) throws -> LookupResult {
@@ -184,7 +202,8 @@ public struct PerplexityClient {
                 fat: number(raw["fat"]),
                 fiber: number(raw["fiber"]),
                 calories: number(raw["calories"]),
-                details: raw["details"] as? String
+                details: raw["details"] as? String,
+                servingJSON: servingJSON(from: raw)
             ))
         }
         // Siri can't hand a food to Manual entry the way the app does, so

@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import '../models/food_item.dart';
 import '../models/server_quota.dart';
+import '../models/serving_info.dart';
 import '../utils/user_facing_exception.dart';
 
 /// Result of one getMultipleCarbCounts call.
@@ -75,19 +76,27 @@ LookupResult parseLookupResponse(String body, {DateTime? now}) {
       unknownCarbs.add(name);
       continue;
     }
+    final protein = parseOptional(item['protein']);
+    final fat = parseOptional(item['fat']);
+    final fiber = parseOptional(item['fiber']);
+    final calories = parseOptional(item['calories']);
     foods.add(FoodItem(
       name: name,
       carbs: carbs,
-      protein: parseOptional(item['protein']),
-      fat: parseOptional(item['fat']),
-      fiber: parseOptional(item['fiber']),
-      calories: parseOptional(item['calories']),
+      protein: protein,
+      fat: fat,
+      fiber: fiber,
+      calories: calories,
       details: item['details'] as String?,
       citations: citations,
       // Each food from one lookup starts in its own millisecond, so deleting
       // one from Apple Health can't take the others with it: the delete
       // matches a single millisecond (HealthKitService.deleteFoodItem).
       loggedAt: base.add(Duration(milliseconds: foods.length)),
+      serving: ServingInfo.fromServerItem(
+        item,
+        Nutrients(carbs: carbs, protein: protein, fat: fat, fiber: fiber, calories: calories),
+      ),
     ));
   }
 

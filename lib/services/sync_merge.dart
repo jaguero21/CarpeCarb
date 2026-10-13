@@ -153,16 +153,16 @@ SyncState mergeSyncState({
   var deletedItemIds = local.deletedItemIds;
   if (cloud.dayKey == local.dayKey) {
     deletedItemIds = {...local.deletedItemIds, ...cloud.deletedItemIds};
-    final seen = <String>{};
-    final merged = <FoodItem>[];
-    // Cloud first, so on a shared id the cloud's copy is the one kept. That is
-    // only safe because a logged item is never edited in place — the two
-    // copies are the same item. If editing is ever added, the newer edit has
-    // to win here instead.
+    // On a shared id the copy with the later edit wins. A copy never edited
+    // (or saved by a version that drops updatedAt) counts as oldest. Cloud is
+    // offered first, so a tie keeps the cloud's copy and both devices agree.
+    final byId = <String, FoodItem>{};
     for (final item in [...cloud.items, ...local.items]) {
       if (deletedItemIds.contains(item.id)) continue;
-      if (seen.add(item.id)) merged.add(item);
+      final kept = byId[item.id];
+      if (kept == null || _editedLater(item, kept)) byId[item.id] = item;
     }
+    final merged = byId.values.toList();
     // Newest first, with the id as a tie-break so both devices agree on the
     // order (an order that differed would push back and forth forever).
     merged.sort((a, b) {
@@ -249,6 +249,15 @@ SyncState mergeSyncState({
     favoriteChanges: changes,
     settings: takeCloud ? cloud.settings : local.settings,
   );
+}
+
+/// True when [a] was edited after [b]. Null means never edited.
+bool _editedLater(FoodItem a, FoodItem b) {
+  final ta = a.updatedAt;
+  final tb = b.updatedAt;
+  if (ta == null) return false;
+  if (tb == null) return true;
+  return ta.isAfter(tb);
 }
 
 /// What two states must agree on for a device to stop pushing. Deliberately

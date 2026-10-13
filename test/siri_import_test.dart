@@ -81,4 +81,23 @@ void main() {
     expect(SiriImport.parse(json, now, 0).today.map((i) => i.name), ['Apple']);
     expect(() => SiriImport.parse('{"name": "Apple"}', now, 0), throwsFormatException);
   });
+
+  test('a Siri entry carries the same serving fields as the app lookup', () {
+    final json = jsonEncode([
+      {
+        'name': 'pho', 'carbs': 13.7, 'loggedAt': '2026-09-18T12:00:00Z',
+        'source': 'usda', 'fdcId': 2707124,
+        'serving': {'portionId': 'p1', 'count': 1},
+        'portions': [{'id': 'p1', 'label': '1 cup', 'grams': 245}],
+        'per100g': {'carbs': 5.6},
+      },
+      {'name': 'Pad Thai', 'carbs': 55, 'loggedAt': '2026-09-18T12:01:00Z', 'source': 'web'},
+      {'name': 'Apple', 'carbs': 25, 'loggedAt': '2026-09-18T12:02:00Z'},
+    ]);
+    final today = SiriImport.parse(json, DateTime(2026, 9, 18, 14), 0).today;
+
+    expect(today[0].serving!.isUsda, isTrue);
+    expect(today[1].serving!.base!.carbs, 55);
+    expect(today[2].serving, isNull);
+  });
 }

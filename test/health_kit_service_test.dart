@@ -1,7 +1,49 @@
+import 'package:carb_tracker/models/food_item.dart';
 import 'package:carb_tracker/services/health_kit_service.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+class _RecordingHealth extends HealthKitService {
+  _RecordingHealth({required this.deleteOk, this.writeOk = true});
+  final bool deleteOk;
+  final bool writeOk;
+  final calls = <String>[];
+
+  @override
+  Future<bool> deleteFoodItem(FoodItem item) async {
+    calls.add('delete ${item.carbs}');
+    return deleteOk;
+  }
+
+  @override
+  Future<bool> writeFoodItem(FoodItem item) async {
+    calls.add('write ${item.carbs}');
+    return writeOk;
+  }
+}
+
 void main() {
+  group('replaceFoodItem', () {
+    final old = FoodItem(id: 'f', name: 'pho', carbs: 13.7, loggedAt: DateTime(2026, 10, 12, 12));
+    final updated = FoodItem(id: 'f', name: 'pho', carbs: 41.2, loggedAt: DateTime(2026, 10, 12, 12));
+
+    test('deletes the old sample, then writes the new one', () async {
+      final health = _RecordingHealth(deleteOk: true);
+      expect(await health.replaceFoodItem(old, updated), isTrue);
+      expect(health.calls, ['delete 13.7', 'write 41.2']);
+    });
+
+    test('never writes if the delete failed, so the food cannot appear twice', () async {
+      final health = _RecordingHealth(deleteOk: false);
+      expect(await health.replaceFoodItem(old, updated), isFalse);
+      expect(health.calls, ['delete 13.7']);
+    });
+
+    test('reports a failed write', () async {
+      final health = _RecordingHealth(deleteOk: true, writeOk: false);
+      expect(await health.replaceFoodItem(old, updated), isFalse);
+    });
+  });
+
   group('healthDeleteWindow', () {
     test('covers exactly the millisecond the food started in', () {
       // Half a millisecond in: the plugin passes whole milliseconds to

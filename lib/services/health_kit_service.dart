@@ -93,6 +93,14 @@ class HealthKitService {
     }
   }
 
+  /// Replaces [old]'s sample with [updated]'s, at the same logged time. The
+  /// new sample is written only if the old one was deleted, so an edited food
+  /// can never appear in Apple Health twice.
+  Future<bool> replaceFoodItem(FoodItem old, FoodItem updated) async {
+    if (!await deleteFoodItem(old)) return false;
+    return writeFoodItem(updated);
+  }
+
   /// Fetch all nutrition entries from HealthKit in the given date range.
   Future<List<HealthDataPoint>> fetchNutritionData({
     required DateTime start,

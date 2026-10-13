@@ -164,4 +164,27 @@ struct RequestPacerTests {
 
         #expect(await pacer.reserveSlot() == .zero)
     }
+
+    @Test func keepsTheServerServingFieldsAsJSON() throws {
+        let data = Data("""
+        {"result": {"items": [
+          {"name": "pho", "carbs": 41.2, "source": "usda", "fdcId": 2707124,
+           "serving": {"portionId": "p1", "count": 3},
+           "portions": [{"id": "p1", "label": "1 cup", "grams": 245}],
+           "per100g": {"carbs": 5.6}},
+          {"name": "Pad Thai", "carbs": 55, "source": "web"},
+          {"name": "Old", "carbs": 10}
+        ], "citations": []}}
+        """.utf8)
+        let items = try PerplexityClient.parseResponse(data).items
+
+        let usda = try #require(items[0].servingJSON)
+        let decoded = try #require(try JSONSerialization.jsonObject(with: Data(usda.utf8)) as? [String: Any])
+        #expect(decoded["source"] as? String == "usda")
+        #expect(decoded["fdcId"] as? Int == 2707124)
+        #expect((decoded["portions"] as? [[String: Any]])?.count == 1)
+        #expect(decoded["name"] == nil, "only the serving fields are kept")
+        #expect(items[1].servingJSON != nil)
+        #expect(items[2].servingJSON == nil)
+    }
 }

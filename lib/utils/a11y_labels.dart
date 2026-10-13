@@ -6,6 +6,8 @@
 /// "25 grams", not the "25.0g" the card draws.
 library;
 
+import '../models/serving_info.dart';
+
 /// A gram value as it should be spoken: "25 grams", "1 gram", "25.5 grams".
 String spokenGrams(double value) => '${spokenNumber(value)} '
     '${spokenNumber(value) == '1' ? 'gram' : 'grams'}';
@@ -25,8 +27,30 @@ String foodRowLabel({
   required String name,
   required double carbs,
   required String time,
+  String? serving,
 }) =>
-    '$name, ${spokenGrams(carbs)} of carbs, logged $time';
+    serving == null
+        ? '$name, ${spokenGrams(carbs)} of carbs, logged $time'
+        : '$name, ${spokenGrams(carbs)} of carbs, $serving, logged $time';
+
+/// The servings stepper's value: "1 serving", "2.5 servings".
+String servingsValue(double count) =>
+    count == 1 ? '1 serving' : '${formatCount(count)} servings';
+
+/// A logged food's serving as it should be spoken, where the row's subtitle
+/// ([ServingInfo.rowLabel]) draws "×" and "g": "2 servings of 1 cup, 480 grams".
+/// Null when there is nothing to add, like the subtitle.
+String? spokenServing(ServingInfo s) {
+  if (!s.isUsda) return s.count == 1 ? null : servingsValue(s.count);
+  final p = s.portion!;
+  final grams = spokenGrams((p.grams * s.count).roundToDouble());
+  return s.count == 1
+      ? '${p.label}, $grams'
+      : '${servingsValue(s.count)} of ${p.label}, $grams';
+}
+
+/// One option in the portion menu, with its weight: "1 cup · 120 g".
+String portionOptionLabel(String label, double grams) => '$label · ${grams.round()} g';
 
 /// The day's progress bar, which otherwise announces nothing:
 /// "45 of 100 grams", or "45 grams, no goal set" when no goal is set. Over the
