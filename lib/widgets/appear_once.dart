@@ -21,6 +21,9 @@ class _AppearOnceState extends State<AppearOnce>
     value: widget.animate ? 0 : 1,
   );
 
+  late final CurvedAnimation _curve =
+      CurvedAnimation(parent: _controller, curve: Curves.easeOut);
+
   @override
   void initState() {
     super.initState();
@@ -29,16 +32,16 @@ class _AppearOnceState extends State<AppearOnce>
 
   @override
   void dispose() {
+    _curve.dispose();
     _controller.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    final curve = CurvedAnimation(parent: _controller, curve: Curves.easeOut);
     return SizeTransition(
-      sizeFactor: curve,
-      child: FadeTransition(opacity: curve, child: widget.child),
+      sizeFactor: _curve,
+      child: FadeTransition(opacity: _curve, child: widget.child),
     );
   }
 }
