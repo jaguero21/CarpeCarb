@@ -7,26 +7,30 @@ class MealSection {
   final FoodCategory category;
   final List<FoodItem> items;
 
+  /// The id of the section's oldest food. It stays the same as newer foods
+  /// join, so it keys the section's header.
+  String get id => items.last.id;
+
   double get totalCarbs => items.fold(0.0, (sum, item) => sum + item.carbs);
 }
 
-/// Today's foods grouped by meal, for dosing per meal instead of adding a
-/// meal up by hand. The meal with the newest food comes first, and foods
-/// inside a meal are newest first. Equal times keep [items]' order.
+/// Today's foods split into eating occasions, for dosing per meal instead of
+/// adding a meal up by hand. Foods are newest first, and a new section starts
+/// whenever the meal changes from the previous food, so an afternoon snack and
+/// a bedtime snack are two sections. Equal times keep [items]' order.
 List<MealSection> mealSections(List<FoodItem> items) {
   final ordered = [for (var i = 0; i < items.length; i++) (i, items[i])]
     ..sort((a, b) {
       final byTime = b.$2.loggedAt.compareTo(a.$2.loggedAt);
       return byTime != 0 ? byTime : a.$1.compareTo(b.$1);
     });
-  // A map literal keeps insertion order, and each meal is inserted at its
-  // newest food, so the sections come out newest first.
-  final byMeal = <FoodCategory, List<FoodItem>>{};
+  final sections = <MealSection>[];
   for (final (_, item) in ordered) {
-    byMeal.putIfAbsent(item.category, () => []).add(item);
+    if (sections.isNotEmpty && sections.last.category == item.category) {
+      sections.last.items.add(item);
+    } else {
+      sections.add(MealSection(category: item.category, items: [item]));
+    }
   }
-  return [
-    for (final entry in byMeal.entries)
-      MealSection(category: entry.key, items: entry.value),
-  ];
+  return sections;
 }

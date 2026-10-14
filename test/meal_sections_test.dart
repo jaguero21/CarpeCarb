@@ -46,10 +46,53 @@ void main() {
   });
 
   test('equal times keep the input order', () {
+    // More than the 32 items a short insertion sort handles in order, so a
+    // missing tiebreak shows up as a shuffled list.
     final sections = mealSections([
-      food('a', 1, FoodCategory.snack, 5),
-      food('b', 2, FoodCategory.snack, 5),
+      for (var i = 0; i < 40; i++) food('f$i', 1, FoodCategory.snack, 5),
     ]);
-    expect(sections.single.items.map((f) => f.name), ['a', 'b']);
+    expect(sections.single.items.map((f) => f.name),
+        [for (var i = 0; i < 40; i++) 'f$i']);
+  });
+
+  test('a meal that comes back later is its own section', () {
+    final sections = mealSections([
+      food('eggs', 1, FoodCategory.breakfast, 0),
+      food('soup', 2, FoodCategory.lunch, 10),
+      food('toast', 3, FoodCategory.breakfast, 20),
+    ]);
+    expect(sections.map((s) => s.category),
+        [FoodCategory.breakfast, FoodCategory.lunch, FoodCategory.breakfast]);
+    expect(sections.map((s) => s.items.map((f) => f.name).toList()),
+        [['toast'], ['soup'], ['eggs']]);
+  });
+
+  test('an afternoon snack and a bedtime snack are two sections', () {
+    final sections = mealSections([
+      food('apple', 15, FoodCategory.snack, 0),
+      food('soup', 20, FoodCategory.lunch, 300),
+      food('cereal', 30, FoodCategory.snack, 600),
+    ]);
+    expect(sections.map((s) => s.category),
+        [FoodCategory.snack, FoodCategory.lunch, FoodCategory.snack]);
+    expect(sections.map((s) => s.totalCarbs), [30, 20, 15]);
+  });
+
+  test('foods of one meal in a row stay in one section', () {
+    final sections = mealSections([
+      food('a', 1, FoodCategory.snack, 0),
+      food('b', 2, FoodCategory.snack, 10),
+      food('c', 4, FoodCategory.snack, 20),
+    ]);
+    expect(sections.single.items.map((f) => f.name), ['c', 'b', 'a']);
+    expect(sections.single.totalCarbs, 7);
+  });
+
+  test('a section is identified by its oldest food, which stays put as newer ones join', () {
+    final first = food('first', 1, FoodCategory.lunch, 0);
+    final second = food('second', 2, FoodCategory.lunch, 10);
+    final third = food('third', 3, FoodCategory.lunch, 20);
+    expect(mealSections([first]).single.id, first.id);
+    expect(mealSections([first, second, third]).single.id, first.id);
   });
 }

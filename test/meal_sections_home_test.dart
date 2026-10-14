@@ -48,6 +48,19 @@ void main() {
         lessThan(tester.getTopLeft(find.text('Soup')).dy));
   });
 
+  testWidgets('an afternoon snack and a bedtime snack get a header each',
+      (tester) async {
+    final state = await start(tester, [
+      food('s1', 'Apple', 15.0, 'snack', 600),
+      food('l1', 'Soup', 20.0, 'lunch', 300),
+      food('s2', 'Cereal', 30.0, 'snack', 0),
+    ]);
+    expect(find.text('Snack'), findsNWidgets(2));
+    expect(find.text('30.0 g'), findsOneWidget);
+    expect(find.text('15.0 g'), findsOneWidget);
+    expect(state.foodItems, hasLength(3));
+  });
+
   testWidgets('deleting a food updates its meal; the last one removes the meal',
       (tester) async {
     final state = await start(tester, day);

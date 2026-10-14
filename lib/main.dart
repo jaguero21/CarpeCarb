@@ -2483,7 +2483,7 @@ class CarbTrackerHomeState extends State<CarbTrackerHome>
                           children: [
                             for (final section in mealSections(foodItems)) ...[
                               MealSectionHeader(
-                                key: ValueKey('meal-${section.category.name}'),
+                                key: ValueKey('meal-${section.id}'),
                                 section: section,
                               ),
                               for (final item in section.items)
