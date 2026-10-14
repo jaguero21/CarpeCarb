@@ -36,6 +36,11 @@ class StorageKeys {
   static const String isPremium = 'is_premium';
   static const String premiumPlan = 'premium_plan';
 
+  // Rating prompt (lib/services/rating_prompt.dart). Device-local: each
+  // device counts its own lookups and asks on its own schedule.
+  static const String ratingLookupCount = 'rating_lookup_count';
+  static const String ratingLastAskedAt = 'rating_last_asked_at';
+
   // Macro goals
   static const String proteinGoal = 'protein_goal';
   static const String fatGoal = 'fat_goal';

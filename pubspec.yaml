@@ -18,6 +18,8 @@ dependencies:
 
   # Open URLs in browser
   url_launcher: ^6.2.1
+  # Apple's in-app rating popup (SKStoreReviewController)
+  in_app_review: ^2.0.12
   home_widget: ^0.9.0
   keyboard_actions: ^4.2.0
   in_app_purchase: ^3.2.0
