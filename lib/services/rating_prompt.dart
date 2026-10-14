@@ -39,21 +39,26 @@ class RatingPrompt {
   @visibleForTesting
   static Future<bool> Function(Uri url) launcher = defaultLauncher;
 
-  /// Counts one lookup that logged food. Returns true when it's time to ask,
-  /// and records the ask, so the caller only has to call [requestReview].
-  Future<bool> recordLookupAndMaybeAsk(DateTime now) async {
+  /// Counts one lookup that logged food. Returns true when it's time to ask.
+  /// Never resets anything: the count only resets in [ask], so a skipped ask
+  /// leaves the count where it is and the next lookup that fits asks instead.
+  Future<bool> recordLookup(DateTime now) async {
     final prefs = await SharedPreferences.getInstance();
     final count = (prefs.getInt(StorageKeys.ratingLookupCount) ?? 0) + 1;
+    await prefs.setInt(StorageKeys.ratingLookupCount, count);
     final saved = prefs.getString(StorageKeys.ratingLastAskedAt);
     final lastAskedAt = saved == null ? null : DateTime.tryParse(saved);
-    if (!shouldAsk(count: count, lastAskedAt: lastAskedAt, now: now)) {
-      await prefs.setInt(StorageKeys.ratingLookupCount, count);
-      return false;
-    }
+    return shouldAsk(count: count, lastAskedAt: lastAskedAt, now: now);
+  }
+
+  /// Records an ask (count back to 0, time saved in UTC) and requests the
+  /// popup. Call it only when the popup is really about to be requested.
+  Future<void> ask(DateTime now) async {
+    final prefs = await SharedPreferences.getInstance();
     await prefs.setInt(StorageKeys.ratingLookupCount, 0);
     await prefs.setString(
         StorageKeys.ratingLastAskedAt, now.toUtc().toIso8601String());
-    return true;
+    await requestReview();
   }
 
   /// Asks StoreKit for the popup. Apple decides whether it appears; a failure

@@ -709,7 +709,7 @@ class CarbTrackerHomeState extends State<CarbTrackerHome>
         _writeToHealthKit(item);
       }
 
-      _maybeAskForRating();
+      unawaited(_maybeAskForRating(askNow: result.unknownCarbs.isEmpty));
     }
 
     if (result.unknownCarbs.isNotEmpty && mounted) {
@@ -717,14 +717,25 @@ class CarbTrackerHomeState extends State<CarbTrackerHome>
     }
   }
 
-  /// Counts a lookup that logged food. On the one that reaches the threshold,
-  /// asks Apple for its rating popup a moment later, so the new food is seen
-  /// first. Not awaited by the caller: logging never waits on this.
-  Future<void> _maybeAskForRating() async {
-    if (!await _ratingPrompt.recordLookupAndMaybeAsk(DateTime.now())) return;
-    await Future<void>.delayed(RatingPrompt.askDelay);
-    if (!mounted) return;
-    await _ratingPrompt.requestReview();
+  /// Counts a lookup that logged food. Once enough have been counted, asks Apple
+  /// for its rating popup a moment later — but only when the moment fits: not
+  /// when this lookup just sent a food to Manual entry, and not when the app
+  /// has left the foreground. A skipped ask isn't used up; the next lookup
+  /// that fits asks instead. Logging never waits on this, and it never fails
+  /// loudly: nothing the user did depends on it.
+  Future<void> _maybeAskForRating({required bool askNow}) async {
+    try {
+      if (!await _ratingPrompt.recordLookup(DateTime.now()) || !askNow) return;
+      await Future<void>.delayed(RatingPrompt.askDelay);
+      final lifecycle = WidgetsBinding.instance.lifecycleState;
+      if (!mounted ||
+          (lifecycle != null && lifecycle != AppLifecycleState.resumed)) {
+        return;
+      }
+      await _ratingPrompt.ask(DateTime.now());
+    } catch (e) {
+      if (kDebugMode) debugPrint('Rating prompt failed: $e');
+    }
   }
 
   /// The lookup had no reliable carb value for [names]. Rather than log a

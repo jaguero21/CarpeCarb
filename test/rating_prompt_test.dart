@@ -48,50 +48,84 @@ void main() {
     });
   });
 
-  group('RatingPrompt.recordLookupAndMaybeAsk', () {
+  group('RatingPrompt.recordLookup', () {
     setUp(() => SharedPreferences.setMockInitialValues({}));
 
-    test('counts lookups and asks on the 5th', () async {
+    test('counts lookups and says to ask on the 5th', () async {
       final prompt = RatingPrompt(review: _FakeReview());
       final answers = [
-        for (var i = 0; i < 5; i++) await prompt.recordLookupAndMaybeAsk(now),
+        for (var i = 0; i < 5; i++) await prompt.recordLookup(now),
       ];
       expect(answers, [false, false, false, false, true]);
     });
 
-    test('an ask resets the count and saves the time in UTC', () async {
+    test('keeps saying to ask until the ask is made', () async {
       final prompt = RatingPrompt(review: _FakeReview());
       for (var i = 0; i < 5; i++) {
-        await prompt.recordLookupAndMaybeAsk(now.toLocal());
+        await prompt.recordLookup(now);
       }
+      expect(await prompt.recordLookup(now), isTrue);
+      final prefs = await SharedPreferences.getInstance();
+      expect(prefs.getInt(StorageKeys.ratingLookupCount), 6);
+      expect(prefs.getString(StorageKeys.ratingLastAskedAt), isNull);
+    });
+  });
+
+  group('RatingPrompt.ask', () {
+    setUp(() => SharedPreferences.setMockInitialValues({}));
+
+    Future<void> countFive(RatingPrompt prompt, DateTime at) async {
+      for (var i = 0; i < 5; i++) {
+        await prompt.recordLookup(at);
+      }
+    }
+
+    test('resets the count, saves the time in UTC and requests the popup',
+        () async {
+      final review = _FakeReview();
+      final prompt = RatingPrompt(review: review);
+      await countFive(prompt, now);
+      await prompt.ask(now.toLocal());
+
       final prefs = await SharedPreferences.getInstance();
       expect(prefs.getInt(StorageKeys.ratingLookupCount), 0);
       final saved = prefs.getString(StorageKeys.ratingLastAskedAt)!;
       expect(saved.endsWith('Z'), isTrue);
       expect(DateTime.parse(saved), now);
+      expect(review.requests, 1);
     });
 
-    test('does not ask again the same day', () async {
+    test('five more lookups the same day do not ask again', () async {
       final prompt = RatingPrompt(review: _FakeReview());
-      for (var i = 0; i < 5; i++) {
-        await prompt.recordLookupAndMaybeAsk(now);
-      }
+      await countFive(prompt, now);
+      await prompt.ask(now);
       final again = [
-        for (var i = 0; i < 5; i++) await prompt.recordLookupAndMaybeAsk(now),
+        for (var i = 0; i < 5; i++) await prompt.recordLookup(now),
       ];
       expect(again, everyElement(isFalse));
     });
 
     test('asks again after 120 days and 5 more lookups', () async {
       final prompt = RatingPrompt(review: _FakeReview());
-      for (var i = 0; i < 5; i++) {
-        await prompt.recordLookupAndMaybeAsk(now);
-      }
+      await countFive(prompt, now);
+      await prompt.ask(now);
       final later = now.add(const Duration(days: 120));
       final answers = [
-        for (var i = 0; i < 5; i++) await prompt.recordLookupAndMaybeAsk(later),
+        for (var i = 0; i < 5; i++) await prompt.recordLookup(later),
       ];
       expect(answers, [false, false, false, false, true]);
+    });
+
+    test('lookups made during the 120-day wait still count', () async {
+      final prompt = RatingPrompt(review: _FakeReview());
+      await countFive(prompt, now);
+      await prompt.ask(now);
+      final tenDaysIn = now.add(const Duration(days: 10));
+      for (var i = 0; i < 7; i++) {
+        expect(await prompt.recordLookup(tenDaysIn), isFalse);
+      }
+      expect(await prompt.recordLookup(now.add(const Duration(days: 120))),
+          isTrue);
     });
   });
 
