@@ -609,10 +609,12 @@ class CarbTrackerHomeState extends State<CarbTrackerHome>
           _markArriving([foodItem]);
         });
       }
-      if (siri.today.isNotEmpty) await _recordRecent(siri.today);
 
       await _saveData();
       await _updateWidget();
+      // After the save: recents are a convenience, and waiting on them here
+      // would leave the inserted foods unsaved while a merge reloads the list.
+      if (siri.today.isNotEmpty) unawaited(_recordRecent(siri.today));
 
       // Items from an earlier day stay out of today's list but still go to
       // Apple Health at the time they were logged.
