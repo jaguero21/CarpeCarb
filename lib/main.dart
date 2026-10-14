@@ -18,6 +18,7 @@ import 'services/perplexity_firebase_service.dart';
 import 'services/health_kit_service.dart';
 import 'services/premium_service.dart';
 import 'services/purchase_service.dart';
+import 'services/rating_prompt.dart';
 import 'services/cloud_sync_service.dart';
 import 'services/siri_buffer_service.dart';
 import 'services/siri_import.dart';
@@ -111,6 +112,11 @@ class CarbTrackerHomeState extends State<CarbTrackerHome>
 
   @visibleForTesting
   set healthKitService(HealthKitService service) => _healthKitService = service;
+
+  RatingPrompt _ratingPrompt = RatingPrompt();
+
+  @visibleForTesting
+  set ratingPrompt(RatingPrompt prompt) => _ratingPrompt = prompt;
 
   final PremiumService _premiumService = PremiumService();
   StreamSubscription<PurchaseOutcome>? _purchaseOutcomes;
@@ -702,11 +708,23 @@ class CarbTrackerHomeState extends State<CarbTrackerHome>
       for (final item in items) {
         _writeToHealthKit(item);
       }
+
+      _maybeAskForRating();
     }
 
     if (result.unknownCarbs.isNotEmpty && mounted) {
       _handOffUnknownCarbs(result.unknownCarbs);
     }
+  }
+
+  /// Counts a lookup that logged food. On the one that reaches the threshold,
+  /// asks Apple for its rating popup a moment later, so the new food is seen
+  /// first. Not awaited by the caller: logging never waits on this.
+  Future<void> _maybeAskForRating() async {
+    if (!await _ratingPrompt.recordLookupAndMaybeAsk(DateTime.now())) return;
+    await Future<void>.delayed(RatingPrompt.askDelay);
+    if (!mounted) return;
+    await _ratingPrompt.requestReview();
   }
 
   /// The lookup had no reliable carb value for [names]. Rather than log a
