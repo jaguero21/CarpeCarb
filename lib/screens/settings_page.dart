@@ -12,6 +12,7 @@ import '../models/food_item.dart';
 import '../services/health_kit_service.dart';
 import '../services/premium_service.dart';
 import '../services/purchase_service.dart';
+import '../services/rating_prompt.dart';
 import '../services/cloud_sync_service.dart';
 import '../services/sync_store.dart';
 import '../utils/date_format.dart';
@@ -1894,6 +1895,29 @@ class _SettingsPageState extends State<SettingsPage> {
         ),
 
         const SizedBox(height: 16),
+        Center(
+          child: Semantics(
+            button: true,
+            label: 'Rate CarpeCarb on the App Store',
+            excludeSemantics: true,
+            onTap: RatingPrompt.openStoreReview,
+            child: TextButton(
+              style: TextButton.styleFrom(
+                padding: const EdgeInsets.symmetric(horizontal: 8),
+                minimumSize: Size.zero,
+                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              ),
+              onPressed: RatingPrompt.openStoreReview,
+              child: Text(
+                'Rate CarpeCarb',
+                style: TextStyle(
+                  fontSize: 13,
+                  color: colorScheme.onSurfaceVariant,
+                ),
+              ),
+            ),
+          ),
+        ),
         Center(
           child: TextButton(
             style: TextButton.styleFrom(
