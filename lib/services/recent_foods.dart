@@ -23,13 +23,17 @@ class RecentFoods {
     return [for (final entry in _fresh(_read(prefs), now)) entry.food];
   }
 
-  /// Records [items] as just logged.
-  Future<void> record(Iterable<FoodItem> items, DateTime now) async {
+  /// Records [items] as just logged. [quickAdd] marks foods the user logged
+  /// again from a known-good copy (a quick-add chip or the saved list), which
+  /// [removeSource] then leaves alone.
+  Future<void> record(Iterable<FoodItem> items, DateTime now,
+      {bool quickAdd = false}) async {
     final prefs = await SharedPreferences.getInstance();
     final entries = _read(prefs);
     for (final item in items) {
       entries.removeWhere((e) => _nameKey(e.food.name) == _nameKey(item.name));
-      entries.add(_RecentEntry(item, sourceId: item.id, lastLoggedAt: item.loggedAt));
+      entries.add(_RecentEntry(item,
+          sourceId: item.id, lastLoggedAt: item.loggedAt, quickAdd: quickAdd));
     }
     await _write(prefs, _fresh(entries, now).take(maxEntries).toList());
   }
@@ -43,10 +47,29 @@ class RecentFoods {
   }
 
   /// Forgets the entry that the logged food [foodId] created. A food deleted
-  /// the same day was probably a wrong lookup, not one to offer again.
+  /// the same day was probably a wrong lookup, not one to offer again. An
+  /// entry made by a quick-add stays: the user chose that food on purpose.
   Future<void> removeSource(String foodId) async {
     final prefs = await SharedPreferences.getInstance();
-    final entries = _read(prefs)..removeWhere((e) => e.sourceId == foodId);
+    final entries = _read(prefs)
+      ..removeWhere((e) => e.sourceId == foodId && !e.quickAdd);
+    await _write(prefs, entries);
+  }
+
+  /// Gives the entry that the logged food [updated] created its edited values
+  /// (a serving change keeps the food's id), keeping when it was logged. Does
+  /// nothing if there is no such entry; it never adds one, so a recent the
+  /// user removed doesn't come back.
+  Future<void> updateSource(FoodItem updated) async {
+    final prefs = await SharedPreferences.getInstance();
+    final entries = _read(prefs);
+    final index = entries.indexWhere((e) => e.sourceId == updated.id);
+    if (index == -1) return;
+    final old = entries[index];
+    entries[index] = _RecentEntry(updated,
+        sourceId: old.sourceId,
+        lastLoggedAt: old.lastLoggedAt,
+        quickAdd: old.quickAdd);
     await _write(prefs, entries);
   }
 
@@ -79,16 +102,24 @@ class RecentFoods {
 }
 
 class _RecentEntry {
-  _RecentEntry(this.food, {required this.sourceId, required this.lastLoggedAt});
+  _RecentEntry(this.food,
+      {required this.sourceId,
+      required this.lastLoggedAt,
+      this.quickAdd = false});
 
   final FoodItem food;
   final String sourceId;
   final DateTime lastLoggedAt;
 
+  /// Logged from a quick-add chip or the saved list. Entries stored before
+  /// this existed read as false.
+  final bool quickAdd;
+
   Map<String, dynamic> toJson() => {
         'food': food.toJson(),
         'sourceId': sourceId,
         'lastLoggedAt': lastLoggedAt.toUtc().toIso8601String(),
+        if (quickAdd) 'quickAdd': true,
       };
 
   static _RecentEntry? tryFromJson(Map<String, dynamic> json) {
@@ -100,6 +131,7 @@ class _RecentEntry {
         FoodItem.fromJson(json['food'] as Map<String, dynamic>),
         sourceId: sourceId,
         lastLoggedAt: at,
+        quickAdd: json['quickAdd'] == true,
       );
     } catch (_) {
       return null;
