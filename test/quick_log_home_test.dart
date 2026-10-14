@@ -5,10 +5,12 @@ import 'package:carb_tracker/models/food_item.dart';
 import 'package:carb_tracker/services/lookup_api.dart';
 import 'package:carb_tracker/services/recent_foods.dart';
 import 'package:carb_tracker/widgets/food_item_card.dart';
+import 'package:carb_tracker/widgets/quick_log_chips.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'helpers/chip_finders.dart';
 import 'helpers/home_harness.dart';
 
 void main() {
@@ -28,7 +30,7 @@ void main() {
 
   testWidgets('no saved or recent foods, no chip row', (tester) async {
     await start(tester);
-    expect(find.text('Quick add'), findsNothing);
+    expect(find.byType(QuickLogChips), findsNothing);
     final state = tester.state<CarbTrackerHomeState>(find.byType(CarbTrackerHome));
     expect(state.quickChips, isEmpty);
   });
@@ -37,13 +39,13 @@ void main() {
     await start(tester,
         saved: [FoodItem(name: 'Oatmeal', carbs: 27)],
         recent: [FoodItem(name: 'Pho', carbs: 41.2)]);
-    expect(tester.getTopLeft(find.text('Oatmeal · 27.0 g')).dx,
-        lessThan(tester.getTopLeft(find.text('Pho · 41.2 g')).dx));
+    expect(tester.getTopLeft(chipName('Oatmeal')).dx,
+        lessThan(tester.getTopLeft(chipName('Pho')).dx));
   });
 
   testWidgets('a chip logs the food with Undo, and Undo keeps the chip', (tester) async {
     final state = await start(tester, recent: [FoodItem(name: 'Pho', carbs: 41.2)]);
-    await tester.tap(find.text('Pho · 41.2 g'));
+    await tester.tap(chipName('Pho'));
     await tester.pumpAndSettle();
     expect(state.foodItems.single.name, 'Pho');
     expect(find.text('Logged Pho · 41.2 g'), findsOneWidget);
@@ -51,16 +53,16 @@ void main() {
     await tester.tap(find.text('Undo'));
     await tester.pumpAndSettle();
     expect(state.foodItems, isEmpty);
-    expect(find.text('Pho · 41.2 g'), findsOneWidget);
+    expect(chipName('Pho'), findsOneWidget);
   });
 
   testWidgets('Remove from recents removes the chip', (tester) async {
     await start(tester, recent: [FoodItem(name: 'Pho', carbs: 41.2)]);
-    await tester.longPress(find.text('Pho · 41.2 g'));
+    await tester.longPress(chipName('Pho'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Remove from recents'));
     await tester.pumpAndSettle();
-    expect(find.text('Pho · 41.2 g'), findsNothing);
+    expect(chipName('Pho'), findsNothing);
   });
 
   testWidgets('a lookup adds a chip; deleting that food takes it away', (tester) async {
@@ -68,11 +70,12 @@ void main() {
     await state.applyLookupResultForTest(
         LookupResult(items: [FoodItem(name: 'Mystery stew', carbs: 80)]));
     await tester.pumpAndSettle();
-    expect(find.text('Mystery stew · 80.0 g'), findsOneWidget);
+    expect(chipName('Mystery stew'), findsOneWidget);
+    expect(chipCarbs(80), findsOneWidget);
 
     state.removeItemById(state.foodItems.single.id);
     await tester.pumpAndSettle();
-    expect(find.text('Mystery stew · 80.0 g'), findsNothing);
+    expect(chipName('Mystery stew'), findsNothing);
   });
 
   testWidgets('saving a food to the Food list moves its chip to the saved group',
