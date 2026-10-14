@@ -74,6 +74,15 @@ void main() {
     expect(find.text('Breakfast'), findsNothing);
   });
 
+  testWidgets('deleting an id that is not there changes nothing and says nothing',
+      (tester) async {
+    final state = await start(tester, day);
+    state.removeItemById('nope');
+    await tester.pumpAndSettle();
+    expect(state.foodItems.map((f) => f.id), ['b1', 'l1', 'l2']);
+    expect(find.byType(SnackBar), findsNothing);
+  });
+
   testWidgets('Undo puts the food back in its meal', (tester) async {
     final state = await start(tester, day);
     state.removeItemById('l1');

@@ -3,7 +3,6 @@ import 'package:carb_tracker/models/quick_log.dart';
 import 'package:carb_tracker/widgets/quick_log_chips.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
-import 'package:flutter/semantics.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'helpers/chip_finders.dart';

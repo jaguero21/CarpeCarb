@@ -4,6 +4,7 @@ import 'package:carb_tracker/main.dart';
 import 'package:carb_tracker/models/food_item.dart';
 import 'package:carb_tracker/services/lookup_api.dart';
 import 'package:carb_tracker/services/recent_foods.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 // Only for the write-order test below; the package is already a dependency
@@ -15,7 +16,7 @@ import 'helpers/home_harness.dart';
 
 /// An in-memory store that remembers what was written, and in what order.
 class _WriteLog extends InMemorySharedPreferencesStore {
-  _WriteLog(Map<String, Object> data) : super.withData(data);
+  _WriteLog(super.data) : super.withData();
 
   final writes = <(String, Object)>[];
 
@@ -46,6 +47,20 @@ void main() {
         LookupResult(items: [FoodItem(name: 'Pho', carbs: 41.2)]));
     await tester.pumpAndSettle();
     expect(await recentNames(), ['Pho']);
+  });
+
+  testWidgets('a manual entry is remembered', (tester) async {
+    // The default 800x600 screen puts the Add button under the bottom bar.
+    tester.view.physicalSize = const Size(2400, 3600); // 800x1200 at 3x
+    addTearDown(tester.view.reset);
+    await start(tester);
+    await tester.tap(find.text('Manual'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.widgetWithText(TextField, 'Food name...'), 'Toast');
+    await tester.enterText(find.widgetWithText(TextField, 'Carbs (g)'), '14.5');
+    await tester.tap(find.text('Add'));
+    await tester.pumpAndSettle();
+    expect(await recentNames(), ['Toast']);
   });
 
   testWidgets('a saved food logged again is remembered', (tester) async {

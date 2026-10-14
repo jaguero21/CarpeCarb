@@ -2,16 +2,35 @@ import 'dart:convert';
 
 import 'package:carb_tracker/main.dart';
 import 'package:carb_tracker/models/food_item.dart';
+import 'package:carb_tracker/services/health_kit_service.dart';
 import 'package:carb_tracker/services/lookup_api.dart';
 import 'package:carb_tracker/services/recent_foods.dart';
 import 'package:carb_tracker/widgets/food_item_card.dart';
 import 'package:carb_tracker/widgets/quick_log_chips.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'helpers/chip_finders.dart';
 import 'helpers/home_harness.dart';
+
+/// Stands in for HealthKit, which the real service only talks to on iOS.
+class _Health extends HealthKitService {
+  final calls = <String>[];
+
+  @override
+  Future<bool> writeFoodItem(FoodItem item) async {
+    calls.add('write ${item.carbs}');
+    return true;
+  }
+
+  @override
+  Future<bool> deleteFoodItem(FoodItem item) async {
+    calls.add('delete ${item.carbs}');
+    return true;
+  }
+}
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -65,6 +84,58 @@ void main() {
     await tester.pumpAndSettle();
     expect(state.foodItems, isEmpty);
     expect(chipName('Pho'), findsOneWidget);
+    // The Undo is not itself a delete to undo.
+    expect(find.textContaining('removed'), findsNothing);
+  });
+
+  testWidgets('the chip Undo queues no "removed" snackbar of its own', (tester) async {
+    final state = await start(tester, recent: [FoodItem(name: 'Pho', carbs: 41.2)]);
+    state.healthKitService = _Health(); // the real one fails off-device and snacks
+    await tester.tap(chipName('Pho'));
+    await tester.pumpAndSettle();
+    // Pressing a SnackBarAction also hides the current snackbar, which would
+    // swallow a queued one, so call the action's handler directly.
+    tester.widget<SnackBarAction>(find.byType(SnackBarAction)).onPressed();
+    await tester.pumpAndSettle();
+    expect(state.foodItems, isEmpty);
+    expect(find.textContaining('removed'), findsNothing);
+  });
+
+  testWidgets('Undo takes the food back out of Health', (tester) async {
+    final state = await start(tester, recent: [FoodItem(name: 'Pho', carbs: 41.2)]);
+    final health = _Health();
+    state.healthKitService = health;
+    await tester.tap(chipName('Pho'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Undo'));
+    await tester.pumpAndSettle();
+    expect(health.calls, ['write 41.2', 'delete 41.2']);
+  });
+
+  testWidgets('chips show in Manual mode too', (tester) async {
+    await start(tester, recent: [FoodItem(name: 'Pho', carbs: 41.2)]);
+    await tester.tap(find.text('Manual'));
+    await tester.pumpAndSettle();
+    expect(find.text('Carbs (g)'), findsOneWidget); // the Manual fields are up
+    expect(chipName('Pho'), findsOneWidget);
+  });
+
+  testWidgets('a chip tap announces the log for VoiceOver', (tester) async {
+    final announcements = <String>[];
+    tester.binding.defaultBinaryMessenger.setMockDecodedMessageHandler<dynamic>(
+        SystemChannels.accessibility, (message) async {
+      final map = message as Map;
+      if (map['type'] == 'announce') {
+        announcements.add((map['data'] as Map)['message'] as String);
+      }
+      return null;
+    });
+    addTearDown(() => tester.binding.defaultBinaryMessenger
+        .setMockDecodedMessageHandler<dynamic>(SystemChannels.accessibility, null));
+    await start(tester, recent: [FoodItem(name: 'Pho', carbs: 41.2)]);
+    await tester.tap(chipName('Pho'));
+    await tester.pump();
+    expect(announcements, ['Logged Pho, 41.2 grams of carbs']);
   });
 
   testWidgets('a second tap on a chip within a second is ignored', (tester) async {
