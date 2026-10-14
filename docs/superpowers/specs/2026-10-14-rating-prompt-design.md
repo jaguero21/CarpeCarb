@@ -68,8 +68,8 @@ counters. VoiceOver reads it as a button, "Rate CarpeCarb on the App Store".
   - `bool shouldAsk({required int count, DateTime? lastAskedAt, required DateTime now})`
     is pure, with the constants `askAfterLookups = 5` and
     `minDaysBetweenAsks = 120`.
-  - The `RatingPrompt` class holds `SharedPreferences` and an `InAppReview`,
-    both injectable for tests. Its method
+  - The `RatingPrompt` class reads `SharedPreferences` (mocked in tests with
+    `setMockInitialValues`) and holds an `InAppReview`, injectable for tests. Its method
     `Future<bool> recordLookupAndMaybeAsk(DateTime now)` increments the count,
     and when `shouldAsk` is true, records the ask (resets the count and saves
     `lastAskedAt`) and returns true. The caller then waits the delay and calls
