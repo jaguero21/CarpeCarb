@@ -13,6 +13,8 @@ class StorageKeys {
   static const String lastSaveDate = 'last_save_date';
   static const String dailyCarbGoal = 'daily_carb_goal';
   static const String savedFoods = 'saved_foods';
+  // Foods logged lately, for the quick-add row. Device-local, not synced.
+  static const String recentFoods = 'recent_foods';
   static const String dailyResetHour = 'daily_reset_hour';
 
   // HomeWidget / UserDefaults keys (shared with native iOS)
