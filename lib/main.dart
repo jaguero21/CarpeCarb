@@ -18,6 +18,7 @@ import 'services/perplexity_firebase_service.dart';
 import 'services/health_kit_service.dart';
 import 'services/premium_service.dart';
 import 'services/purchase_service.dart';
+import 'services/rating_prompt.dart';
 import 'services/cloud_sync_service.dart';
 import 'services/siri_buffer_service.dart';
 import 'services/siri_import.dart';
@@ -111,6 +112,11 @@ class CarbTrackerHomeState extends State<CarbTrackerHome>
 
   @visibleForTesting
   set healthKitService(HealthKitService service) => _healthKitService = service;
+
+  RatingPrompt _ratingPrompt = RatingPrompt();
+
+  @visibleForTesting
+  set ratingPrompt(RatingPrompt prompt) => _ratingPrompt = prompt;
 
   final PremiumService _premiumService = PremiumService();
   StreamSubscription<PurchaseOutcome>? _purchaseOutcomes;
@@ -702,10 +708,33 @@ class CarbTrackerHomeState extends State<CarbTrackerHome>
       for (final item in items) {
         _writeToHealthKit(item);
       }
+
+      unawaited(_maybeAskForRating(askNow: result.unknownCarbs.isEmpty));
     }
 
     if (result.unknownCarbs.isNotEmpty && mounted) {
       _handOffUnknownCarbs(result.unknownCarbs);
+    }
+  }
+
+  /// Counts a lookup that logged food. Once enough have been counted, asks Apple
+  /// for its rating popup a moment later — but only when the moment fits: not
+  /// when this lookup just sent a food to Manual entry, and not when the app
+  /// has left the foreground. A skipped ask isn't used up; the next lookup
+  /// that fits asks instead. Logging never waits on this, and it never fails
+  /// loudly: nothing the user did depends on it.
+  Future<void> _maybeAskForRating({required bool askNow}) async {
+    try {
+      if (!await _ratingPrompt.recordLookup(DateTime.now()) || !askNow) return;
+      await Future<void>.delayed(RatingPrompt.askDelay);
+      final lifecycle = WidgetsBinding.instance.lifecycleState;
+      if (!mounted ||
+          (lifecycle != null && lifecycle != AppLifecycleState.resumed)) {
+        return;
+      }
+      await _ratingPrompt.ask(DateTime.now());
+    } catch (e) {
+      if (kDebugMode) debugPrint('Rating prompt failed: $e');
     }
   }
 
