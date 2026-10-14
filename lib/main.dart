@@ -162,13 +162,7 @@ class CarbTrackerHomeState extends State<CarbTrackerHome>
   Future<void> _reloadQuickLog() async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      final savedJson = prefs.getString(StorageKeys.savedFoods);
-      final saved = savedJson == null
-          ? <FoodItem>[]
-          : [
-              for (final f in jsonDecode(savedJson) as List)
-                FoodItem.fromJson(f as Map<String, dynamic>),
-            ];
+      final saved = parseFoodItems(prefs.getString(StorageKeys.savedFoods));
       final recent = await _recentFoods.load(DateTime.now());
       if (!mounted) return;
       setState(() => _quickChips = quickLogChips(saved: saved, recent: recent));
@@ -1065,6 +1059,8 @@ class CarbTrackerHomeState extends State<CarbTrackerHome>
           label: 'Undo',
           textColor: Colors.white,
           onPressed: () {
+            // A merge may have brought the food back while this was showing.
+            if (foodItems.any((f) => f.id == removedItem.id)) return;
             setState(() {
               foodItems.insert(index.clamp(0, foodItems.length), removedItem);
               _markArriving([removedItem]);
@@ -1571,8 +1567,8 @@ class CarbTrackerHomeState extends State<CarbTrackerHome>
   /// Called by SettingsPage after it has written the favourites and recorded
   /// the change, so the new list reaches the other device.
   Future<void> _onFavoritesChanged() async {
-    await _pushLocalState();
     await _reloadQuickLog();
+    await _pushLocalState();
   }
 
   /// One food in today's list: swipe right to save it, left to delete it.
@@ -1822,7 +1818,12 @@ class CarbTrackerHomeState extends State<CarbTrackerHome>
   }
 
   void _removeRecent(FoodItem food) {
-    _recentFoods.remove(food.name).then((_) => _reloadQuickLog());
+    unawaited(_recentFoods
+        .remove(food.name)
+        .then((_) => _reloadQuickLog())
+        .catchError((Object e) {
+      if (kDebugMode) debugPrint('Removing a recent food failed: $e');
+    }));
   }
 
   Future<void> _saveToSavedFoods(FoodItem item) async {

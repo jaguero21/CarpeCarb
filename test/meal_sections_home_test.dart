@@ -96,6 +96,21 @@ void main() {
         closeTo(tester.getRect(rowCarbs).right, 0.01));
   });
 
+  testWidgets('Undo does not add a second copy of a food a merge brought back',
+      (tester) async {
+    final state = await start(tester, day);
+    final soup = state.foodItems.firstWhere((f) => f.id == 'l1');
+    state.removeItemById('l1');
+    await tester.pumpAndSettle();
+    // An iCloud merge restores the food while the Undo snackbar is up.
+    state.foodItems.add(soup);
+    await tester.pump();
+
+    await tester.tap(find.text('Undo'));
+    await tester.pumpAndSettle();
+    expect(state.foodItems.where((f) => f.id == 'l1'), hasLength(1));
+  });
+
   testWidgets('swiping a row left deletes that food', (tester) async {
     final state = await start(tester, day);
     // The default 800x600 test screen cuts the list off below the fold.

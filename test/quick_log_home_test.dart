@@ -35,6 +35,17 @@ void main() {
     expect(state.quickChips, isEmpty);
   });
 
+  testWidgets('a corrupt saved-foods list does not take the recent chips with it',
+      (tester) async {
+    stubHomeChannels();
+    SharedPreferences.setMockInitialValues(
+        todayPrefs(const [], extra: {'saved_foods': 'not json'}));
+    await RecentFoods().record([FoodItem(name: 'Pho', carbs: 41.2)], DateTime.now());
+    await tester.pumpWidget(const CarbTrackerApp());
+    await tester.pumpAndSettle();
+    expect(chipName('Pho'), findsOneWidget);
+  });
+
   testWidgets('saved foods come before recent ones', (tester) async {
     await start(tester,
         saved: [FoodItem(name: 'Oatmeal', carbs: 27)],
