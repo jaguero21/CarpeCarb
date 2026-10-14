@@ -31,9 +31,9 @@ This is round A of the UX roadmap. Later rounds:
 
 - Today's foods are grouped by `category`. Each group renders as a header followed by its food
   rows.
-- **Header:** the meal's icon and color (`FoodCategory.icon`/`.color`), its label, and its carb
-  total, e.g. "Lunch · 52.0 g". The total is the sum of the group's `carbs`, shown with one
-  decimal like the rest of the app.
+- **Header:** the meal's icon and color (`FoodCategory.icon`/`.color`) and its label on the left,
+  and its carb total on the right, in line with the rows' carbs (e.g. "Lunch … 52.0 g"). The
+  total is the sum of the group's `carbs`, shown with one decimal like the rest of the app.
 - **Order:**
   - Sections are ordered by their newest food's `loggedAt`, newest first, so dinner is on top
     in the evening.
@@ -118,8 +118,9 @@ build. The `AnimatedList` and its `_listKey` are removed, and every place that c
   - `Future<void> record(Iterable<FoodItem> items, DateTime now)`
   - `Future<void> remove(String name)`
   - `Future<void> removeSource(String foodId)`
-- `lib/models/quick_log.dart`: `List<FoodItem> quickLogChips({required List<FoodItem> saved, required List<FoodItem> recent})`
-  is a pure function for ordering, dedupe and the cap of 8.
+- `lib/models/quick_log.dart`: `List<QuickLogChip> quickLogChips({required List<FoodItem> saved, required List<FoodItem> recent})`
+  is a pure function for ordering, dedupe and the cap of 8. `QuickLogChip` holds the food
+  and whether it is a recent (removable) one.
 - `lib/widgets/meal_section_header.dart` and `lib/widgets/quick_log_chips.dart`: the header and the
   chip row.
 - `lib/utils/a11y_labels.dart`: the header and chip labels.
