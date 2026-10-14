@@ -27,16 +27,17 @@ class MealSectionHeader extends StatelessWidget {
       ),
       excludeSemantics: true,
       child: Padding(
-        padding: const EdgeInsets.fromLTRB(4, 12, 4, 8),
+        // 16 on the sides, like the food cards below, so the total ends where
+        // their carbs do.
+        padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
         child: Row(
           children: [
             Icon(section.category.icon, size: 18, color: section.category.color),
             const SizedBox(width: 8),
-            Flexible(
+            Expanded(
               child: Text(section.category.label,
-                  style: style, overflow: TextOverflow.ellipsis),
+                  style: style, maxLines: 1, overflow: TextOverflow.ellipsis),
             ),
-            const Spacer(),
             Text('${section.totalCarbs.toStringAsFixed(1)} g', style: style),
           ],
         ),

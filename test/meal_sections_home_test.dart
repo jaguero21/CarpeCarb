@@ -1,5 +1,6 @@
 import 'package:carb_tracker/main.dart';
 import 'package:carb_tracker/widgets/food_item_card.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -83,6 +84,16 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('52.0 g'), findsOneWidget);
     expect(state.foodItems.any((f) => f.id == 'l1'), isTrue);
+  });
+
+  testWidgets('the meal total lines up with the carbs of its rows', (tester) async {
+    await start(tester, day);
+    final rowCarbs = find.descendant(
+        of: find.byType(FoodItemCard),
+        matching: find.byWidgetPredicate(
+            (w) => w is RichText && w.text.toPlainText() == '14.5g'));
+    expect(tester.getRect(find.text('14.5 g')).right,
+        closeTo(tester.getRect(rowCarbs).right, 0.01));
   });
 
   testWidgets('swiping a row left deletes that food', (tester) async {
