@@ -56,6 +56,29 @@ void main() {
     expect(chipName('Pho'), findsOneWidget);
   });
 
+  testWidgets('a second tap on a chip within a second is ignored', (tester) async {
+    final state = await start(tester, recent: [FoodItem(name: 'Pho', carbs: 41.2)]);
+    await tester.tap(chipName('Pho'));
+    await tester.tap(chipName('Pho'));
+    await tester.pump();
+    expect(state.foodItems, hasLength(1));
+
+    await tester.pump(const Duration(seconds: 1));
+    await tester.tap(chipName('Pho'));
+    await tester.pump();
+    expect(state.foodItems, hasLength(2));
+  });
+
+  testWidgets('tapping a different chip right away is not blocked', (tester) async {
+    final state = await start(tester,
+        saved: [FoodItem(name: 'Oatmeal', carbs: 27)],
+        recent: [FoodItem(name: 'Pho', carbs: 41.2)]);
+    await tester.tap(chipName('Oatmeal'));
+    await tester.tap(chipName('Pho'));
+    await tester.pump();
+    expect(state.foodItems.map((f) => f.name), unorderedEquals(['Oatmeal', 'Pho']));
+  });
+
   testWidgets('Remove from recents removes the chip', (tester) async {
     await start(tester, recent: [FoodItem(name: 'Pho', carbs: 41.2)]);
     await tester.longPress(chipName('Pho'));

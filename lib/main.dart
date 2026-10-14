@@ -1774,10 +1774,18 @@ class CarbTrackerHomeState extends State<CarbTrackerHome>
     return item;
   }
 
+  /// Chips tapped within the last second, by food name. A double tap is one
+  /// serving, not two.
+  final Map<String, Timer> _quickLogCooldowns = {};
+
   /// Logs a quick-add chip's food now, with no lookup, and offers Undo.
   void _quickLog(FoodItem food) {
+    final key = food.name.trim().toLowerCase();
+    if (_quickLogCooldowns.containsKey(key)) return;
     HapticFeedback.lightImpact();
     final item = _addSavedFood(food);
+    _quickLogCooldowns[key] = Timer(
+        const Duration(seconds: 1), () => _quickLogCooldowns.remove(key));
     SemanticsService.sendAnnouncement(
       View.of(context),
       quickLoggedAnnouncement(name: item.name, carbs: item.carbs),
@@ -2510,6 +2518,9 @@ class CarbTrackerHomeState extends State<CarbTrackerHome>
     _cloudSyncService.stopListening();
     _purchaseOutcomes?.cancel();
     _dayBoundaryTimer?.cancel();
+    for (final cooldown in _quickLogCooldowns.values) {
+      cooldown.cancel();
+    }
     _foodController.dispose();
     _carbController.dispose();
     _foodFocusNode.dispose();
