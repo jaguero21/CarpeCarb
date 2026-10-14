@@ -98,4 +98,20 @@ void main() {
     expect(foodRowLabel(name: 'Apple', carbs: 25, time: '8:30 AM'),
         foodRowLabel(name: 'Apple', carbs: 25, time: '8:30 AM', serving: null));
   });
+
+  group('meal sections and quick add', () {
+    test('meal header reads as a sentence', () {
+      expect(mealHeaderLabel(meal: 'Lunch', carbs: 52.0, foods: 2),
+          'Lunch, 52 grams of carbs, 2 foods');
+      expect(mealHeaderLabel(meal: 'Snack', carbs: 1.0, foods: 1),
+          'Snack, 1 gram of carbs, 1 food');
+    });
+
+    test('chip label and logged announcement', () {
+      expect(quickLogChipLabel(name: 'Banana', carbs: 27.0),
+          'Log Banana, 27 grams of carbs');
+      expect(quickLoggedAnnouncement(name: 'Banana', carbs: 27.5),
+          'Logged Banana, 27.5 grams of carbs');
+    });
+  });
 }
