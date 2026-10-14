@@ -21,6 +21,7 @@ import 'services/purchase_service.dart';
 import 'services/rating_prompt.dart';
 import 'services/cloud_sync_service.dart';
 import 'services/siri_buffer_service.dart';
+import 'services/recent_foods.dart';
 import 'services/siri_import.dart';
 import 'services/sync_merge.dart';
 import 'services/sync_payload.dart';
@@ -135,6 +136,17 @@ class CarbTrackerHomeState extends State<CarbTrackerHome>
   StreamSubscription<PurchaseOutcome>? _purchaseOutcomes;
   final CloudSyncService _cloudSyncService = CloudSyncService();
   final SyncStore _syncStore = SyncStore();
+  final RecentFoods _recentFoods = RecentFoods();
+
+  /// Remembers foods that just joined today, for the quick-add row. Never
+  /// fails loudly: logging doesn't depend on it.
+  Future<void> _recordRecent(Iterable<FoodItem> items) async {
+    try {
+      await _recentFoods.record(items, DateTime.now());
+    } catch (e) {
+      if (kDebugMode) debugPrint('Recording recent foods failed: $e');
+    }
+  }
 
   final SiriBufferService _siriBuffer = SiriBufferService();
   bool _isManualEntryMode = false;
@@ -568,6 +580,7 @@ class CarbTrackerHomeState extends State<CarbTrackerHome>
           _markArriving([foodItem]);
         });
       }
+      if (siri.today.isNotEmpty) await _recordRecent(siri.today);
 
       await _saveData();
       await _updateWidget();
@@ -705,6 +718,7 @@ class CarbTrackerHomeState extends State<CarbTrackerHome>
         }
         _markArriving(items);
       });
+      unawaited(_recordRecent(items));
 
       HapticFeedback.lightImpact();
 
@@ -812,6 +826,7 @@ class CarbTrackerHomeState extends State<CarbTrackerHome>
       _foodController.clear();
       _carbController.clear();
     });
+    unawaited(_recordRecent([item]));
     HapticFeedback.lightImpact();
     _saveData();
     _updateWidget();
@@ -983,6 +998,11 @@ class CarbTrackerHomeState extends State<CarbTrackerHome>
     final removedItem = foodItems[index];
     setState(() => foodItems.removeAt(index));
     _saveAfterDeleting([removedItem.id]);
+    if (forgetRecent) {
+      unawaited(_recentFoods.removeSource(removedItem.id).catchError((Object e) {
+        if (kDebugMode) debugPrint('Forgetting a recent food failed: $e');
+      }));
+    }
     _updateWidget();
     if (_premiumService.isHealthSyncEnabled) {
       _deleteFromHealthKit(removedItem);
@@ -1708,6 +1728,7 @@ class CarbTrackerHomeState extends State<CarbTrackerHome>
       _markArriving([item]);
       showingDailyTotal = false;
     });
+    unawaited(_recordRecent([item]));
     _saveData();
     _updateWidget();
     if (_premiumService.isHealthSyncEnabled) {
