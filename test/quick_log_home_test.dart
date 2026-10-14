@@ -101,6 +101,47 @@ void main() {
     expect(chipName('Mystery stew'), findsNothing);
   });
 
+  testWidgets('deleting a food that came from a chip keeps the chip', (tester) async {
+    // The default 800x600 screen puts the new row under the bottom bar.
+    tester.view.physicalSize = const Size(2400, 3600); // 800x1200 at 3x
+    addTearDown(tester.view.reset);
+    final state = await start(tester, recent: [FoodItem(name: 'Pho', carbs: 41.2)]);
+    await tester.tap(chipName('Pho'));
+    await tester.pumpAndSettle();
+    expect(state.foodItems, hasLength(1));
+
+    final phoRow = find.descendant(
+        of: find.byType(FoodItemCard), matching: find.text('Pho'));
+    await tester.drag(phoRow, const Offset(-600, 0)); // swipe left = delete
+    await tester.pumpAndSettle();
+    expect(state.foodItems, isEmpty);
+    expect(chipName('Pho'), findsOneWidget);
+  });
+
+  testWidgets('a chip follows an edit of the food it made', (tester) async {
+    final state = await start(tester);
+    await state.applyLookupResultForTest(
+        LookupResult(items: [FoodItem(name: 'Pho', carbs: 13.7)]));
+    await tester.pumpAndSettle();
+    expect(chipCarbs(13.7), findsOneWidget);
+
+    final logged = state.foodItems.single;
+    state.updateFoodItemForTest(
+        logged,
+        FoodItem(
+          id: logged.id,
+          name: logged.name,
+          carbs: 41.2,
+          loggedAt: logged.loggedAt,
+          category: logged.category,
+          updatedAt: DateTime.now(),
+        ));
+    await tester.pumpAndSettle();
+    expect(chipCarbs(41.2), findsOneWidget);
+    expect(chipCarbs(13.7), findsNothing);
+    expect(chipName('Pho'), findsOneWidget);
+  });
+
   testWidgets('saving a food to the Food list moves its chip to the saved group',
       (tester) async {
     // The default 800x600 screen puts the new row under the bottom bar.

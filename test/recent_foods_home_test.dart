@@ -103,6 +103,16 @@ void main() {
     expect(await recentNames(), ['Banana']);
   });
 
+  testWidgets('deleting a saved food that was logged again keeps it', (tester) async {
+    // Settings' saved-food list logs through the same path as a chip.
+    final state = await start(tester);
+    state.addSavedFoodForTest(FoodItem(name: 'Oatmeal', carbs: 27));
+    await tester.pumpAndSettle();
+    state.removeItemById(state.foodItems.single.id);
+    await tester.pumpAndSettle();
+    expect(await recentNames(), ['Oatmeal']);
+  });
+
   testWidgets('a deletion that is itself an undo keeps the recent food', (tester) async {
     final state = await start(tester);
     state.addSavedFoodForTest(FoodItem(name: 'Oatmeal', carbs: 27));

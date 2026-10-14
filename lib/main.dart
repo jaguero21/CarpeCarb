@@ -141,10 +141,12 @@ class CarbTrackerHomeState extends State<CarbTrackerHome>
   final RecentFoods _recentFoods = RecentFoods();
 
   /// Remembers foods that just joined today, for the quick-add row. Never
-  /// fails loudly: logging doesn't depend on it.
-  Future<void> _recordRecent(Iterable<FoodItem> items) async {
+  /// fails loudly: logging doesn't depend on it. [quickAdd] is for foods
+  /// logged again from a chip or the saved list, which deleting keeps.
+  Future<void> _recordRecent(Iterable<FoodItem> items,
+      {bool quickAdd = false}) async {
     try {
-      await _recentFoods.record(items, DateTime.now());
+      await _recentFoods.record(items, DateTime.now(), quickAdd: quickAdd);
     } catch (e) {
       if (kDebugMode) debugPrint('Recording recent foods failed: $e');
     }
@@ -940,6 +942,9 @@ class CarbTrackerHomeState extends State<CarbTrackerHome>
   Future<void> applyLookupResultForTest(LookupResult result) =>
       _applyLookupResult(result);
   void switchToSettingsForTest() => _switchToPage(1);
+  @visibleForTesting
+  void updateFoodItemForTest(FoodItem old, FoodItem updated) =>
+      _updateFoodItem(old, updated);
 
   void _resetTotal() {
     final snapshot = List<FoodItem>.from(foodItems);
@@ -998,6 +1003,14 @@ class CarbTrackerHomeState extends State<CarbTrackerHome>
       return;
     }
     setState(() => foodItems[index] = updated);
+    // The chip this food made follows the edit. Only an existing entry is
+    // updated, so a recent the user removed stays removed.
+    unawaited(_recentFoods
+        .updateSource(updated)
+        .then((_) => _reloadQuickLog())
+        .catchError((Object e) {
+      if (kDebugMode) debugPrint('Updating a recent food failed: $e');
+    }));
     _saveData();
     _updateWidget();
     if (_premiumService.isHealthSyncEnabled) {
@@ -1765,7 +1778,8 @@ class CarbTrackerHomeState extends State<CarbTrackerHome>
       _markArriving([item]);
       showingDailyTotal = false;
     });
-    unawaited(_recordRecent([item]));
+    // A chip or a saved food: known good, so deleting it keeps its chip.
+    unawaited(_recordRecent([item], quickAdd: true));
     _saveData();
     _updateWidget();
     if (_premiumService.isHealthSyncEnabled) {
