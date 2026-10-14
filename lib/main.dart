@@ -28,6 +28,7 @@ import 'services/sync_payload.dart';
 import 'services/sync_store.dart';
 import 'models/food_item.dart';
 import 'models/meal_sections.dart';
+import 'models/quick_log.dart';
 import 'models/server_quota.dart';
 import 'models/serving_info.dart';
 import 'screens/settings_page.dart';
@@ -42,6 +43,7 @@ import 'utils/user_facing_exception.dart';
 import 'widgets/appear_once.dart';
 import 'widgets/food_item_card.dart';
 import 'widgets/meal_section_header.dart';
+import 'widgets/quick_log_chips.dart';
 import 'widgets/serving_picker.dart';
 
 Future<void> main() async {
@@ -145,6 +147,31 @@ class CarbTrackerHomeState extends State<CarbTrackerHome>
       await _recentFoods.record(items, DateTime.now());
     } catch (e) {
       if (kDebugMode) debugPrint('Recording recent foods failed: $e');
+    }
+    await _reloadQuickLog();
+  }
+
+  List<QuickLogChip> _quickChips = const [];
+
+  @visibleForTesting
+  List<QuickLogChip> get quickChips => _quickChips;
+
+  /// Rebuilds the quick-add row from saved foods and recent foods.
+  Future<void> _reloadQuickLog() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final savedJson = prefs.getString(StorageKeys.savedFoods);
+      final saved = savedJson == null
+          ? <FoodItem>[]
+          : [
+              for (final f in jsonDecode(savedJson) as List)
+                FoodItem.fromJson(f as Map<String, dynamic>),
+            ];
+      final recent = await _recentFoods.load(DateTime.now());
+      if (!mounted) return;
+      setState(() => _quickChips = quickLogChips(saved: saved, recent: recent));
+    } catch (e) {
+      if (kDebugMode) debugPrint('Loading quick-add foods failed: $e');
     }
   }
 
@@ -525,6 +552,7 @@ class CarbTrackerHomeState extends State<CarbTrackerHome>
         foodItems = [];
         dailyCarbGoal = savedGoal;
       });
+      await _reloadQuickLog();
       // Siri may have logged food this morning before the app was opened.
       await _importSiriLoggedItems();
       return;
@@ -550,6 +578,7 @@ class CarbTrackerHomeState extends State<CarbTrackerHome>
       dailyCarbGoal = savedGoal;
     });
 
+    await _reloadQuickLog();
     // Pick up any food items logged via Siri while the app was closed
     await _importSiriLoggedItems();
   }
@@ -999,7 +1028,10 @@ class CarbTrackerHomeState extends State<CarbTrackerHome>
     setState(() => foodItems.removeAt(index));
     _saveAfterDeleting([removedItem.id]);
     if (forgetRecent) {
-      unawaited(_recentFoods.removeSource(removedItem.id).catchError((Object e) {
+      unawaited(_recentFoods
+          .removeSource(removedItem.id)
+          .then((_) => _reloadQuickLog())
+          .catchError((Object e) {
         if (kDebugMode) debugPrint('Forgetting a recent food failed: $e');
       }));
     }
@@ -1523,7 +1555,10 @@ class CarbTrackerHomeState extends State<CarbTrackerHome>
 
   /// Called by SettingsPage after it has written the favourites and recorded
   /// the change, so the new list reaches the other device.
-  Future<void> _onFavoritesChanged() => _pushLocalState();
+  Future<void> _onFavoritesChanged() async {
+    await _pushLocalState();
+    await _reloadQuickLog();
+  }
 
   /// One food in today's list: swipe right to save it, left to delete it.
   Widget _buildTodayRow(FoodItem item) {
@@ -1707,7 +1742,7 @@ class CarbTrackerHomeState extends State<CarbTrackerHome>
     );
   }
 
-  void _addSavedFood(FoodItem saved) {
+  FoodItem _addSavedFood(FoodItem saved) {
     // A new entry, logged now — not the stored favourite itself. Reusing it
     // would give two taps the same id and the same millisecond, and deleting
     // one would take the other out of Apple Health with it.
@@ -1734,6 +1769,36 @@ class CarbTrackerHomeState extends State<CarbTrackerHome>
     if (_premiumService.isHealthSyncEnabled) {
       _writeToHealthKit(item);
     }
+    return item;
+  }
+
+  /// Logs a quick-add chip's food now, with no lookup, and offers Undo.
+  void _quickLog(FoodItem food) {
+    HapticFeedback.lightImpact();
+    final item = _addSavedFood(food);
+    SemanticsService.sendAnnouncement(
+      View.of(context),
+      quickLoggedAnnouncement(name: item.name, carbs: item.carbs),
+      TextDirection.ltr,
+    );
+    ScaffoldMessenger.of(context).hideCurrentSnackBar();
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('Logged ${item.name} · ${item.carbs.toStringAsFixed(1)} g'),
+        duration: const Duration(seconds: 4),
+        action: SnackBarAction(
+          label: 'Undo',
+          textColor: Colors.white,
+          // A mis-tap, not a wrong food: keep it in the quick-add row.
+          onPressed: () =>
+              removeItemById(item.id, showUndo: false, forgetRecent: false),
+        ),
+      ),
+    );
+  }
+
+  void _removeRecent(FoodItem food) {
+    _recentFoods.remove(food.name).then((_) => _reloadQuickLog());
   }
 
   Future<void> _saveToSavedFoods(FoodItem item) async {
@@ -1755,6 +1820,7 @@ class CarbTrackerHomeState extends State<CarbTrackerHome>
       final encoded = jsonEncode(savedFoods.map((f) => f.toJson()).toList());
       await prefs.setString(StorageKeys.savedFoods, encoded);
       setState(() => _favoritesVersion++);
+      unawaited(_reloadQuickLog());
 
       await _syncStore.recordFavoriteAdded(item.name);
       await _pushLocalState();
@@ -2258,6 +2324,14 @@ class CarbTrackerHomeState extends State<CarbTrackerHome>
                             _addManualFood();
                           },
                           onTapOutside: (_) => _dismissKeyboard(),
+                        ),
+                      ],
+                      if (_quickChips.isNotEmpty) ...[
+                        const SizedBox(height: 12),
+                        QuickLogChips(
+                          chips: _quickChips,
+                          onLog: _quickLog,
+                          onRemoveRecent: _removeRecent,
                         ),
                       ],
                       const SizedBox(height: 16),
