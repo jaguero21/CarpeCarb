@@ -192,6 +192,10 @@ class CarbTrackerHomeState extends State<CarbTrackerHome>
   final SiriBufferService _siriBuffer = SiriBufferService();
   bool _isManualEntryMode = false;
 
+  /// The carbs field is showing because a lookup found no carbs, not because
+  /// the user asked for it; adding that food goes back to lookup.
+  bool _carbsFieldFromHandoff = false;
+
   List<FoodItem> foodItems = [];
   double get totalCarbs => foodItems.fold(0.0, (sum, item) => sum + item.carbs);
   bool isLoading = false;
@@ -857,6 +861,7 @@ class CarbTrackerHomeState extends State<CarbTrackerHome>
   void _handOffUnknownCarbs(List<String> names) {
     setState(() {
       _isManualEntryMode = true;
+      _carbsFieldFromHandoff = true;
       _foodController.text = names.first;
       _carbController.clear();
     });
@@ -915,6 +920,12 @@ class CarbTrackerHomeState extends State<CarbTrackerHome>
       showingDailyTotal = false;
       _foodController.clear();
       _carbController.clear();
+      // A food the lookup couldn't find is in; the next entry is a lookup
+      // again. A carbs field the user opened with the link stays open.
+      if (_carbsFieldFromHandoff) {
+        _isManualEntryMode = false;
+        _carbsFieldFromHandoff = false;
+      }
     });
     unawaited(_recordRecent([item]));
     HapticFeedback.lightImpact();
@@ -1563,6 +1574,7 @@ class CarbTrackerHomeState extends State<CarbTrackerHome>
   void _toggleEntryMode() {
     setState(() {
       _isManualEntryMode = !_isManualEntryMode;
+      _carbsFieldFromHandoff = false;
       if (!_isManualEntryMode) _carbController.clear();
     });
     if (_isManualEntryMode && _foodController.text.trim().isNotEmpty) {

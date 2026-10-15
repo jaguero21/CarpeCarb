@@ -10,6 +10,9 @@ void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
   Future<CarbTrackerHomeState> start(WidgetTester tester) async {
+    // The default 800x600 screen puts the Add button under the bottom bar.
+    tester.view.physicalSize = const Size(2400, 3600); // 800x1200 at 3x
+    addTearDown(tester.view.reset);
     stubHomeChannels();
     SharedPreferences.setMockInitialValues(todayPrefs(const []));
     await tester.pumpWidget(const CarbTrackerApp());
@@ -57,6 +60,40 @@ void main() {
     await tester.pumpAndSettle();
     expect(hint('Carbs (g)'), findsOneWidget);
     expect(find.text('Look it up instead'), findsOneWidget);
+  });
+
+  /// Types [carbs] into the carbs field and taps Add, as the user would.
+  Future<void> addManually(WidgetTester tester, String carbs) async {
+    await tester.enterText(hint('Carbs (g)'), carbs);
+    await tester.tap(find.text('Add'));
+    await tester.pumpAndSettle();
+  }
+
+  testWidgets('after a not-found food is added, the next entry is a lookup again',
+      (tester) async {
+    final state = await start(tester);
+    await state.applyLookupResultForTest(
+        const LookupResult(items: [], unknownCarbs: ['mystery stew']));
+    await tester.pumpAndSettle();
+    await addManually(tester, '30');
+
+    expect(state.foodItems.single.name, 'mystery stew');
+    expect(find.text('Enter carbs yourself'), findsOneWidget);
+    expect(hint('What did you eat?'), findsOneWidget);
+    expect(hint('Carbs (g)'), findsNothing);
+  });
+
+  testWidgets('the carbs field opened with the link stays open after an add',
+      (tester) async {
+    final state = await start(tester);
+    await tester.tap(find.text('Enter carbs yourself'));
+    await tester.pumpAndSettle();
+    await tester.enterText(hint('Food name'), 'Toast');
+    await addManually(tester, '14.5');
+
+    expect(state.foodItems.single.name, 'Toast');
+    expect(find.text('Look it up instead'), findsOneWidget);
+    expect(hint('Carbs (g)'), findsOneWidget);
   });
 
   testWidgets('VoiceOver reads the link as a button', (tester) async {
