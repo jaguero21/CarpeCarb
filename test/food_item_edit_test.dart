@@ -92,4 +92,40 @@ void main() {
     expect(logged.withServing(serving, now: now).carbs,
         logged.edited(serving: serving, now: now).carbs);
   });
+
+  test('withNewId changes the id and nothing else', () {
+    final serving = ServingInfo.fromServerItem({
+      'source': 'usda',
+      'fdcId': 1,
+      'serving': {'portionId': 'p1', 'label': '1 cup', 'grams': 245, 'count': 1},
+      'portions': [
+        {'id': 'p1', 'label': '1 cup', 'grams': 245},
+      ],
+      'per100g': {'carbs': 5.6, 'protein': 3.1, 'fat': 1.2, 'fiber': 0.4, 'calories': 45},
+    }, const Nutrients(carbs: 13.7))!;
+    final full = FoodItem(
+      id: 'pho-1',
+      name: 'Pho',
+      carbs: 13.7,
+      protein: 7.6,
+      fat: 2.9,
+      fiber: 1.0,
+      calories: 110,
+      details: logged.details,
+      citations: logged.citations,
+      serving: serving,
+      isManualEntry: true,
+      updatedAt: DateTime.utc(2026, 10, 14, 12),
+      loggedAt: DateTime(2026, 10, 14, 15, 10),
+      // Not the meal its time would give, so a copy can't just recompute it.
+      category: FoodCategory.drink,
+    );
+    final copy = full.withNewId();
+    expect(copy.id, isNot(full.id));
+    expect(copy.id, isNotEmpty);
+    expect(full.withNewId().id, isNot(copy.id));
+    expect(copy.toJson()..remove('id'), full.toJson()..remove('id'));
+    expect(copy.serving, same(full.serving));
+    expect(copy.citations, full.citations);
+  });
 }
