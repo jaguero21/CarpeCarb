@@ -203,6 +203,12 @@ class CarbTrackerHomeState extends State<CarbTrackerHome>
     _lookupTicker = null;
   }
 
+  /// Whether the lookup status line is still being ticked. Exposed so a test
+  /// can check the timer stops: time passing can't show it, because the status
+  /// line is hidden once the lookup ends.
+  @visibleForTesting
+  bool get lookupTickerActive => _lookupTicker?.isActive ?? false;
+
   bool showingDailyTotal = false;
   double? dailyCarbGoal;
   double? proteinGoal;
@@ -722,12 +728,14 @@ class CarbTrackerHomeState extends State<CarbTrackerHome>
       await _premiumService.applyServerQuota(ServerQuota(
           premium: false, used: e.used ?? limit, limit: limit, dayKey: e.dayKey));
       if (!mounted) return;
+      _stopLookupProgress();
       setState(() {
         isLoading = false;
       });
       _showLookupLimitDialog();
     } catch (e) {
       if (!mounted) return;
+      _stopLookupProgress();
       setState(() {
         isLoading = false;
       });
@@ -760,6 +768,7 @@ class CarbTrackerHomeState extends State<CarbTrackerHome>
   Future<void> _applyLookupResult(LookupResult result) async {
     final items = result.items;
 
+    _stopLookupProgress();
     setState(() {
       isLoading = false;
       showingDailyTotal = false;
@@ -2434,12 +2443,16 @@ class CarbTrackerHomeState extends State<CarbTrackerHome>
                                         ),
                                       ),
                                       SizedBox(width: 10),
-                                      Text(
-                                        'Looking up…',
-                                        style: TextStyle(
-                                          fontSize: 16,
-                                          fontWeight: FontWeight.w500,
-                                          color: Colors.white,
+                                      Flexible(
+                                        child: Text(
+                                          'Looking up…',
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                          style: TextStyle(
+                                            fontSize: 16,
+                                            fontWeight: FontWeight.w500,
+                                            color: Colors.white,
+                                          ),
                                         ),
                                       ),
                                     ],
