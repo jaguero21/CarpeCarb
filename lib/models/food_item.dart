@@ -134,6 +134,7 @@ class FoodItem {
       id: id,
       name: name,
       carbs: n?.carbs ?? carbs,
+      // Not `?? protein`: a new serving without a macro must clear the old one.
       protein: n == null ? protein : n.protein,
       fat: n == null ? fat : n.fat,
       fiber: n == null ? fiber : n.fiber,

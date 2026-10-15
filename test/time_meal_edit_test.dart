@@ -119,6 +119,15 @@ void main() {
     expect(find.text('Moved to Snack, 12:00 AM'), findsOneWidget);
   });
 
+  testWidgets('a moved food moves to its new section', (tester) async {
+    final now = DateTime.now();
+    if (inMidnightMinute(now)) return;
+    await openSoup(tester, now, picks: [midnight]);
+    await moveAndUpdate(tester);
+    expect(find.text('Snack'), findsOneWidget); // the header; the dialog is gone
+    expect(find.text('Lunch'), findsNothing);
+  });
+
   testWidgets('a meal picked by hand stays when the time changes', (tester) async {
     final now = DateTime.now();
     if (inMidnightMinute(now)) return;
@@ -158,6 +167,22 @@ void main() {
     expect(find.text('Pick a time from today, up to now'), findsOneWidget);
     expect(find.text('Update'), findsNothing);
     expect(state.foodItems.single.loggedAt, lunchtime(now));
+  });
+
+  testWidgets('a good time picked after a refused one clears the error', (tester) async {
+    final now = DateTime.now();
+    if (now.hour == 23 && now.minute == 59) return;
+    if (inMidnightMinute(now)) return;
+    await openSoup(tester, now,
+        picks: [const TimeOfDay(hour: 23, minute: 59), midnight]);
+    await tester.tap(find.textContaining('Time · '));
+    await tester.pumpAndSettle();
+    expect(find.text('Pick a time from today, up to now'), findsOneWidget);
+
+    await tester.tap(find.textContaining('Time · '));
+    await tester.pumpAndSettle();
+    expect(find.text('Pick a time from today, up to now'), findsNothing);
+    expect(find.text('Time · 12:00 AM'), findsOneWidget);
   });
 
   testWidgets('Health moves the entry: delete at the old time, then write at the new',

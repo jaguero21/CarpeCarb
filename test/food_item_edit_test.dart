@@ -28,6 +28,44 @@ void main() {
     expect(moved.updatedAt, now);
   });
 
+  test('a time and meal edit keeps the carbs, macros and serving', () {
+    final serving = ServingInfo.fromServerItem({
+      'source': 'usda',
+      'fdcId': 1,
+      'serving': {'portionId': 'p1', 'label': '1 cup', 'grams': 245, 'count': 1},
+      'portions': [
+        {'id': 'p1', 'label': '1 cup', 'grams': 245},
+      ],
+      'per100g': {'carbs': 5.6, 'protein': 3.1, 'fat': 1.2, 'fiber': 0.4, 'calories': 45},
+    }, const Nutrients(carbs: 13.7))!;
+    final full = FoodItem(
+      name: 'Pho',
+      carbs: 13.7,
+      protein: 7.6,
+      fat: 2.9,
+      fiber: 1.0,
+      calories: 110,
+      serving: serving,
+      isManualEntry: true,
+      updatedAt: DateTime.utc(2026, 10, 14, 12),
+      loggedAt: DateTime(2026, 10, 14, 15, 10),
+      category: FoodCategory.snack,
+    );
+    final moved = full.edited(
+        loggedAt: DateTime(2026, 10, 14, 13, 30),
+        category: FoodCategory.lunch,
+        now: now);
+    expect(moved.id, full.id);
+    expect(moved.carbs, 13.7);
+    expect(moved.protein, 7.6);
+    expect(moved.fat, 2.9);
+    expect(moved.fiber, 1.0);
+    expect(moved.calories, 110);
+    expect(moved.serving, same(serving));
+    expect(moved.isManualEntry, isTrue);
+    expect(moved.updatedAt, now);
+  });
+
   test('a manual entry stays manual', () {
     final manual = FoodItem(name: 'Toast', carbs: 15, isManualEntry: true);
     expect(manual.edited(category: FoodCategory.breakfast, now: now).isManualEntry, isTrue);

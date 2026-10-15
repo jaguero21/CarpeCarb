@@ -5,6 +5,7 @@ import 'package:carb_tracker/main.dart';
 import 'package:carb_tracker/models/food_item.dart';
 import 'package:carb_tracker/services/lookup_api.dart';
 import 'package:carb_tracker/services/perplexity_firebase_service.dart';
+import 'package:carb_tracker/services/recent_foods.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -24,7 +25,7 @@ void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
   Future<CarbTrackerHomeState> start(WidgetTester tester,
-      {List<FoodItem> saved = const []}) async {
+      {List<FoodItem> saved = const [], List<FoodItem> recent = const []}) async {
     // The default 800x600 screen puts the examples under the bottom bar.
     tester.view.physicalSize = const Size(2400, 3600); // 800x1200 at 3x
     addTearDown(tester.view.reset);
@@ -32,6 +33,7 @@ void main() {
     SharedPreferences.setMockInitialValues(todayPrefs(const [], extra: {
       'saved_foods': jsonEncode([for (final f in saved) f.toJson()]),
     }));
+    if (recent.isNotEmpty) await RecentFoods().record(recent, DateTime.now());
     await tester.pumpWidget(const CarbTrackerApp());
     await tester.pumpAndSettle();
     return tester.state<CarbTrackerHomeState>(find.byType(CarbTrackerHome));
@@ -46,6 +48,13 @@ void main() {
   testWidgets('someone with saved foods sees the usual empty line instead',
       (tester) async {
     await start(tester, saved: [FoodItem(name: 'Oatmeal', carbs: 27)]);
+    expect(find.text('Try something like:'), findsNothing);
+    expect(find.text('Type a food name above to look up its carbs.'), findsOneWidget);
+  });
+
+  testWidgets('someone with a recent food sees the usual empty line instead',
+      (tester) async {
+    await start(tester, recent: [FoodItem(name: 'Pho', carbs: 41.2)]);
     expect(find.text('Try something like:'), findsNothing);
     expect(find.text('Type a food name above to look up its carbs.'), findsOneWidget);
   });
