@@ -175,6 +175,45 @@ void main() {
     handle.dispose();
   });
 
+  testWidgets('the edit is stamped when Update is tapped, not when the dialog last drew',
+      (tester) async {
+    stubChannels();
+    seedPho();
+    final handle = await openRow(tester, 'pho');
+
+    await tester.tap(find.byTooltip('More servings'));
+    await tester.pumpAndSettle();
+    // Real time passes between the dialog's last build and the tap.
+    await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 5)));
+    final beforeTap = DateTime.now().toUtc();
+    await tester.tap(find.text('Update'));
+    await tester.pumpAndSettle();
+
+    final state = tester.state<CarbTrackerHomeState>(find.byType(CarbTrackerHome));
+    expect(state.foodItems.single.updatedAt!.isBefore(beforeTap), isFalse);
+    handle.dispose();
+  });
+
+  testWidgets('a new serving with the same carbs and time says only Updated',
+      (tester) async {
+    stubChannels();
+    seedPho();
+    await tester.pumpWidget(const CarbTrackerApp());
+    await tester.pumpAndSettle();
+    final state = tester.state<CarbTrackerHomeState>(find.byType(CarbTrackerHome));
+    final old = state.foodItems.single;
+    // 2.45 × 100 g is the same 245 g as 1 cup, so the same 13.7 g.
+    final updated = old.edited(
+        serving: old.serving!.copyWith(portionId: '100g', count: 2.45),
+        now: DateTime.now().toUtc());
+    expect(updated.carbs, old.carbs);
+
+    state.updateFoodItemForTest(old, updated);
+    await tester.pumpAndSettle();
+    expect(find.text('Updated'), findsOneWidget);
+    expect(find.textContaining('Moved to'), findsNothing);
+  });
+
   testWidgets('Update does not overwrite a copy that changed meanwhile', (tester) async {
     stubChannels();
     seedPho();

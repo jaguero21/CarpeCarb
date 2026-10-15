@@ -41,12 +41,16 @@ import 'utils/date_format.dart';
 import 'utils/day_key.dart';
 import 'utils/input_validation.dart';
 import 'utils/lookup_progress.dart';
+import 'utils/picked_time.dart';
 import 'utils/user_facing_exception.dart';
 import 'widgets/appear_once.dart';
+import 'widgets/entry_mode_link.dart';
+import 'widgets/example_prompts.dart';
 import 'widgets/food_item_card.dart';
 import 'widgets/meal_section_header.dart';
 import 'widgets/quick_log_chips.dart';
 import 'widgets/serving_picker.dart';
+import 'widgets/time_meal_row.dart';
 
 Future<void> main() async {
   // Ensure Flutter is initialized
@@ -161,6 +165,10 @@ class CarbTrackerHomeState extends State<CarbTrackerHome>
 
   List<QuickLogChip> _quickChips = const [];
 
+  /// Whether the quick-add row has loaded at least once. The examples wait
+  /// for it, so someone with saved foods never sees them flash at launch.
+  bool _quickLogLoaded = false;
+
   @visibleForTesting
   List<QuickLogChip> get quickChips => _quickChips;
 
@@ -171,14 +179,22 @@ class CarbTrackerHomeState extends State<CarbTrackerHome>
       final saved = parseFoodItems(prefs.getString(StorageKeys.savedFoods));
       final recent = await _recentFoods.load(DateTime.now());
       if (!mounted) return;
-      setState(() => _quickChips = quickLogChips(saved: saved, recent: recent));
+      setState(() {
+        _quickChips = quickLogChips(saved: saved, recent: recent);
+        _quickLogLoaded = true;
+      });
     } catch (e) {
       if (kDebugMode) debugPrint('Loading quick-add foods failed: $e');
+      if (mounted) setState(() => _quickLogLoaded = true);
     }
   }
 
   final SiriBufferService _siriBuffer = SiriBufferService();
   bool _isManualEntryMode = false;
+
+  /// The carbs field is showing because a lookup found no carbs, not because
+  /// the user asked for it; adding that food goes back to lookup.
+  bool _carbsFieldFromHandoff = false;
 
   List<FoodItem> foodItems = [];
   double get totalCarbs => foodItems.fold(0.0, (sum, item) => sum + item.carbs);
@@ -845,6 +861,7 @@ class CarbTrackerHomeState extends State<CarbTrackerHome>
   void _handOffUnknownCarbs(List<String> names) {
     setState(() {
       _isManualEntryMode = true;
+      _carbsFieldFromHandoff = true;
       _foodController.text = names.first;
       _carbController.clear();
     });
@@ -903,6 +920,12 @@ class CarbTrackerHomeState extends State<CarbTrackerHome>
       showingDailyTotal = false;
       _foodController.clear();
       _carbController.clear();
+      // A food the lookup couldn't find is in; the next entry is a lookup
+      // again. A carbs field the user opened with the link stays open.
+      if (_carbsFieldFromHandoff) {
+        _isManualEntryMode = false;
+        _carbsFieldFromHandoff = false;
+      }
     });
     unawaited(_recordRecent([item]));
     HapticFeedback.lightImpact();
@@ -991,6 +1014,12 @@ class CarbTrackerHomeState extends State<CarbTrackerHome>
   void updateFoodItemForTest(FoodItem old, FoodItem updated) =>
       _updateFoodItem(old, updated);
 
+  /// Opens the time picker for the details dialog. A test replaces it to
+  /// pick a time without driving the Material picker.
+  @visibleForTesting
+  Future<TimeOfDay?> Function(BuildContext context, TimeOfDay initial) pickTime =
+      (context, initial) => showTimePicker(context: context, initialTime: initial);
+
   void _resetTotal() {
     final snapshot = List<FoodItem>.from(foodItems);
     setState(() {
@@ -1062,10 +1091,20 @@ class CarbTrackerHomeState extends State<CarbTrackerHome>
       _healthKitService.replaceFoodItem(old, updated).then(_reportHealthResult);
     }
     if (mounted) {
+      // "Moved to" only when it moved; a new serving with the same carbs is
+      // just "Updated".
+      final String message;
+      if (updated.carbs != old.carbs) {
+        message = 'Updated to ${updated.carbs.toStringAsFixed(1)} g';
+      } else if (updated.loggedAt != old.loggedAt || updated.category != old.category) {
+        message = 'Moved to ${updated.category.label}, ${formatTime(updated.loggedAt)}';
+      } else {
+        message = 'Updated';
+      }
       ScaffoldMessenger.of(context).hideCurrentSnackBar();
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Updated to ${updated.carbs.toStringAsFixed(1)} g'),
+          content: Text(message),
           duration: const Duration(seconds: 3),
         ),
       );
@@ -1127,94 +1166,16 @@ class CarbTrackerHomeState extends State<CarbTrackerHome>
     );
   }
 
-  Widget _buildModeToggle() {
-    Widget pill(
-        {required String label,
-        required bool selected,
-        required VoidCallback onTap}) {
-      return Expanded(
-        // A pair of buttons, one of them selected — otherwise VoiceOver reads
-        // two bare words and never says which mode is on. The visible Text is
-        // the label, so the two can't drift apart.
-        child: Semantics(
-          button: true,
-          selected: selected,
-          inMutuallyExclusiveGroup: true,
-          child: GestureDetector(
-            onTap: () {
-              _dismissKeyboard();
-              onTap();
-            },
-            child: AnimatedContainer(
-              duration: const Duration(milliseconds: 180),
-              curve: Curves.easeOut,
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-              decoration: BoxDecoration(
-                color: selected
-                    ? AppColors.sage
-                    : Theme.of(context).colorScheme.surface,
-                borderRadius: BorderRadius.circular(999),
-                border: Border.all(
-                  color: selected
-                      ? AppColors.sage
-                      : Theme.of(context)
-                          .colorScheme
-                          .onSurfaceVariant
-                          .withValues(alpha: 0.2),
-                ),
-              ),
-              child: Center(
-                child: Text(
-                  label,
-                  style: TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w600,
-                    color: selected
-                        ? Colors.white
-                        : Theme.of(context).colorScheme.onSurfaceVariant,
-                  ),
-                ),
-              ),
-            ),
-          ),
-        ),
-      );
-    }
-
-    return Container(
-      padding: const EdgeInsets.all(4),
-      decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.surface,
-        borderRadius: BorderRadius.circular(22),
-        border: Border.all(
-          color: Theme.of(context)
-              .colorScheme
-              .onSurfaceVariant
-              .withValues(alpha: 0.2),
-        ),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          pill(
-            label: 'Auto',
-            selected: !_isManualEntryMode,
-            onTap: () => setState(() => _isManualEntryMode = false),
-          ),
-          const SizedBox(width: 8),
-          pill(
-            label: 'Manual',
-            selected: _isManualEntryMode,
-            onTap: () => setState(() => _isManualEntryMode = true),
-          ),
-        ],
-      ),
-    );
-  }
-
   Future<void> _showFoodDetails(FoodItem item) async {
     final recognizers = <TapGestureRecognizer>[];
     ServingInfo? draft = item.serving;
+    DateTime draftTime = item.loggedAt;
+    FoodCategory draftMeal = item.category;
+    // Once the meal is picked by hand, it no longer follows the time. Every
+    // way a food is logged sets its meal from its time, so a meal that doesn't
+    // match was picked by hand already, in an earlier edit or as Drink.
+    var mealPicked = item.category != FoodCategory.fromTime(item.loggedAt);
+    String? timeError;
     await showDialog<void>(
       context: context,
       barrierColor: Colors.black.withValues(alpha: 0.3),
@@ -1225,8 +1186,19 @@ class CarbTrackerHomeState extends State<CarbTrackerHome>
             r.dispose();
           }
           recognizers.clear();
-          final changed = draft != null && draft != item.serving;
-          final shown = changed ? item.withServing(draft!, now: DateTime.now().toUtc()) : item;
+          final servingChanged = draft != null && draft != item.serving;
+          final changed = servingChanged ||
+              draftTime != item.loggedAt ||
+              draftMeal != item.category;
+          // For display only; Update builds the copy it saves.
+          final shown = changed
+              ? item.edited(
+                  serving: servingChanged ? draft : null,
+                  loggedAt: draftTime,
+                  category: draftMeal,
+                  now: DateTime.now().toUtc(),
+                )
+              : item;
           final showMacros = _premiumService.isMacrosEnabled && shown.hasMacros;
           return AlertDialog(
             backgroundColor:
@@ -1237,6 +1209,66 @@ class CarbTrackerHomeState extends State<CarbTrackerHome>
                 crossAxisAlignment: CrossAxisAlignment.start,
                 mainAxisSize: MainAxisSize.min,
                 children: [
+                  TimeMealRow(
+                    time: draftTime,
+                    meal: draftMeal,
+                    error: timeError,
+                    onPickTime: () async {
+                      final picked = await pickTime(
+                          context, TimeOfDay.fromDateTime(draftTime));
+                      // The dialog may have closed while the picker was up.
+                      if (!context.mounted) return;
+                      if (picked == null) return;
+                      final now = DateTime.now();
+                      final resolved =
+                          resolvePickedTime(picked, now: now, resetHour: resetHour);
+                      if (resolved == null) {
+                        const refused = 'Pick a time from today, up to now';
+                        setDialogState(() => timeError = refused);
+                        SemanticsService.sendAnnouncement(
+                            View.of(context), refused, TextDirection.ltr);
+                        return;
+                      }
+                      // The picker gives a whole minute, but Apple Health tells
+                      // foods apart by the millisecond each starts in
+                      // (healthDeleteWindow). The food keeps its own seconds,
+                      // so two foods moved to one minute stay apart, and its
+                      // own minute gives back its exact time.
+                      final logged = item.loggedAt;
+                      final DateTime next;
+                      if (resolved.hour == logged.hour &&
+                          resolved.minute == logged.minute &&
+                          dayKey(resolved, resetHour) == dayKey(logged, resetHour)) {
+                        next = logged;
+                      } else {
+                        final kept = resolved.add(Duration(
+                            seconds: logged.second,
+                            milliseconds: logged.millisecond,
+                            microseconds: logged.microsecond));
+                        next = kept.isAfter(now) ? now : kept;
+                      }
+                      if (next == draftTime) {
+                        setDialogState(() => timeError = null);
+                        return;
+                      }
+                      setDialogState(() {
+                        timeError = null;
+                        draftTime = next;
+                        if (!mealPicked) draftMeal = FoodCategory.fromTime(next);
+                      });
+                      SemanticsService.sendAnnouncement(View.of(context),
+                          '${draftMeal.label}, ${formatTime(draftTime)}', TextDirection.ltr);
+                    },
+                    onMealChanged: (meal) {
+                      setDialogState(() {
+                        mealPicked = true;
+                        draftMeal = meal;
+                      });
+                      SemanticsService.sendAnnouncement(View.of(context),
+                          '${meal.label}, ${formatTime(draftTime)}', TextDirection.ltr);
+                    },
+                  ),
+                  const SizedBox(height: 8),
                   if (draft != null) ...[
                     ServingPicker(
                       value: draft!,
@@ -1253,7 +1285,7 @@ class CarbTrackerHomeState extends State<CarbTrackerHome>
                       '${shown.carbs.toStringAsFixed(1)} g carbs',
                       style: Theme.of(context).textTheme.titleSmall,
                     ),
-                    if (changed)
+                    if (servingChanged)
                       Text(
                         'was ${item.carbs.toStringAsFixed(1)} g',
                         style: Theme.of(context).textTheme.bodySmall?.copyWith(
@@ -1282,7 +1314,21 @@ class CarbTrackerHomeState extends State<CarbTrackerHome>
                 TextButton(
                   onPressed: () {
                     Navigator.pop(context);
-                    _updateFoodItem(item, shown);
+                    // Stamped now, not when the dialog last drew. The time
+                    // also gets a millisecond no other food starts in, or a
+                    // Health delete for one would take both.
+                    _updateFoodItem(
+                      item,
+                      item.edited(
+                        serving: servingChanged ? draft : null,
+                        loggedAt: uniqueMillisecond(draftTime, [
+                          for (final other in foodItems)
+                            if (other.id != item.id) other.loggedAt,
+                        ]),
+                        category: draftMeal,
+                        now: DateTime.now().toUtc(),
+                      ),
+                    );
                   },
                   child: const Text('Update'),
                 ),
@@ -1521,6 +1567,36 @@ class CarbTrackerHomeState extends State<CarbTrackerHome>
     }
     _dismissKeyboard();
     _addFood();
+  }
+
+  /// The link under the food field: show the carbs field to log a food
+  /// yourself, or hide (and clear) it to look one up.
+  void _toggleEntryMode() {
+    setState(() {
+      _isManualEntryMode = !_isManualEntryMode;
+      _carbsFieldFromHandoff = false;
+      if (!_isManualEntryMode) _carbController.clear();
+    });
+    if (_isManualEntryMode && _foodController.text.trim().isNotEmpty) {
+      _carbFocusNode.requestFocus();
+    } else {
+      _foodFocusNode.requestFocus();
+    }
+  }
+
+  /// A first-run example: fill the food field with it and leave the lookup
+  /// to the user.
+  void _useExample(String text) {
+    // During a lookup, its result clears the field anyway; the example would
+    // only vanish, and could look like it was what got looked up.
+    if (isLoading) return;
+    setState(() {
+      _isManualEntryMode = false;
+      _carbController.clear();
+      _foodController.text = text;
+      _foodController.selection = TextSelection.collapsed(offset: text.length);
+    });
+    _foodFocusNode.requestFocus();
   }
 
   Widget _homeKeyboardToolbarButton({
@@ -2341,15 +2417,6 @@ class CarbTrackerHomeState extends State<CarbTrackerHome>
                   ),
                   child: Column(
                     children: [
-                      // Mode toggle (Auto / Manual)
-                      if (_premiumService.isManualEntryEnabled)
-                        Padding(
-                          padding: const EdgeInsets.only(bottom: 16),
-                          child: Align(
-                            alignment: Alignment.centerLeft,
-                            child: _buildModeToggle(),
-                          ),
-                        ),
                       TextField(
                         controller: _foodController,
                         focusNode: _foodFocusNode,
@@ -2359,8 +2426,8 @@ class CarbTrackerHomeState extends State<CarbTrackerHome>
                             : TextInputAction.done,
                         decoration: InputDecoration(
                           hintText: _isManualEntryMode
-                              ? 'Food name...'
-                              : 'Enter food item...',
+                              ? 'Food name'
+                              : 'What did you eat?',
                           hintStyle: TextStyle(
                             color: Theme.of(context)
                                 .colorScheme
@@ -2405,8 +2472,18 @@ class CarbTrackerHomeState extends State<CarbTrackerHome>
                           onTapOutside: (_) => _dismissKeyboard(),
                         ),
                       ],
+                      if (_premiumService.isManualEntryEnabled) ...[
+                        const SizedBox(height: 4),
+                        EntryModeLink(
+                          manual: _isManualEntryMode,
+                          onPressed: _toggleEntryMode,
+                        ),
+                      ],
                       if (_quickChips.isNotEmpty) ...[
-                        const SizedBox(height: 12),
+                        // The 44 pt link already leaves ~12 pt below its text.
+                        SizedBox(
+                            height:
+                                _premiumService.isManualEntryEnabled ? 4 : 12),
                         QuickLogChips(
                           chips: _quickChips,
                           onLog: _quickLog,
@@ -2572,21 +2649,24 @@ class CarbTrackerHomeState extends State<CarbTrackerHome>
 
                 // Food List
                 foodItems.isEmpty
-                    ? Center(
-                        child: Padding(
-                          padding: const EdgeInsets.symmetric(vertical: 32.0),
-                          child: Text(
-                            'Type a food name above to look up its carbs.',
-                            textAlign: TextAlign.center,
-                            style: TextStyle(
-                              color: Theme.of(context)
-                                  .colorScheme
-                                  .onSurfaceVariant,
-                              fontSize: 14,
+                    ? (_quickLogLoaded && _quickChips.isEmpty
+                        ? ExamplePrompts(onPick: _useExample)
+                        : Center(
+                            child: Padding(
+                              padding:
+                                  const EdgeInsets.symmetric(vertical: 32.0),
+                              child: Text(
+                                'Type a food name above to look up its carbs.',
+                                textAlign: TextAlign.center,
+                                style: TextStyle(
+                                  color: Theme.of(context)
+                                      .colorScheme
+                                      .onSurfaceVariant,
+                                  fontSize: 14,
+                                ),
+                              ),
                             ),
-                          ),
-                        ),
-                      )
+                          ))
                     : AnimatedSize(
                         duration: const Duration(milliseconds: 300),
                         alignment: Alignment.topCenter,

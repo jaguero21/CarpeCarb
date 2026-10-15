@@ -87,3 +87,12 @@ String quickLogChipLabel({required String name, required double carbs}) =>
 /// Spoken after a chip logs a food: "Logged Banana, 27 grams of carbs".
 String quickLoggedAnnouncement({required String name, required double carbs}) =>
     'Logged $name, ${spokenGrams(carbs)} of carbs';
+
+/// The details dialog's time button: "Time, 12:05 PM".
+String timeRowLabel(String time) => 'Time, $time';
+
+/// The details dialog's meal dropdown: "Meal, Lunch".
+String mealDropdownLabel(String meal) => 'Meal, $meal';
+
+/// A first-run example chip: "Use example, 2 slices pepperoni pizza".
+String exampleChipLabel(String text) => 'Use example, $text';

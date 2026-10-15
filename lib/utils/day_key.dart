@@ -28,3 +28,13 @@ DateTime nextDayBoundary(DateTime now, int resetHour) {
       ? today
       : DateTime(now.year, now.month, now.day + 1, resetHour);
 }
+
+/// When the app's current day began: the most recent [resetHour]:00 at or
+/// before [now]. Agrees with [dayKey]; built with calendar arithmetic, like
+/// [nextDayBoundary].
+DateTime dayStart(DateTime now, int resetHour) {
+  final today = DateTime(now.year, now.month, now.day, resetHour);
+  return today.isAfter(now)
+      ? DateTime(now.year, now.month, now.day - 1, resetHour)
+      : today;
+}

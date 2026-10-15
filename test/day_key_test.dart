@@ -68,4 +68,23 @@ void main() {
       }
     });
   });
+
+  group('dayStart', () {
+    test('with a midnight reset, the day starts at midnight', () {
+      expect(dayStart(DateTime(2026, 10, 14, 13, 5), 0), DateTime(2026, 10, 14));
+    });
+
+    test('with a 4 AM reset, after 4 AM the day started at 4 AM today', () {
+      expect(dayStart(DateTime(2026, 10, 14, 9), 4), DateTime(2026, 10, 14, 4));
+    });
+
+    test('with a 4 AM reset, at 2 AM the day started at 4 AM yesterday', () {
+      expect(dayStart(DateTime(2026, 10, 14, 2), 4), DateTime(2026, 10, 13, 4));
+    });
+
+    test('agrees with dayKey', () {
+      final now = DateTime(2026, 10, 14, 2);
+      expect(dayKey(dayStart(now, 4), 4), dayKey(now, 4));
+    });
+  });
 }

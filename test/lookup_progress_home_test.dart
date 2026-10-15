@@ -38,7 +38,7 @@ void main() {
   final foodField = find.byWidgetPredicate(
     (widget) =>
         widget is TextField &&
-        widget.decoration?.hintText == 'Enter food item...',
+        widget.decoration?.hintText == 'What did you eat?',
   );
 
   CarbTrackerHomeState homeState(WidgetTester tester) =>

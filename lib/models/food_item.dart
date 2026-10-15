@@ -120,27 +120,39 @@ class FoodItem {
 
   bool get hasMacros => protein != null || fat != null || fiber != null || calories != null;
 
-  /// This food at [next], with its nutrients recalculated. Identity, time,
-  /// meal, name and details stay; [updatedAt] becomes [now].
-  FoodItem withServing(ServingInfo next, {required DateTime now}) {
-    final n = next.nutrients();
+  /// This food with any of [serving], [loggedAt] and [category] changed.
+  /// A new serving recalculates the nutrients. Identity, name, details,
+  /// citations and the manual flag stay; [updatedAt] becomes [now].
+  FoodItem edited({
+    ServingInfo? serving,
+    DateTime? loggedAt,
+    FoodCategory? category,
+    required DateTime now,
+  }) {
+    final n = serving?.nutrients();
     return FoodItem(
       id: id,
       name: name,
-      carbs: n.carbs,
-      protein: n.protein,
-      fat: n.fat,
-      fiber: n.fiber,
-      calories: n.calories,
+      carbs: n?.carbs ?? carbs,
+      // Not `?? protein`: a new serving without a macro must clear the old one.
+      protein: n == null ? protein : n.protein,
+      fat: n == null ? fat : n.fat,
+      fiber: n == null ? fiber : n.fiber,
+      calories: n == null ? calories : n.calories,
       details: details,
       citations: citations,
       isManualEntry: isManualEntry,
-      loggedAt: loggedAt,
-      category: category,
-      serving: next,
+      loggedAt: loggedAt ?? this.loggedAt,
+      category: category ?? this.category,
+      serving: serving ?? this.serving,
       updatedAt: now,
     );
   }
+
+  /// This food at [next], with its nutrients recalculated. Identity, time,
+  /// meal, name and details stay; [updatedAt] becomes [now].
+  FoodItem withServing(ServingInfo next, {required DateTime now}) =>
+      edited(serving: next, now: now);
 
   Map<String, dynamic> toJson() {
     return {

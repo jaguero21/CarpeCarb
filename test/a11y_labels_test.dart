@@ -134,4 +134,13 @@ void main() {
           'Apple, 25 grams of carbs, logged 8:30 AM');
     });
   });
+
+  group('time, meal and examples', () {
+    test('labels', () {
+      expect(timeRowLabel('12:05 PM'), 'Time, 12:05 PM');
+      expect(mealDropdownLabel('Lunch'), 'Meal, Lunch');
+      expect(exampleChipLabel('2 slices pepperoni pizza'),
+          'Use example, 2 slices pepperoni pizza');
+    });
+  });
 }
