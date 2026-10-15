@@ -1,3 +1,6 @@
+import 'dart:convert';
+
+import 'package:carb_tracker/config/storage_keys.dart';
 import 'package:carb_tracker/main.dart';
 import 'package:carb_tracker/widgets/food_item_card.dart';
 import 'package:flutter/material.dart';
@@ -92,7 +95,28 @@ void main() {
     await tester.tap(find.text('Undo'));
     await tester.pumpAndSettle();
     expect(find.text('52.0 g'), findsOneWidget);
-    expect(state.foodItems.any((f) => f.id == 'l1'), isTrue);
+    expect(state.foodItems.any((f) => f.name == 'Soup'), isTrue);
+  });
+
+  testWidgets('Undo puts back a fresh copy; the old id stays deleted for iCloud',
+      (tester) async {
+    final state = await start(tester, day);
+    final soup = state.foodItems.firstWhere((f) => f.id == 'l1');
+    state.removeItemById('l1');
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Undo'));
+    await tester.pumpAndSettle();
+
+    // The other device may already have merged the delete, which would
+    // delete the old id again; a new id syncs as a new food.
+    final copy = state.foodItems.singleWhere((f) => f.name == 'Soup');
+    expect(copy.id, isNot('l1'));
+    expect(copy.toJson()..remove('id'), soup.toJson()..remove('id'));
+    // Back where it was in the list.
+    expect(state.foodItems.map((f) => f.name), ['Toast', 'Soup', 'Roll']);
+    final prefs = await SharedPreferences.getInstance();
+    expect(jsonDecode(prefs.getString(StorageKeys.foodItemsDeleted)!),
+        contains('l1'));
   });
 
   testWidgets('the removed snackbar goes away on its own', (tester) async {

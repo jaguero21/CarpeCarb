@@ -1037,20 +1037,21 @@ class CarbTrackerHomeState extends State<CarbTrackerHome>
     );
   }
 
-  /// Puts back what a clear removed, on the same day only: list, iCloud
-  /// (delete markers lifted), widget, and Apple Health once the clear's
-  /// deletes have finished.
+  /// Puts back what a clear removed, on the same day only: list, iCloud,
+  /// widget, and Apple Health once the clear's deletes have finished.
+  /// The foods come back as fresh copies and the old ids stay marked deleted:
+  /// the other device may already have merged those markers, and they merge
+  /// as a union, so the old ids would be deleted again on the next sync.
   Future<void> _undoClearToday(List<FoodItem> cleared, String day) async {
     if (!mounted || !undoApplies(clearedOn: day, today: _todayString())) return;
-    final back = restoreCleared(foodItems, cleared);
+    final back = [
+      for (final food in restoreCleared(foodItems, cleared)) food.withNewId(),
+    ];
     if (back.isEmpty) return;
     setState(() {
       foodItems.addAll(back);
       _markArriving(back);
     });
-    for (final item in back) {
-      await _syncStore.recordItemRestored(item.id);
-    }
     await _saveData();
     await _updateWidget();
     if (_premiumService.isHealthSyncEnabled) {
@@ -1104,12 +1105,6 @@ class CarbTrackerHomeState extends State<CarbTrackerHome>
   /// other device's copy of the item merges straight back in.
   Future<void> _saveAfterDeleting(List<String> ids) async {
     await _syncStore.recordItemsDeleted(ids);
-    await _saveData();
-  }
-
-  /// Undo: the item is wanted again, so its delete marker goes.
-  Future<void> _saveAfterRestoring(String id) async {
-    await _syncStore.recordItemRestored(id);
     await _saveData();
   }
 
@@ -1216,14 +1211,17 @@ class CarbTrackerHomeState extends State<CarbTrackerHome>
           onPressed: () {
             // A merge may have brought the food back while this was showing.
             if (foodItems.any((f) => f.id == removedItem.id)) return;
+            // A fresh copy, as Clear's Undo puts back: the delete marker
+            // stays, since the other device may already have it.
+            final copy = removedItem.withNewId();
             setState(() {
-              foodItems.insert(index.clamp(0, foodItems.length), removedItem);
-              _markArriving([removedItem]);
+              foodItems.insert(index.clamp(0, foodItems.length), copy);
+              _markArriving([copy]);
             });
-            _saveAfterRestoring(removedItem.id);
+            _saveData();
             _updateWidget();
             if (_premiumService.isHealthSyncEnabled) {
-              _writeToHealthKit(removedItem);
+              _writeToHealthKit(copy);
             }
           },
         ),

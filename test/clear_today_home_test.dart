@@ -1,5 +1,7 @@
 import 'dart:async';
+import 'dart:convert';
 
+import 'package:carb_tracker/config/storage_keys.dart';
 import 'package:carb_tracker/main.dart';
 import 'package:carb_tracker/models/food_item.dart';
 import 'package:carb_tracker/services/health_kit_service.dart';
@@ -106,11 +108,43 @@ void main() {
     health.releaseDeletes();
     await tester.pumpAndSettle();
 
-    expect(state.foodItems.map((f) => f.id).toSet(), {'s', 'r'});
+    expect(state.foodItems.map((f) => f.name).toSet(), {'Soup', 'Roll'});
     final firstWrite = health.calls.indexWhere((c) => c.startsWith('write'));
     final lastDelete = health.calls.lastIndexWhere((c) => c.startsWith('delete'));
     expect(firstWrite, greaterThan(lastDelete));
     expect(health.calls.where((c) => c.startsWith('write')).length, 2);
+  });
+
+  testWidgets('Undo puts back fresh copies; the old ids stay deleted for iCloud',
+      (tester) async {
+    final state = await start(tester);
+    state.healthKitService = _OkHealth();
+    final before = {for (final f in state.foodItems) f.id: f};
+
+    await openClear(tester);
+    await tester.tap(find.text('Clear'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Undo'));
+    await tester.pumpAndSettle();
+
+    expect(state.foodItems, hasLength(2));
+    for (final copy in state.foodItems) {
+      // The other device may already have merged the clear's markers, which
+      // would delete the old ids again; a new id syncs as a new food.
+      expect(before.keys, isNot(contains(copy.id)));
+      final original = before.values.singleWhere((f) => f.name == copy.name);
+      expect(copy.carbs, original.carbs);
+      expect(copy.loggedAt, original.loggedAt);
+      expect(copy.category, original.category);
+    }
+    final prefs = await SharedPreferences.getInstance();
+    final markers =
+        jsonDecode(prefs.getString(StorageKeys.foodItemsDeleted)!) as List;
+    expect(markers, containsAll(['s', 'r']));
+    final stored =
+        jsonDecode(prefs.getString(StorageKeys.foodItems)!) as List;
+    expect(stored.map((f) => (f as Map)['id']).toSet(),
+        state.foodItems.map((f) => f.id).toSet());
   });
 
   testWidgets('the cleared snackbar goes away on its own', (tester) async {
