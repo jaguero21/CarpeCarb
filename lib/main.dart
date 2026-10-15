@@ -43,6 +43,7 @@ import 'utils/input_validation.dart';
 import 'utils/lookup_progress.dart';
 import 'utils/user_facing_exception.dart';
 import 'widgets/appear_once.dart';
+import 'widgets/entry_mode_link.dart';
 import 'widgets/food_item_card.dart';
 import 'widgets/meal_section_header.dart';
 import 'widgets/quick_log_chips.dart';
@@ -1127,91 +1128,6 @@ class CarbTrackerHomeState extends State<CarbTrackerHome>
     );
   }
 
-  Widget _buildModeToggle() {
-    Widget pill(
-        {required String label,
-        required bool selected,
-        required VoidCallback onTap}) {
-      return Expanded(
-        // A pair of buttons, one of them selected — otherwise VoiceOver reads
-        // two bare words and never says which mode is on. The visible Text is
-        // the label, so the two can't drift apart.
-        child: Semantics(
-          button: true,
-          selected: selected,
-          inMutuallyExclusiveGroup: true,
-          child: GestureDetector(
-            onTap: () {
-              _dismissKeyboard();
-              onTap();
-            },
-            child: AnimatedContainer(
-              duration: const Duration(milliseconds: 180),
-              curve: Curves.easeOut,
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-              decoration: BoxDecoration(
-                color: selected
-                    ? AppColors.sage
-                    : Theme.of(context).colorScheme.surface,
-                borderRadius: BorderRadius.circular(999),
-                border: Border.all(
-                  color: selected
-                      ? AppColors.sage
-                      : Theme.of(context)
-                          .colorScheme
-                          .onSurfaceVariant
-                          .withValues(alpha: 0.2),
-                ),
-              ),
-              child: Center(
-                child: Text(
-                  label,
-                  style: TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w600,
-                    color: selected
-                        ? Colors.white
-                        : Theme.of(context).colorScheme.onSurfaceVariant,
-                  ),
-                ),
-              ),
-            ),
-          ),
-        ),
-      );
-    }
-
-    return Container(
-      padding: const EdgeInsets.all(4),
-      decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.surface,
-        borderRadius: BorderRadius.circular(22),
-        border: Border.all(
-          color: Theme.of(context)
-              .colorScheme
-              .onSurfaceVariant
-              .withValues(alpha: 0.2),
-        ),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          pill(
-            label: 'Auto',
-            selected: !_isManualEntryMode,
-            onTap: () => setState(() => _isManualEntryMode = false),
-          ),
-          const SizedBox(width: 8),
-          pill(
-            label: 'Manual',
-            selected: _isManualEntryMode,
-            onTap: () => setState(() => _isManualEntryMode = true),
-          ),
-        ],
-      ),
-    );
-  }
-
   Future<void> _showFoodDetails(FoodItem item) async {
     final recognizers = <TapGestureRecognizer>[];
     ServingInfo? draft = item.serving;
@@ -1521,6 +1437,20 @@ class CarbTrackerHomeState extends State<CarbTrackerHome>
     }
     _dismissKeyboard();
     _addFood();
+  }
+
+  /// The link under the food field: show the carbs field to log a food
+  /// yourself, or hide (and clear) it to look one up.
+  void _toggleEntryMode() {
+    setState(() {
+      _isManualEntryMode = !_isManualEntryMode;
+      if (!_isManualEntryMode) _carbController.clear();
+    });
+    if (_isManualEntryMode && _foodController.text.trim().isNotEmpty) {
+      _carbFocusNode.requestFocus();
+    } else {
+      _foodFocusNode.requestFocus();
+    }
   }
 
   Widget _homeKeyboardToolbarButton({
@@ -2341,15 +2271,6 @@ class CarbTrackerHomeState extends State<CarbTrackerHome>
                   ),
                   child: Column(
                     children: [
-                      // Mode toggle (Auto / Manual)
-                      if (_premiumService.isManualEntryEnabled)
-                        Padding(
-                          padding: const EdgeInsets.only(bottom: 16),
-                          child: Align(
-                            alignment: Alignment.centerLeft,
-                            child: _buildModeToggle(),
-                          ),
-                        ),
                       TextField(
                         controller: _foodController,
                         focusNode: _foodFocusNode,
@@ -2359,8 +2280,8 @@ class CarbTrackerHomeState extends State<CarbTrackerHome>
                             : TextInputAction.done,
                         decoration: InputDecoration(
                           hintText: _isManualEntryMode
-                              ? 'Food name...'
-                              : 'Enter food item...',
+                              ? 'Food name'
+                              : 'What did you eat?',
                           hintStyle: TextStyle(
                             color: Theme.of(context)
                                 .colorScheme
@@ -2405,8 +2326,18 @@ class CarbTrackerHomeState extends State<CarbTrackerHome>
                           onTapOutside: (_) => _dismissKeyboard(),
                         ),
                       ],
+                      if (_premiumService.isManualEntryEnabled) ...[
+                        const SizedBox(height: 4),
+                        EntryModeLink(
+                          manual: _isManualEntryMode,
+                          onPressed: _toggleEntryMode,
+                        ),
+                      ],
                       if (_quickChips.isNotEmpty) ...[
-                        const SizedBox(height: 12),
+                        // The 44 pt link already leaves ~12 pt below its text.
+                        SizedBox(
+                            height:
+                                _premiumService.isManualEntryEnabled ? 4 : 12),
                         QuickLogChips(
                           chips: _quickChips,
                           onLog: _quickLog,

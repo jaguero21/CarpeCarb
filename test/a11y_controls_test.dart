@@ -39,7 +39,7 @@ void main() {
     SharedPreferences.setMockInitialValues({'disclaimer_accepted': true});
   });
 
-  testWidgets('the entry-mode toggle says which mode is selected',
+  testWidgets('the entry-mode link announces as a button',
       (WidgetTester tester) async {
     stubChannels();
     final handle = tester.ensureSemantics();
@@ -48,26 +48,20 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(
-      find.semantics.byLabel('Auto').evaluate().single,
-      isSemantics(
-        isButton: true,
-        isSelected: true,
-        isInMutuallyExclusiveGroup: true,
-      ),
-    );
-    expect(
-      find.semantics.byLabel('Manual').evaluate().single,
-      isSemantics(isButton: true, isSelected: false),
+      find.semantics.byLabel('Enter carbs yourself').evaluate().single,
+      isSemantics(isButton: true, hasTapAction: true),
     );
 
-    await tester.tap(find.text('Manual'));
+    await tester.tap(find.text('Enter carbs yourself'));
     await tester.pumpAndSettle();
 
-    // The selection has to move, or VoiceOver keeps announcing the old mode.
-    expect(find.semantics.byLabel('Manual').evaluate().single,
-        isSemantics(isSelected: true));
-    expect(find.semantics.byLabel('Auto').evaluate().single,
-        isSemantics(isSelected: false));
+    // The label has to change with the mode, or VoiceOver keeps offering the
+    // action that was just taken.
+    expect(
+      find.semantics.byLabel('Look it up instead').evaluate().single,
+      isSemantics(isButton: true, hasTapAction: true),
+    );
+    expect(find.semantics.byLabel('Enter carbs yourself'), findsNothing);
 
     handle.dispose();
   });

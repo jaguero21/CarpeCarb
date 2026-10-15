@@ -114,7 +114,7 @@ void main() {
 
   testWidgets('chips show in Manual mode too', (tester) async {
     await start(tester, recent: [FoodItem(name: 'Pho', carbs: 41.2)]);
-    await tester.tap(find.text('Manual'));
+    await tester.tap(find.text('Enter carbs yourself'));
     await tester.pumpAndSettle();
     expect(find.text('Carbs (g)'), findsOneWidget); // the Manual fields are up
     expect(chipName('Pho'), findsOneWidget);

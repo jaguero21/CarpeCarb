@@ -54,9 +54,9 @@ void main() {
     tester.view.physicalSize = const Size(2400, 3600); // 800x1200 at 3x
     addTearDown(tester.view.reset);
     await start(tester);
-    await tester.tap(find.text('Manual'));
+    await tester.tap(find.text('Enter carbs yourself'));
     await tester.pumpAndSettle();
-    await tester.enterText(find.widgetWithText(TextField, 'Food name...'), 'Toast');
+    await tester.enterText(find.widgetWithText(TextField, 'Food name'), 'Toast');
     await tester.enterText(find.widgetWithText(TextField, 'Carbs (g)'), '14.5');
     await tester.tap(find.text('Add'));
     await tester.pumpAndSettle();
