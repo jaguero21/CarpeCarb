@@ -35,7 +35,7 @@ This is round C of the UX roadmap (items 5, 6 and 7).
 - **Food field hint:** **"What did you eat?"**, or **"Food name"** while the carbs field is shown.
 - **The link** is a `TextButton` under the fields, centered, 14 pt:
   - It reads **"Enter carbs yourself"** and shows the carbs field. The Add button then reads
-    "Add", and the carbs field gets focus.
+    "Add", and focus moves to the carbs field if the food field has text, otherwise to the food field.
   - With the carbs field shown, it reads **"Look it up instead"**. That hides the carbs field
     and clears it, and the button goes back to "Add Food".
   - Its text color is `AppColors.sage` darkened with `Color.lerp(sage, Colors.black, 0.45)` in
@@ -78,8 +78,9 @@ This is round C of the UX roadmap (items 5, 6 and 7).
     3. Valid only if the result is not before `dayStart(now, resetHour)`.
   - `dayStart(now, resetHour)` is the most recent `resetHour`:00 at or before `now`. It is
     built with calendar arithmetic, like `nextDayBoundary`.
-  - When the picked time is null, show a snackbar, "Pick a time from today, up to now", and
-    leave the draft unchanged.
+  - When the picked time is null, show "Pick a time from today, up to now" inside the dialog,
+    under the row, and leave the draft unchanged. A snackbar would sit behind the dialog.
+  - Picking the same minute as the draft changes nothing.
 - **Changed and Update:** "changed" means the serving, time or meal differs from the logged
   food. **Update** appears only when something changed, and it saves all the changes together.
 - **Live preview:** the dialog shows the draft time and meal.
@@ -106,14 +107,16 @@ This is round C of the UX roadmap (items 5, 6 and 7).
   - Otherwise "Moved to Lunch, 1:30 PM" (the meal label and the formatted time).
   - Only one snackbar is shown.
 - **Accessibility:**
-  - The Time row is a button labelled "Time, 12:05 PM, double tap to change".
+  - The Time row is a button labelled "Time, 12:05 PM", with the hint "Double tap to change".
   - The Meal dropdown is labelled "Meal, Lunch".
   - Changing either announces the new value, e.g. "Lunch, 1:30 PM".
 
 ## 7. Examples for new users
 
-- **When:** `foodItems` is empty **and** `_quickChips` is empty, so there are no saved and no
-  recent foods. Otherwise the empty Today keeps its current line.
+- **When:** `foodItems` is empty, the quick-add row has finished loading, **and** `_quickChips`
+  is empty, so there are no saved and no recent foods. Waiting for the load means someone with
+  saved foods never sees the examples flash at launch. Otherwise the empty Today keeps its
+  current line.
 - **What:** in the empty Today area, show:
   - **"Try something like:"**
   - four example chips, in a wrap:
@@ -136,7 +139,8 @@ This is round C of the UX roadmap (items 5, 6 and 7).
 
 - `lib/utils/day_key.dart`:
   - `DateTime dayStart(DateTime now, int resetHour)`
-  - `DateTime? resolvePickedTime(TimeOfDay picked, {required DateTime now, required int resetHour})`
+- `lib/utils/picked_time.dart`: `DateTime? resolvePickedTime(TimeOfDay picked, {required DateTime now, required int resetHour})`.
+  It is kept out of `day_key.dart` so that file stays free of Flutter imports.
 - `lib/models/food_item.dart`: `FoodItem.edited(...)`, with `withServing` delegating to it.
 - `lib/widgets/time_meal_row.dart`:
   `TimeMealRow({required DateTime time, required FoodCategory meal, required VoidCallback onPickTime, required ValueChanged<FoodCategory> onMealChanged})`.
@@ -148,6 +152,7 @@ This is round C of the UX roadmap (items 5, 6 and 7).
 - `lib/main.dart`:
   - the input card, with the link in place of the switch
   - the dialog draft and Update
+  - a `@visibleForTesting pickTime` hook, so tests can pick a time without the Material picker
   - the confirmation text
   - the empty state
 
@@ -160,7 +165,7 @@ This is round C of the UX roadmap (items 5, 6 and 7).
 ## Testing
 
 Unit tests:
-- `dayStart`: at midnight reset; with `resetHour` 4 before and after 4 AM; across a DST change.
+- `dayStart`: at midnight reset; with `resetHour` 4 before and after 4 AM; agrees with `dayKey`.
 - `resolvePickedTime`:
   - an earlier time today
   - a future time (gives null)
@@ -181,7 +186,7 @@ Widget tests:
 - In the dialog:
   - Changing the time moves the food to the new section.
   - The meal follows the time unless it was picked.
-  - A future time is refused, with the snackbar shown.
+  - A future time is refused, with the message shown inside the dialog.
   - Update saves.
   - With Health sync on, the fake Health service sees delete(old time) then write(new time).
   - The confirmation text is "Moved to …", or "Updated to …" when the carbs changed.
