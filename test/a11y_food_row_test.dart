@@ -107,7 +107,7 @@ void main() {
         hint: 'Double tap for details',
         customActions: const [
           CustomSemanticsAction(label: 'Delete'),
-          CustomSemanticsAction(label: 'Save'),
+          CustomSemanticsAction(label: 'Add to Saved'),
         ],
       ),
     );
@@ -185,7 +185,7 @@ void main() {
     handle.dispose();
   });
 
-  testWidgets('the Save rotor action saves the food to the Food list',
+  testWidgets('the Add to Saved rotor action saves the food to the Food list',
       (WidgetTester tester) async {
     stubChannels();
     seedTwoFoods();
@@ -195,7 +195,7 @@ void main() {
     await tester.pumpAndSettle();
 
     performRotorAction(tester, 'Apple, 25 grams of carbs, logged 8:30 AM',
-        'Save');
+        'Add to Saved');
     await tester.pump(const Duration(milliseconds: 400));
 
     final saved =
@@ -205,7 +205,7 @@ void main() {
     await tester.pump(const Duration(seconds: 4));
   });
 
-  testWidgets('the details dialog offers Delete and Save without a swipe',
+  testWidgets('the details dialog offers Delete and Add to Saved without a swipe',
       (WidgetTester tester) async {
     stubChannels();
     seedTwoFoods();
@@ -221,7 +221,7 @@ void main() {
     // that path is on the device checklist instead.
     openDetails(tester, 'Apple, 25 grams of carbs, logged 8:30 AM');
     await tester.pumpAndSettle();
-    expect(find.text('Save'), findsOneWidget);
+    expect(find.text('Add to Saved'), findsOneWidget);
 
     await tester.tap(find.text('Delete'));
     await tester.pumpAndSettle();
@@ -245,13 +245,36 @@ void main() {
     // that path is on the device checklist instead.
     openDetails(tester, 'Apple, 25 grams of carbs, logged 8:30 AM');
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Save'));
+    await tester.tap(find.text('Add to Saved'));
     await tester.pumpAndSettle();
 
     final saved =
         (await SharedPreferences.getInstance()).getString('saved_foods');
     expect(saved, contains('Apple'));
-    expect(find.text('Apple saved'), findsOneWidget);
+    expect(find.text('Apple added to Saved'), findsOneWidget);
+    handle.dispose();
+    await tester.pump(const Duration(seconds: 4));
+  });
+
+  testWidgets('saving a food already in Saved says so', (WidgetTester tester) async {
+    stubChannels();
+    seedTwoFoods();
+    final handle = tester.ensureSemantics();
+
+    await tester.pumpWidget(const CarbTrackerApp());
+    await tester.pumpAndSettle();
+
+    for (var i = 0; i < 2; i++) {
+      openDetails(tester, 'Apple, 25 grams of carbs, logged 8:30 AM');
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Add to Saved'));
+      await tester.pumpAndSettle();
+    }
+    // Queued behind "Apple added to Saved".
+    await tester.pump(const Duration(seconds: 3));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Apple is already in Saved'), findsOneWidget);
     handle.dispose();
     await tester.pump(const Duration(seconds: 4));
   });

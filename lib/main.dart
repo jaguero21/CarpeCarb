@@ -1432,7 +1432,7 @@ class CarbTrackerHomeState extends State<CarbTrackerHome>
                     Navigator.pop(context);
                     _saveToSavedFoods(item);
                   },
-                  child: const Text('Save'),
+                  child: const Text('Add to Saved'),
                 ),
               TextButton(
                 onPressed: () {
@@ -1870,7 +1870,7 @@ class CarbTrackerHomeState extends State<CarbTrackerHome>
         // ignored. Same call the details dialog's Delete uses.
         const CustomSemanticsAction(label: 'Delete'): () =>
             removeItemById(item.id),
-        const CustomSemanticsAction(label: 'Save'): () =>
+        const CustomSemanticsAction(label: 'Add to Saved'): () =>
             _saveToSavedFoods(item),
       },
       excludeSemantics: true,
@@ -2079,7 +2079,7 @@ class CarbTrackerHomeState extends State<CarbTrackerHome>
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('${item.name} saved'),
+            content: Text('${item.name} added to Saved'),
             duration: const Duration(seconds: 2),
           ),
         );
@@ -2088,7 +2088,7 @@ class CarbTrackerHomeState extends State<CarbTrackerHome>
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('${item.name} is already saved'),
+            content: Text('${item.name} is already in Saved'),
             duration: const Duration(seconds: 2),
           ),
         );
