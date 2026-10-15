@@ -41,6 +41,7 @@ import 'utils/date_format.dart';
 import 'utils/day_key.dart';
 import 'utils/input_validation.dart';
 import 'utils/lookup_progress.dart';
+import 'utils/picked_time.dart';
 import 'utils/user_facing_exception.dart';
 import 'widgets/appear_once.dart';
 import 'widgets/entry_mode_link.dart';
@@ -48,6 +49,7 @@ import 'widgets/food_item_card.dart';
 import 'widgets/meal_section_header.dart';
 import 'widgets/quick_log_chips.dart';
 import 'widgets/serving_picker.dart';
+import 'widgets/time_meal_row.dart';
 
 Future<void> main() async {
   // Ensure Flutter is initialized
@@ -992,6 +994,12 @@ class CarbTrackerHomeState extends State<CarbTrackerHome>
   void updateFoodItemForTest(FoodItem old, FoodItem updated) =>
       _updateFoodItem(old, updated);
 
+  /// Opens the time picker for the details dialog. A test replaces it to
+  /// pick a time without driving the Material picker.
+  @visibleForTesting
+  Future<TimeOfDay?> Function(BuildContext context, TimeOfDay initial) pickTime =
+      (context, initial) => showTimePicker(context: context, initialTime: initial);
+
   void _resetTotal() {
     final snapshot = List<FoodItem>.from(foodItems);
     setState(() {
@@ -1066,7 +1074,9 @@ class CarbTrackerHomeState extends State<CarbTrackerHome>
       ScaffoldMessenger.of(context).hideCurrentSnackBar();
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Updated to ${updated.carbs.toStringAsFixed(1)} g'),
+          content: Text(updated.carbs != old.carbs
+              ? 'Updated to ${updated.carbs.toStringAsFixed(1)} g'
+              : 'Moved to ${updated.category.label}, ${formatTime(updated.loggedAt)}'),
           duration: const Duration(seconds: 3),
         ),
       );
@@ -1131,6 +1141,12 @@ class CarbTrackerHomeState extends State<CarbTrackerHome>
   Future<void> _showFoodDetails(FoodItem item) async {
     final recognizers = <TapGestureRecognizer>[];
     ServingInfo? draft = item.serving;
+    DateTime draftTime = item.loggedAt;
+    FoodCategory draftMeal = item.category;
+    // Set once the meal is picked by hand in this edit; until then the meal
+    // follows the time.
+    var mealPicked = false;
+    String? timeError;
     await showDialog<void>(
       context: context,
       barrierColor: Colors.black.withValues(alpha: 0.3),
@@ -1141,8 +1157,18 @@ class CarbTrackerHomeState extends State<CarbTrackerHome>
             r.dispose();
           }
           recognizers.clear();
-          final changed = draft != null && draft != item.serving;
-          final shown = changed ? item.withServing(draft!, now: DateTime.now().toUtc()) : item;
+          final servingChanged = draft != null && draft != item.serving;
+          final changed = servingChanged ||
+              draftTime != item.loggedAt ||
+              draftMeal != item.category;
+          final shown = changed
+              ? item.edited(
+                  serving: servingChanged ? draft : null,
+                  loggedAt: draftTime,
+                  category: draftMeal,
+                  now: DateTime.now().toUtc(),
+                )
+              : item;
           final showMacros = _premiumService.isMacrosEnabled && shown.hasMacros;
           return AlertDialog(
             backgroundColor:
@@ -1153,6 +1179,47 @@ class CarbTrackerHomeState extends State<CarbTrackerHome>
                 crossAxisAlignment: CrossAxisAlignment.start,
                 mainAxisSize: MainAxisSize.min,
                 children: [
+                  TimeMealRow(
+                    time: draftTime,
+                    meal: draftMeal,
+                    error: timeError,
+                    onPickTime: () async {
+                      final picked = await pickTime(
+                          context, TimeOfDay.fromDateTime(draftTime));
+                      if (picked == null) return;
+                      final resolved = resolvePickedTime(picked,
+                          now: DateTime.now(), resetHour: resetHour);
+                      if (resolved == null) {
+                        setDialogState(
+                            () => timeError = 'Pick a time from today, up to now');
+                        return;
+                      }
+                      // The same minute as now shown changes nothing (the
+                      // logged time also has seconds).
+                      if (formatTime(resolved) == formatTime(draftTime) &&
+                          dayKey(resolved, resetHour) == dayKey(draftTime, resetHour)) {
+                        setDialogState(() => timeError = null);
+                        return;
+                      }
+                      setDialogState(() {
+                        timeError = null;
+                        draftTime = resolved;
+                        if (!mealPicked) draftMeal = FoodCategory.fromTime(resolved);
+                      });
+                      if (!context.mounted) return;
+                      SemanticsService.sendAnnouncement(View.of(context),
+                          '${draftMeal.label}, ${formatTime(draftTime)}', TextDirection.ltr);
+                    },
+                    onMealChanged: (meal) {
+                      setDialogState(() {
+                        mealPicked = true;
+                        draftMeal = meal;
+                      });
+                      SemanticsService.sendAnnouncement(View.of(context),
+                          '${meal.label}, ${formatTime(draftTime)}', TextDirection.ltr);
+                    },
+                  ),
+                  const SizedBox(height: 8),
                   if (draft != null) ...[
                     ServingPicker(
                       value: draft!,
@@ -1169,7 +1236,7 @@ class CarbTrackerHomeState extends State<CarbTrackerHome>
                       '${shown.carbs.toStringAsFixed(1)} g carbs',
                       style: Theme.of(context).textTheme.titleSmall,
                     ),
-                    if (changed)
+                    if (servingChanged)
                       Text(
                         'was ${item.carbs.toStringAsFixed(1)} g',
                         style: Theme.of(context).textTheme.bodySmall?.copyWith(
