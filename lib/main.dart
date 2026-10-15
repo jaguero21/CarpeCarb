@@ -26,6 +26,7 @@ import 'services/siri_import.dart';
 import 'services/sync_merge.dart';
 import 'services/sync_payload.dart';
 import 'services/sync_store.dart';
+import 'models/clear_today.dart';
 import 'models/food_item.dart';
 import 'models/food_source.dart';
 import 'models/meal_sections.dart';
@@ -138,6 +139,14 @@ class CarbTrackerHomeState extends State<CarbTrackerHome>
 
   @visibleForTesting
   set healthKitService(HealthKitService service) => _healthKitService = service;
+
+  /// The Health deletes of the last "Clear today's log". Undo waits for them:
+  /// a restored sample shares its millisecond window with the deleted one, so
+  /// a delete that finished after the write would remove it again.
+  Future<void>? _clearHealthDeletes;
+
+  /// The last clear, for the test hook below.
+  ({List<FoodItem> cleared, String day})? _lastClear;
 
   RatingPrompt _ratingPrompt = RatingPrompt();
 
@@ -979,13 +988,17 @@ class CarbTrackerHomeState extends State<CarbTrackerHome>
     );
   }
 
-  void _confirmReset() {
+  /// From the TODAY header's ⋯ menu. Asks first; after Clear, offers Undo.
+  void _confirmClearToday() {
     if (foodItems.isEmpty) return;
+    final count = foodItems.length;
     showDialog<void>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Reset today\'s log?'),
-        content: const Text('All food items will be removed.'),
+        title: const Text("Clear today's log?"),
+        content: Text(count == 1
+            ? 'This food will be removed from today and from Apple Health.'
+            : 'All $count foods will be removed from today and from Apple Health.'),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
@@ -994,18 +1007,61 @@ class CarbTrackerHomeState extends State<CarbTrackerHome>
           TextButton(
             onPressed: () {
               Navigator.pop(ctx);
-              _resetTotal();
+              final cleared = _resetTotal();
+              final day = _todayString();
+              _lastClear = (cleared: cleared, day: day);
+              ScaffoldMessenger.of(context).hideCurrentSnackBar();
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: const Text("Today's log cleared"),
+                  duration: const Duration(seconds: 6),
+                  action: SnackBarAction(
+                    label: 'Undo',
+                    textColor: Colors.white,
+                    onPressed: () => _undoClearToday(cleared, day),
+                  ),
+                ),
+              );
             },
             style: TextButton.styleFrom(foregroundColor: AppColors.terracotta),
-            child: const Text('Reset'),
+            child: const Text('Clear'),
           ),
         ],
       ),
     );
   }
 
+  /// Puts back what a clear removed, on the same day only: list, iCloud
+  /// (delete markers lifted), widget, and Apple Health once the clear's
+  /// deletes have finished.
+  Future<void> _undoClearToday(List<FoodItem> cleared, String day) async {
+    if (!mounted || !undoApplies(clearedOn: day, today: _todayString())) return;
+    final back = restoreCleared(foodItems, cleared);
+    if (back.isEmpty) return;
+    setState(() {
+      foodItems.addAll(back);
+      _markArriving(back);
+    });
+    for (final item in back) {
+      await _syncStore.recordItemRestored(item.id);
+    }
+    await _saveData();
+    await _updateWidget();
+    if (_premiumService.isHealthSyncEnabled) {
+      await _clearHealthDeletes;
+      for (final item in back) {
+        _writeToHealthKit(item);
+      }
+    }
+  }
+
   // Test hooks — allow tests to drive state without relying on off-screen UI.
   void resetTotalForTest() => _resetTotal();
+  @visibleForTesting
+  Future<void> undoClearTodayForTest() async {
+    final last = _lastClear;
+    if (last != null) await _undoClearToday(last.cleared, last.day);
+  }
   void addSavedFoodForTest(FoodItem item) => _addSavedFood(item);
   Future<void> applyLookupResultForTest(LookupResult result) =>
       _applyLookupResult(result);
@@ -1020,19 +1076,21 @@ class CarbTrackerHomeState extends State<CarbTrackerHome>
   Future<TimeOfDay?> Function(BuildContext context, TimeOfDay initial) pickTime =
       (context, initial) => showTimePicker(context: context, initialTime: initial);
 
-  void _resetTotal() {
+  /// Empties today: list, widget, iCloud (delete markers) and Apple Health.
+  /// Returns what it cleared, for Undo.
+  List<FoodItem> _resetTotal() {
     final snapshot = List<FoodItem>.from(foodItems);
     setState(() {
       foodItems.clear();
     });
-    // Delete all reset items from HealthKit
     if (_premiumService.isHealthSyncEnabled) {
-      for (final item in snapshot) {
-        _deleteFromHealthKit(item);
-      }
+      _clearHealthDeletes = Future.wait([
+        for (final item in snapshot) _healthKitService.deleteFoodItem(item),
+      ]).then((results) => _reportHealthResult(results.every((ok) => ok)));
     }
     _saveAfterDeleting(snapshot.map((item) => item.id).toList());
     _updateWidget();
+    return snapshot;
   }
 
   /// Records [ids] as deleted today, then saves and pushes. The marker has to
@@ -2613,35 +2671,20 @@ class CarbTrackerHomeState extends State<CarbTrackerHome>
                           ),
                         ),
                         const Spacer(),
-                        // Announced as a button; the icon and the word
-                        // "Reset" alone told VoiceOver nothing about what it
-                        // was. It already asks for confirmation.
-                        Semantics(
-                          button: true,
-                          child: GestureDetector(
-                            onTap: _confirmReset,
-                            child: Row(
-                              children: [
-                                Icon(
-                                  Icons.refresh,
-                                  size: 16,
-                                  color: Theme.of(context)
-                                      .colorScheme
-                                      .onSurfaceVariant,
-                                ),
-                                const SizedBox(width: 4),
-                                Text(
-                                  'Reset',
-                                  style: TextStyle(
-                                    fontSize: 14,
-                                    color: Theme.of(context)
-                                        .colorScheme
-                                        .onSurfaceVariant,
-                                  ),
-                                ),
-                              ],
-                            ),
+                        // Clearing the whole day is one item in a menu, not a
+                        // button next to the list, and it can be undone.
+                        PopupMenuButton<void>(
+                          tooltip: 'Today options',
+                          icon: Icon(
+                            Icons.more_horiz,
+                            color: Theme.of(context).colorScheme.onSurfaceVariant,
                           ),
+                          itemBuilder: (context) => [
+                            PopupMenuItem<void>(
+                              onTap: _confirmClearToday,
+                              child: const Text("Clear today's log…"),
+                            ),
+                          ],
                         ),
                       ],
                     ),

@@ -66,9 +66,10 @@ void main() {
     handle.dispose();
   });
 
-  testWidgets('Reset announces as a button', (WidgetTester tester) async {
+  testWidgets('Today options announces as a button',
+      (WidgetTester tester) async {
     stubChannels();
-    // Reset only appears once something has been logged.
+    // The menu only appears once something has been logged.
     final now = DateTime.now();
     SharedPreferences.setMockInitialValues({
       'disclaimer_accepted': true,
@@ -89,8 +90,10 @@ void main() {
     await tester.pumpWidget(const CarbTrackerApp());
     await tester.pumpAndSettle();
 
-    expect(find.semantics.byLabel('Reset').evaluate().single,
-        isSemantics(isButton: true));
+    // The menu button's name arrives as its tooltip, which the iOS engine
+    // folds into the label VoiceOver speaks.
+    expect(tester.getSemantics(find.byTooltip('Today options')),
+        isSemantics(tooltip: 'Today options', isButton: true));
 
     handle.dispose();
   });
