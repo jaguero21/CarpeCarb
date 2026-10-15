@@ -70,6 +70,13 @@ class TimeMealRow extends StatelessWidget {
         value: meal,
         isExpanded: stacked,
         underline: const SizedBox.shrink(),
+        // The label above already names the meal; the visible selection
+        // would make VoiceOver read it twice. The open menu's items keep
+        // their own semantics.
+        selectedItemBuilder: (context) => [
+          for (final category in FoodCategory.values)
+            ExcludeSemantics(child: _mealLabel(category, fit: stacked)),
+        ],
         items: [
           for (final category in FoodCategory.values)
             DropdownMenuItem(

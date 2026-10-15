@@ -73,7 +73,17 @@ void main() {
       final time = find.semantics.byLabel('Time, 12:05 PM').evaluate().single;
       expect(time, isSemantics(isButton: true, hasTapAction: true));
       expect(time.getSemanticsData().hint, 'Double tap to change');
-      expect(find.semantics.byLabel(RegExp(r'^Meal, Lunch')), findsWidgets);
+      // Read once: the visible selection adds no second "Lunch".
+      final meal = find.semantics.byLabel('Meal, Lunch').evaluate().single;
+      expect(meal, isSemantics(isButton: true, hasTapAction: true));
+
+      // The open menu still reads each meal.
+      await tester.tap(find.text('Lunch'));
+      await tester.pumpAndSettle();
+      for (final category in FoodCategory.values) {
+        expect(find.semantics.byLabel(category.label), findsOneWidget,
+            reason: category.label);
+      }
     } finally {
       handle.dispose();
     }
