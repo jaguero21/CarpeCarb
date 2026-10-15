@@ -21,11 +21,14 @@ import 'services/purchase_service.dart';
 import 'services/rating_prompt.dart';
 import 'services/cloud_sync_service.dart';
 import 'services/siri_buffer_service.dart';
+import 'services/recent_foods.dart';
 import 'services/siri_import.dart';
 import 'services/sync_merge.dart';
 import 'services/sync_payload.dart';
 import 'services/sync_store.dart';
 import 'models/food_item.dart';
+import 'models/meal_sections.dart';
+import 'models/quick_log.dart';
 import 'models/server_quota.dart';
 import 'models/serving_info.dart';
 import 'screens/settings_page.dart';
@@ -37,7 +40,10 @@ import 'utils/date_format.dart';
 import 'utils/day_key.dart';
 import 'utils/input_validation.dart';
 import 'utils/user_facing_exception.dart';
+import 'widgets/appear_once.dart';
 import 'widgets/food_item_card.dart';
+import 'widgets/meal_section_header.dart';
+import 'widgets/quick_log_chips.dart';
 import 'widgets/serving_picker.dart';
 
 Future<void> main() async {
@@ -105,7 +111,17 @@ class CarbTrackerHomeState extends State<CarbTrackerHome>
   final TextEditingController _carbController = TextEditingController();
   final FocusNode _foodFocusNode = FocusNode();
   final FocusNode _carbFocusNode = FocusNode();
-  GlobalKey<AnimatedListState> _listKey = GlobalKey<AnimatedListState>();
+
+  /// Foods added since the last frame, whose rows fade in. Rows already
+  /// there when the list loads just appear.
+  final Set<String> _arrivingIds = {};
+
+  void _markArriving(Iterable<FoodItem> items) {
+    _arrivingIds.addAll(items.map((item) => item.id));
+    WidgetsBinding.instance
+        .addPostFrameCallback((_) => _arrivingIds.clear());
+  }
+
   final PerplexityFirebaseService _perplexityService =
       PerplexityFirebaseService();
   HealthKitService _healthKitService = HealthKitService();
@@ -122,6 +138,38 @@ class CarbTrackerHomeState extends State<CarbTrackerHome>
   StreamSubscription<PurchaseOutcome>? _purchaseOutcomes;
   final CloudSyncService _cloudSyncService = CloudSyncService();
   final SyncStore _syncStore = SyncStore();
+  final RecentFoods _recentFoods = RecentFoods();
+
+  /// Remembers foods that just joined today, for the quick-add row. Never
+  /// fails loudly: logging doesn't depend on it. [quickAdd] is for foods
+  /// logged again from a chip or the saved list, which deleting keeps.
+  Future<void> _recordRecent(Iterable<FoodItem> items,
+      {bool quickAdd = false}) async {
+    try {
+      await _recentFoods.record(items, DateTime.now(), quickAdd: quickAdd);
+    } catch (e) {
+      if (kDebugMode) debugPrint('Recording recent foods failed: $e');
+    }
+    await _reloadQuickLog();
+  }
+
+  List<QuickLogChip> _quickChips = const [];
+
+  @visibleForTesting
+  List<QuickLogChip> get quickChips => _quickChips;
+
+  /// Rebuilds the quick-add row from saved foods and recent foods.
+  Future<void> _reloadQuickLog() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final saved = parseFoodItems(prefs.getString(StorageKeys.savedFoods));
+      final recent = await _recentFoods.load(DateTime.now());
+      if (!mounted) return;
+      setState(() => _quickChips = quickLogChips(saved: saved, recent: recent));
+    } catch (e) {
+      if (kDebugMode) debugPrint('Loading quick-add foods failed: $e');
+    }
+  }
 
   final SiriBufferService _siriBuffer = SiriBufferService();
   bool _isManualEntryMode = false;
@@ -500,6 +548,7 @@ class CarbTrackerHomeState extends State<CarbTrackerHome>
         foodItems = [];
         dailyCarbGoal = savedGoal;
       });
+      await _reloadQuickLog();
       // Siri may have logged food this morning before the app was opened.
       await _importSiriLoggedItems();
       return;
@@ -523,12 +572,9 @@ class CarbTrackerHomeState extends State<CarbTrackerHome>
     setState(() {
       foodItems = loadedItems;
       dailyCarbGoal = savedGoal;
-      // The list is replaced wholesale, so give the AnimatedList a new key:
-      // its state still counts the items it had, and a merge that leaves
-      // fewer would make it build rows that no longer exist (RangeError).
-      _listKey = GlobalKey<AnimatedListState>();
     });
 
+    await _reloadQuickLog();
     // Pick up any food items logged via Siri while the app was closed
     await _importSiriLoggedItems();
   }
@@ -536,8 +582,8 @@ class CarbTrackerHomeState extends State<CarbTrackerHome>
   Future<void> _importSiriLoggedItems() async {
     final token = ++_importSiriItemsToken;
     // Let a just-replaced list rebuild first (a new day, or a reload that
-    // swapped in fewer items), so the inserts below don't hit the old
-    // AnimatedList, which still counts the previous items.
+    // swapped in fewer items), so the rows added below are the only ones
+    // that animate in.
     await WidgetsBinding.instance.endOfFrame;
     if (!mounted || token != _importSiriItemsToken) return;
     // Taken and cleared in one native step: a Siri log that lands while this
@@ -551,19 +597,20 @@ class CarbTrackerHomeState extends State<CarbTrackerHome>
           SiriImport.parse(siriItemsJson, DateTime.now(), resetHour);
       if (siri.today.isEmpty && siri.earlier.isEmpty) return;
 
-      // Insert one at a time to keep AnimatedList's internal count in sync
-      // with the data list.
+      // Insert one at a time, so each one gets its own entrance animation.
       for (final foodItem in siri.today) {
         if (!mounted || token != _importSiriItemsToken) return;
         setState(() {
           foodItems.insert(0, foodItem);
+          _markArriving([foodItem]);
         });
-        _listKey.currentState
-            ?.insertItem(0, duration: const Duration(milliseconds: 400));
       }
 
       await _saveData();
       await _updateWidget();
+      // After the save: recents are a convenience, and waiting on them here
+      // would leave the inserted foods unsaved while a merge reloads the list.
+      if (siri.today.isNotEmpty) unawaited(_recordRecent(siri.today));
 
       // Items from an earlier day stay out of today's list but still go to
       // Apple Health at the time they were logged.
@@ -691,13 +738,14 @@ class CarbTrackerHomeState extends State<CarbTrackerHome>
     });
 
     if (items.isNotEmpty) {
-      // Insert one at a time so AnimatedList and foodItems stay in sync
-      // and every item gets its own entrance animation
-      for (final item in items.reversed) {
-        foodItems.insert(0, item);
-        _listKey.currentState
-            ?.insertItem(0, duration: const Duration(milliseconds: 400));
-      }
+      // Inserted in reverse so the foods keep the order the lookup found them in.
+      setState(() {
+        for (final item in items.reversed) {
+          foodItems.insert(0, item);
+        }
+        _markArriving(items);
+      });
+      unawaited(_recordRecent(items));
 
       HapticFeedback.lightImpact();
 
@@ -800,12 +848,12 @@ class CarbTrackerHomeState extends State<CarbTrackerHome>
     final item = FoodItem(name: name, carbs: carbs, isManualEntry: true);
     setState(() {
       foodItems.insert(0, item);
+      _markArriving([item]);
       showingDailyTotal = false;
       _foodController.clear();
       _carbController.clear();
     });
-    _listKey.currentState
-        ?.insertItem(0, duration: const Duration(milliseconds: 400));
+    unawaited(_recordRecent([item]));
     HapticFeedback.lightImpact();
     _saveData();
     _updateWidget();
@@ -888,21 +936,15 @@ class CarbTrackerHomeState extends State<CarbTrackerHome>
   Future<void> applyLookupResultForTest(LookupResult result) =>
       _applyLookupResult(result);
   void switchToSettingsForTest() => _switchToPage(1);
+  @visibleForTesting
+  void updateFoodItemForTest(FoodItem old, FoodItem updated) =>
+      _updateFoodItem(old, updated);
 
   void _resetTotal() {
-    // Capture items before clearing so animation builders have valid references.
     final snapshot = List<FoodItem>.from(foodItems);
     setState(() {
       foodItems.clear();
     });
-    for (int i = snapshot.length - 1; i >= 0; i--) {
-      final item = snapshot[i];
-      _listKey.currentState?.removeItem(
-        i,
-        (context, animation) => _buildAnimatedItem(item, animation),
-        duration: const Duration(milliseconds: 300),
-      );
-    }
     // Delete all reset items from HealthKit
     if (_premiumService.isHealthSyncEnabled) {
       for (final item in snapshot) {
@@ -955,6 +997,14 @@ class CarbTrackerHomeState extends State<CarbTrackerHome>
       return;
     }
     setState(() => foodItems[index] = updated);
+    // The chip this food made follows the edit. Only an existing entry is
+    // updated, so a recent the user removed stays removed.
+    unawaited(_recentFoods
+        .updateSource(updated)
+        .then((_) => _reloadQuickLog())
+        .catchError((Object e) {
+      if (kDebugMode) debugPrint('Updating a recent food failed: $e');
+    }));
     _saveData();
     _updateWidget();
     if (_premiumService.isHealthSyncEnabled) {
@@ -971,49 +1021,59 @@ class CarbTrackerHomeState extends State<CarbTrackerHome>
     }
   }
 
-  void removeItem(int index) {
+  /// Deletes the food at [index] in [foodItems]. Kept for tests; the UI
+  /// deletes by id.
+  void removeItem(int index) => removeItemById(foodItems[index].id);
+
+  /// Deletes a food from today: list, total, widget, iCloud (a delete marker,
+  /// so the other device's copy doesn't merge back) and Apple Health.
+  /// [showUndo] is false when the deletion is itself an undo (a quick-add chip's).
+  /// [forgetRecent] drops the recent-foods entry this food created.
+  void removeItemById(String id, {bool showUndo = true, bool forgetRecent = true}) {
+    final index = foodItems.indexWhere((f) => f.id == id);
+    // Gone already if the list changed under the caller.
+    if (index == -1) return;
     final removedItem = foodItems[index];
-    setState(() {
-      foodItems.removeAt(index);
-    });
-    _listKey.currentState?.removeItem(
-      index,
-      (context, animation) => _buildAnimatedItem(removedItem, animation),
-      duration: const Duration(milliseconds: 300),
-    );
+    setState(() => foodItems.removeAt(index));
     _saveAfterDeleting([removedItem.id]);
+    if (forgetRecent) {
+      unawaited(_recentFoods
+          .removeSource(removedItem.id)
+          .then((_) => _reloadQuickLog())
+          .catchError((Object e) {
+        if (kDebugMode) debugPrint('Forgetting a recent food failed: $e');
+      }));
+    }
     _updateWidget();
     if (_premiumService.isHealthSyncEnabled) {
       _deleteFromHealthKit(removedItem);
     }
 
-    if (mounted) {
-      ScaffoldMessenger.of(context).hideCurrentSnackBar();
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('${removedItem.name} removed'),
-          duration: const Duration(seconds: 4),
-          action: SnackBarAction(
-            label: 'Undo',
-            textColor: Colors.white,
-            onPressed: () {
-              setState(() {
-                foodItems.insert(index.clamp(0, foodItems.length), removedItem);
-              });
-              _listKey.currentState?.insertItem(
-                index.clamp(0, foodItems.length - 1),
-                duration: const Duration(milliseconds: 400),
-              );
-              _saveAfterRestoring(removedItem.id);
-              _updateWidget();
-              if (_premiumService.isHealthSyncEnabled) {
-                _writeToHealthKit(removedItem);
-              }
-            },
-          ),
+    if (!showUndo || !mounted) return;
+    ScaffoldMessenger.of(context).hideCurrentSnackBar();
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('${removedItem.name} removed'),
+        duration: const Duration(seconds: 4),
+        action: SnackBarAction(
+          label: 'Undo',
+          textColor: Colors.white,
+          onPressed: () {
+            // A merge may have brought the food back while this was showing.
+            if (foodItems.any((f) => f.id == removedItem.id)) return;
+            setState(() {
+              foodItems.insert(index.clamp(0, foodItems.length), removedItem);
+              _markArriving([removedItem]);
+            });
+            _saveAfterRestoring(removedItem.id);
+            _updateWidget();
+            if (_premiumService.isHealthSyncEnabled) {
+              _writeToHealthKit(removedItem);
+            }
+          },
         ),
-      );
-    }
+      ),
+    );
   }
 
   Widget _buildModeToggle() {
@@ -1097,16 +1157,6 @@ class CarbTrackerHomeState extends State<CarbTrackerHome>
             onTap: () => setState(() => _isManualEntryMode = true),
           ),
         ],
-      ),
-    );
-  }
-
-  Widget _buildAnimatedItem(FoodItem item, Animation<double> animation) {
-    return SizeTransition(
-      sizeFactor: animation,
-      child: FadeTransition(
-        opacity: animation,
-        child: _buildFoodTile(item),
       ),
     );
   }
@@ -1199,9 +1249,9 @@ class CarbTrackerHomeState extends State<CarbTrackerHome>
               TextButton(
                 onPressed: () {
                   Navigator.pop(context);
-                  final index = foodItems.indexWhere((f) => f.id == item.id);
-                  // Gone already if the list changed while the dialog was open.
-                  if (index != -1) removeItem(index);
+                  // Does nothing if the list changed while the dialog was open
+                  // and the food is already gone.
+                  removeItemById(item.id);
                 },
                 style: TextButton.styleFrom(foregroundColor: AppColors.terracotta),
                 child: const Text('Delete'),
@@ -1516,12 +1566,62 @@ class CarbTrackerHomeState extends State<CarbTrackerHome>
 
   /// Called by SettingsPage after it has written the favourites and recorded
   /// the change, so the new list reaches the other device.
-  Future<void> _onFavoritesChanged() => _pushLocalState();
+  Future<void> _onFavoritesChanged() async {
+    await _reloadQuickLog();
+    await _pushLocalState();
+  }
 
-  /// [index] is the row's place in today's list, which the Delete action
-  /// needs. It is null while a row animates out, where the actions would have
-  /// nothing to act on.
-  Widget _buildFoodTile(FoodItem item, {int? index}) {
+  /// One food in today's list: swipe right to save it, left to delete it.
+  Widget _buildTodayRow(FoodItem item) {
+    return AppearOnce(
+      key: ValueKey('row-${item.id}'),
+      animate: _arrivingIds.contains(item.id),
+      child: Dismissible(
+        key: Key(item.id),
+        direction: DismissDirection.horizontal,
+        confirmDismiss: (direction) async {
+          if (direction == DismissDirection.startToEnd) {
+            HapticFeedback.lightImpact();
+            await _saveToSavedFoods(item);
+            return false;
+          }
+          HapticFeedback.mediumImpact();
+          return true;
+        },
+        onDismissed: (_) => removeItemById(item.id),
+        background: Container(
+          alignment: Alignment.centerLeft,
+          padding: const EdgeInsets.only(left: 16),
+          decoration: BoxDecoration(
+            color: AppColors.sage,
+            borderRadius: BorderRadius.circular(16),
+          ),
+          child: Icon(
+            Icons.bookmark,
+            size: 28,
+            color: Colors.white,
+          ),
+        ),
+        secondaryBackground: Container(
+          alignment: Alignment.centerRight,
+          padding: const EdgeInsets.only(right: 16),
+          decoration: BoxDecoration(
+            color: AppColors.terracotta,
+            borderRadius: BorderRadius.circular(16),
+          ),
+          child: Icon(
+            Icons.delete,
+            size: 28,
+            color: Colors.white,
+          ),
+        ),
+        child: _buildFoodTile(item),
+      ),
+    );
+  }
+
+  /// One food as a row: name, time, serving and carbs.
+  Widget _buildFoodTile(FoodItem item) {
     final serving = item.serving?.rowLabel();
     final spokenServingLabel = item.serving == null ? null : spokenServing(item.serving!);
     final time = formatTime(item.loggedAt);
@@ -1539,17 +1639,13 @@ class CarbTrackerHomeState extends State<CarbTrackerHome>
       // Deleting and saving are swipes, which VoiceOver can't reach: its own
       // swipes move between elements. These put both in the Actions rotor.
       customSemanticsActions: {
-        // Resolved by id, not by the position captured at build time: a
-        // semantics action can be dispatched against a config from before a
-        // rebuild — an iCloud merge replacing `foodItems`, say — and by then
-        // the index would point at a different food, or past the end. Same
-        // lookup and guard the details dialog's Delete uses.
-        if (index != null)
-          const CustomSemanticsAction(label: 'Delete'): () {
-            final at = foodItems.indexWhere((f) => f.id == item.id);
-            // Gone already if the list changed under the action.
-            if (at != -1) removeItem(at);
-          },
+        // Deleted by id, not by a position captured at build time: a semantics
+        // action can be dispatched against a config from before a rebuild — an
+        // iCloud merge replacing `foodItems`, say — and by then an index would
+        // point at a different food, or past the end. A food already gone is
+        // ignored. Same call the details dialog's Delete uses.
+        const CustomSemanticsAction(label: 'Delete'): () =>
+            removeItemById(item.id),
         const CustomSemanticsAction(label: 'Save to Food list'): () =>
             _saveToSavedFoods(item),
       },
@@ -1657,7 +1753,7 @@ class CarbTrackerHomeState extends State<CarbTrackerHome>
     );
   }
 
-  void _addSavedFood(FoodItem saved) {
+  FoodItem _addSavedFood(FoodItem saved) {
     // A new entry, logged now — not the stored favourite itself. Reusing it
     // would give two taps the same id and the same millisecond, and deleting
     // one would take the other out of Apple Health with it.
@@ -1675,15 +1771,59 @@ class CarbTrackerHomeState extends State<CarbTrackerHome>
     );
     setState(() {
       foodItems.insert(0, item);
+      _markArriving([item]);
       showingDailyTotal = false;
     });
-    _listKey.currentState
-        ?.insertItem(0, duration: const Duration(milliseconds: 400));
+    // A chip or a saved food: known good, so deleting it keeps its chip.
+    unawaited(_recordRecent([item], quickAdd: true));
     _saveData();
     _updateWidget();
     if (_premiumService.isHealthSyncEnabled) {
       _writeToHealthKit(item);
     }
+    return item;
+  }
+
+  /// Chips tapped within the last second, by food name. A double tap is one
+  /// serving, not two.
+  final Map<String, Timer> _quickLogCooldowns = {};
+
+  /// Logs a quick-add chip's food now, with no lookup, and offers Undo.
+  void _quickLog(FoodItem food) {
+    final key = food.name.trim().toLowerCase();
+    if (_quickLogCooldowns.containsKey(key)) return;
+    HapticFeedback.lightImpact();
+    final item = _addSavedFood(food);
+    _quickLogCooldowns[key] = Timer(
+        const Duration(seconds: 1), () => _quickLogCooldowns.remove(key));
+    SemanticsService.sendAnnouncement(
+      View.of(context),
+      quickLoggedAnnouncement(name: item.name, carbs: item.carbs),
+      TextDirection.ltr,
+    );
+    ScaffoldMessenger.of(context).hideCurrentSnackBar();
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('Logged ${item.name} · ${item.carbs.toStringAsFixed(1)} g'),
+        duration: const Duration(seconds: 4),
+        action: SnackBarAction(
+          label: 'Undo',
+          textColor: Colors.white,
+          // A mis-tap, not a wrong food: keep it in the quick-add row.
+          onPressed: () =>
+              removeItemById(item.id, showUndo: false, forgetRecent: false),
+        ),
+      ),
+    );
+  }
+
+  void _removeRecent(FoodItem food) {
+    unawaited(_recentFoods
+        .remove(food.name)
+        .then((_) => _reloadQuickLog())
+        .catchError((Object e) {
+      if (kDebugMode) debugPrint('Removing a recent food failed: $e');
+    }));
   }
 
   Future<void> _saveToSavedFoods(FoodItem item) async {
@@ -1705,6 +1845,7 @@ class CarbTrackerHomeState extends State<CarbTrackerHome>
       final encoded = jsonEncode(savedFoods.map((f) => f.toJson()).toList());
       await prefs.setString(StorageKeys.savedFoods, encoded);
       setState(() => _favoritesVersion++);
+      unawaited(_reloadQuickLog());
 
       await _syncStore.recordFavoriteAdded(item.name);
       await _pushLocalState();
@@ -2210,6 +2351,14 @@ class CarbTrackerHomeState extends State<CarbTrackerHome>
                           onTapOutside: (_) => _dismissKeyboard(),
                         ),
                       ],
+                      if (_quickChips.isNotEmpty) ...[
+                        const SizedBox(height: 12),
+                        QuickLogChips(
+                          chips: _quickChips,
+                          onLog: _quickLog,
+                          onRemoveRecent: _removeRecent,
+                        ),
+                      ],
                       const SizedBox(height: 16),
                       SizedBox(
                         width: double.infinity,
@@ -2351,63 +2500,22 @@ class CarbTrackerHomeState extends State<CarbTrackerHome>
                           ),
                         ),
                       )
-                    : AnimatedList(
-                        key: _listKey,
-                        shrinkWrap: true,
-                        physics: const NeverScrollableScrollPhysics(),
-                        initialItemCount: foodItems.length,
-                        itemBuilder: (context, index, animation) {
-                          final item = foodItems[index];
-                          return SizeTransition(
-                            sizeFactor: animation,
-                            child: FadeTransition(
-                              opacity: animation,
-                              child: Dismissible(
-                                key: Key(item.id),
-                                direction: DismissDirection.horizontal,
-                                confirmDismiss: (direction) async {
-                                  if (direction ==
-                                      DismissDirection.startToEnd) {
-                                    HapticFeedback.lightImpact();
-                                    await _saveToSavedFoods(item);
-                                    return false;
-                                  } else {
-                                    HapticFeedback.mediumImpact();
-                                    return true;
-                                  }
-                                },
-                                onDismissed: (_) => removeItem(index),
-                                background: Container(
-                                  alignment: Alignment.centerLeft,
-                                  padding: const EdgeInsets.only(left: 16),
-                                  decoration: BoxDecoration(
-                                    color: AppColors.sage,
-                                    borderRadius: BorderRadius.circular(16),
-                                  ),
-                                  child: Icon(
-                                    Icons.bookmark,
-                                    size: 28,
-                                    color: Colors.white,
-                                  ),
-                                ),
-                                secondaryBackground: Container(
-                                  alignment: Alignment.centerRight,
-                                  padding: const EdgeInsets.only(right: 16),
-                                  decoration: BoxDecoration(
-                                    color: AppColors.terracotta,
-                                    borderRadius: BorderRadius.circular(16),
-                                  ),
-                                  child: Icon(
-                                    Icons.delete,
-                                    size: 28,
-                                    color: Colors.white,
-                                  ),
-                                ),
-                                child: _buildFoodTile(item, index: index),
+                    : AnimatedSize(
+                        duration: const Duration(milliseconds: 300),
+                        alignment: Alignment.topCenter,
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            for (final section in mealSections(foodItems)) ...[
+                              MealSectionHeader(
+                                key: ValueKey('meal-${section.id}'),
+                                section: section,
                               ),
-                            ),
-                          );
-                        },
+                              for (final item in section.items)
+                                _buildTodayRow(item),
+                            ],
+                          ],
+                        ),
                       ),
               ],
             ),
@@ -2425,6 +2533,9 @@ class CarbTrackerHomeState extends State<CarbTrackerHome>
     _cloudSyncService.stopListening();
     _purchaseOutcomes?.cancel();
     _dayBoundaryTimer?.cancel();
+    for (final cooldown in _quickLogCooldowns.values) {
+      cooldown.cancel();
+    }
     _foodController.dispose();
     _carbController.dispose();
     _foodFocusNode.dispose();

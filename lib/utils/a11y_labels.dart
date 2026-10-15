@@ -65,3 +65,19 @@ String carbProgressValue({required double total, double? goal}) {
   final base = '${spokenNumber(total)} of ${spokenGrams(goal)}';
   return total > goal ? '$base, ${spokenGrams(total - goal)} over goal' : base;
 }
+
+/// A meal's header in today's list: "Lunch, 52 grams of carbs, 2 foods".
+String mealHeaderLabel({
+  required String meal,
+  required double carbs,
+  required int foods,
+}) =>
+    '$meal, ${spokenGrams(carbs)} of carbs, $foods ${foods == 1 ? 'food' : 'foods'}';
+
+/// A quick-add chip: "Log Banana, 27 grams of carbs".
+String quickLogChipLabel({required String name, required double carbs}) =>
+    'Log $name, ${spokenGrams(carbs)} of carbs';
+
+/// Spoken after a chip logs a food: "Logged Banana, 27 grams of carbs".
+String quickLoggedAnnouncement({required String name, required double carbs}) =>
+    'Logged $name, ${spokenGrams(carbs)} of carbs';

@@ -106,7 +106,7 @@ void main() {
 
       expect(state.totalCarbs, 25.0);
 
-      // Add second item — must also notify AnimatedList
+      // Add a second item to a list that already has a row
       state.setState(() {
         state.foodItems.add(FoodItem(name: 'Banana', carbs: 27.0));
         state.showingDailyTotal = true;
@@ -114,8 +114,7 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(state.totalCarbs, 52.0);
-      // Banana is in foodItems but AnimatedList only knows about 1 item
-      // (initialItemCount is only used on first build), so verify via state
+      // The list has grown by one, so check the state it is built from
       expect(state.foodItems.any((item) => item.name == 'Banana'), isTrue);
     });
 
@@ -692,7 +691,7 @@ void main() {
       stubHomeWidget();
       seedThreeItemsToday();
       // Nothing in the cloud at launch, so all three items render first —
-      // which is what leaves the AnimatedList counting them.
+      // and then the merge removes rows that are already on screen.
       stubCloudSyncReturning(null);
 
       await tester.pumpWidget(const CarbTrackerApp());
