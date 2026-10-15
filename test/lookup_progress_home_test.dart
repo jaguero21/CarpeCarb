@@ -56,9 +56,9 @@ void main() {
     await tester.pump(const Duration(seconds: 4));
     expect(find.text('Checking nutrition sources…'), findsOneWidget);
     await tester.pump(const Duration(seconds: 1));
-    expect(find.text('Still checking — some foods need a second source'), findsOneWidget);
+    expect(find.text('Still checking — some foods take longer'), findsOneWidget);
     await tester.pump(const Duration(seconds: 7));
-    expect(find.text('Almost there…'), findsOneWidget);
+    expect(find.text('Still working on it…'), findsOneWidget);
     await tester.pump(const Duration(seconds: 8));
     expect(find.text('Taking longer than usual…'), findsOneWidget);
 
@@ -77,7 +77,7 @@ void main() {
     await tester.pump(const Duration(seconds: 6));
     lookup.answer.completeError(UserFacingException('Server error. Try again later.'));
     await tester.pumpAndSettle();
-    expect(find.text('Still checking — some foods need a second source'), findsNothing);
+    expect(find.text('Still checking — some foods take longer'), findsNothing);
     expect(find.text('Looking up…'), findsNothing);
     expect(find.text('Server error. Try again later.'), findsOneWidget);
     expect(homeState(tester).lookupTickerActive, isFalse);
@@ -125,7 +125,7 @@ void main() {
       await tester.pump(const Duration(seconds: 5));
       expect(
         find.semantics
-            .byLabel('Still checking — some foods need a second source')
+            .byLabel('Still checking — some foods take longer')
             .evaluate()
             .single,
         isSemantics(isLiveRegion: true),

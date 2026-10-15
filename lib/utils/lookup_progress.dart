@@ -4,8 +4,8 @@
 String lookupProgressMessage(Duration elapsed) {
   if (elapsed < const Duration(seconds: 5)) return 'Checking nutrition sources…';
   if (elapsed < const Duration(seconds: 12)) {
-    return 'Still checking — some foods need a second source';
+    return 'Still checking — some foods take longer';
   }
-  if (elapsed < const Duration(seconds: 20)) return 'Almost there…';
+  if (elapsed < const Duration(seconds: 20)) return 'Still working on it…';
   return 'Taking longer than usual…';
 }
