@@ -30,19 +30,27 @@ class _RecordingHealth extends HealthKitService {
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
-  final now = DateTime.now();
-  final lunch = {
-    'id': 'l1',
-    'name': 'Soup',
-    'carbs': 20.0,
-    'category': 'lunch',
-    'loggedAt': now.toIso8601String(),
-  };
+  /// Lunch today, with seconds, the way a food logged then would carry them.
+  DateTime lunchtime(DateTime now) =>
+      DateTime(now.year, now.month, now.day, 12, 30, 15, 250);
 
-  Future<CarbTrackerHomeState> openSoup(WidgetTester tester,
-      {List<TimeOfDay?> picks = const []}) async {
+  /// Shows today with Soup in it, logged at [loggedAt] (lunchtime by
+  /// default) as [category] (Lunch by default), and opens Soup's details.
+  /// The time picker answers with [picks], in order.
+  Future<CarbTrackerHomeState> openSoup(WidgetTester tester, DateTime now,
+      {List<TimeOfDay?> picks = const [],
+      DateTime? loggedAt,
+      String category = 'lunch'}) async {
     stubHomeChannels();
-    SharedPreferences.setMockInitialValues(todayPrefs([lunch]));
+    SharedPreferences.setMockInitialValues(todayPrefs([
+      {
+        'id': 'l1',
+        'name': 'Soup',
+        'carbs': 20.0,
+        'category': category,
+        'loggedAt': (loggedAt ?? lunchtime(now)).toIso8601String(),
+      },
+    ]));
     await tester.pumpWidget(const CarbTrackerApp());
     await tester.pumpAndSettle();
     final state = tester.state<CarbTrackerHomeState>(find.byType(CarbTrackerHome));
@@ -56,11 +64,16 @@ void main() {
     return state;
   }
 
-  // Midnight is always today and never later than now (reset hour 0).
+  // Midnight is always today and never later than now (reset hour 0), except
+  // in the first minute of the day, when it is now's own minute. Tests that
+  // pick it skip that minute.
   const midnight = TimeOfDay(hour: 0, minute: 0);
+  bool inMidnightMinute(DateTime now) => now.hour == 0 && now.minute == 0;
 
   testWidgets('a new time moves the food to the meal for that time', (tester) async {
-    final state = await openSoup(tester, picks: [midnight]);
+    final now = DateTime.now();
+    if (inMidnightMinute(now)) return;
+    final state = await openSoup(tester, now, picks: [midnight]);
     await tester.tap(find.textContaining('Time · '));
     await tester.pumpAndSettle();
     expect(find.text('Time · 12:00 AM'), findsOneWidget);
@@ -77,7 +90,9 @@ void main() {
   });
 
   testWidgets('a meal picked by hand stays when the time changes', (tester) async {
-    final state = await openSoup(tester, picks: [midnight]);
+    final now = DateTime.now();
+    if (inMidnightMinute(now)) return;
+    final state = await openSoup(tester, now, picks: [midnight]);
     await tester.tap(find.text('Lunch').last);
     await tester.pumpAndSettle();
     await tester.tap(find.text('Dinner').last);
@@ -90,29 +105,35 @@ void main() {
   });
 
   testWidgets('a time outside today is refused inside the dialog', (tester) async {
-    final state = await openSoup(tester, picks: [const TimeOfDay(hour: 23, minute: 59)]);
-    await tester.tap(find.textContaining('Time · '));
-    await tester.pumpAndSettle();
+    final now = DateTime.now();
     // At 23:59 itself this pick is valid; skip in that one minute.
     if (now.hour == 23 && now.minute == 59) return;
+    final state = await openSoup(tester, now,
+        picks: [const TimeOfDay(hour: 23, minute: 59)]);
+    await tester.tap(find.textContaining('Time · '));
+    await tester.pumpAndSettle();
     expect(find.text('Pick a time from today, up to now'), findsOneWidget);
     expect(find.text('Update'), findsNothing);
-    expect(state.foodItems.single.loggedAt, now);
+    expect(state.foodItems.single.loggedAt, lunchtime(now));
   });
 
   testWidgets('Health moves the entry: delete at the old time, then write at the new',
       (tester) async {
-    final state = await openSoup(tester, picks: [midnight]);
+    final now = DateTime.now();
+    if (inMidnightMinute(now)) return;
+    final state = await openSoup(tester, now, picks: [midnight]);
     final health = _RecordingHealth();
     state.healthKitService = health;
     await tester.tap(find.textContaining('Time · '));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Update'));
     await tester.pumpAndSettle();
-    expect(health.calls, ['delete ${now.hour}:${now.minute}', 'write 0:0']);
+    expect(health.calls, ['delete 12:30', 'write 0:0']);
   });
 
   testWidgets('VoiceOver hears the new meal and time', (tester) async {
+    final now = DateTime.now();
+    if (inMidnightMinute(now)) return;
     final announcements = <String>[];
     tester.binding.defaultBinaryMessenger.setMockDecodedMessageHandler<dynamic>(
         SystemChannels.accessibility, (message) async {
@@ -124,7 +145,7 @@ void main() {
     });
     addTearDown(() => tester.binding.defaultBinaryMessenger
         .setMockDecodedMessageHandler<dynamic>(SystemChannels.accessibility, null));
-    await openSoup(tester, picks: [midnight]);
+    await openSoup(tester, now, picks: [midnight]);
     await tester.tap(find.textContaining('Time · '));
     await tester.pumpAndSettle();
     expect(announcements, contains('Snack, 12:00 AM'));
