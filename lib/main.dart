@@ -193,8 +193,11 @@ class CarbTrackerHomeState extends State<CarbTrackerHome>
   void _startLookupProgress() {
     _lookupTicker?.cancel();
     _lookupSeconds = 0;
-    _lookupTicker = Timer.periodic(const Duration(seconds: 1), (_) {
-      if (mounted) setState(() => _lookupSeconds++);
+    // timer.tick, not a count of callbacks: a periodic Timer skips the ticks
+    // it missed after backgrounding or jank without calling back, but tick
+    // still counts the real seconds that passed.
+    _lookupTicker = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (mounted) setState(() => _lookupSeconds = timer.tick);
     });
   }
 
@@ -685,6 +688,11 @@ class CarbTrackerHomeState extends State<CarbTrackerHome>
   }
 
   Future<void> _addFood() async {
+    // Return in the food field and the keyboard toolbar reach this without the
+    // Add button, which is the only thing that checks a lookup is running. A
+    // duplicate lookup would log the same carbs twice.
+    if (isLoading) return;
+
     final foodText = _foodController.text.trim();
 
     // Validate input
@@ -715,6 +723,7 @@ class CarbTrackerHomeState extends State<CarbTrackerHome>
       isLoading = true;
     });
     _startLookupProgress();
+    final ticker = _lookupTicker;
 
     try {
       final result = await _perplexityService.getMultipleCarbCounts(foodText);
@@ -759,7 +768,11 @@ class CarbTrackerHomeState extends State<CarbTrackerHome>
         );
       }
     } finally {
-      _stopLookupProgress();
+      // The result and error paths stop the ticker as soon as they know, but
+      // this lookup can end after the user has started another (the button is
+      // free again while the result is still being saved). Stop only this
+      // lookup's own ticker.
+      if (identical(_lookupTicker, ticker)) _stopLookupProgress();
     }
   }
 

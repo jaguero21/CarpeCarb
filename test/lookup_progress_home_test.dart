@@ -6,17 +6,29 @@ import 'package:carb_tracker/services/lookup_api.dart';
 import 'package:carb_tracker/services/perplexity_firebase_service.dart';
 import 'package:carb_tracker/utils/user_facing_exception.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'helpers/home_harness.dart';
 
-/// A lookup that answers only when the test says so.
+/// A lookup that answers only when the test says so. Every call gets its own
+/// answer, in the order the calls came in.
 class _SlowLookup extends PerplexityFirebaseService {
-  final answer = Completer<LookupResult>();
+  final answers = <Completer<LookupResult>>[];
+
+  /// The first call's answer.
+  Completer<LookupResult> get answer => answers.first;
+
+  /// How many lookups have been started.
+  int get calls => answers.length;
 
   @override
-  Future<LookupResult> getMultipleCarbCounts(String input) => answer.future;
+  Future<LookupResult> getMultipleCarbCounts(String input) {
+    final completer = Completer<LookupResult>();
+    answers.add(completer);
+    return completer.future;
+  }
 }
 
 void main() {
@@ -135,5 +147,56 @@ void main() {
     } finally {
       handle.dispose();
     }
+  });
+
+  testWidgets('a second lookup is ignored while one is running', (tester) async {
+    final lookup = await startLookup(tester);
+
+    // Return in the food field reaches _addFood without the Add button, which
+    // is the only thing that checks the lookup is still running.
+    await tester.enterText(foodField, 'banana');
+    await tester.testTextInput.receiveAction(TextInputAction.done);
+    await tester.pump();
+    expect(lookup.calls, 1);
+
+    lookup.answer.complete(LookupResult(items: [FoodItem(name: 'apple', carbs: 25)]));
+    await tester.pumpAndSettle();
+    expect(lookup.calls, 1);
+    expect(homeState(tester).foodItems.map((item) => item.name), ['apple']);
+  });
+
+  testWidgets('a lookup that ends late does not stop the next lookup\'s ticker',
+      (tester) async {
+    final lookup = await startLookup(tester);
+
+    // Hold the first lookup in its widget update, which runs after it has
+    // already let go of the button, so the user can start another meanwhile.
+    final widgetUpdate = Completer<void>();
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(const MethodChannel('home_widget'), (call) async {
+      if (call.method == 'saveWidgetData') await widgetUpdate.future;
+      return true;
+    });
+
+    lookup.answer.complete(LookupResult(items: [FoodItem(name: 'apple', carbs: 25)]));
+    await tester.pump();
+    expect(find.text('Looking up…'), findsNothing);
+
+    await tester.enterText(foodField, 'banana');
+    await tester.tap(find.text('Add Food'));
+    await tester.pump();
+    expect(lookup.calls, 2);
+    expect(homeState(tester).lookupTickerActive, isTrue);
+
+    widgetUpdate.complete();
+    await tester.pump();
+    await tester.pump();
+    expect(homeState(tester).lookupTickerActive, isTrue,
+        reason: 'the first lookup finishing must not stop the second one\'s ticker');
+    expect(find.text('Looking up…'), findsOneWidget);
+
+    lookup.answers.last.complete(const LookupResult(items: []));
+    await tester.pumpAndSettle();
+    expect(homeState(tester).lookupTickerActive, isFalse);
   });
 }
