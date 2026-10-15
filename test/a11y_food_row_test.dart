@@ -107,7 +107,7 @@ void main() {
         hint: 'Double tap for details',
         customActions: const [
           CustomSemanticsAction(label: 'Delete'),
-          CustomSemanticsAction(label: 'Save to Food list'),
+          CustomSemanticsAction(label: 'Save'),
         ],
       ),
     );
@@ -195,7 +195,7 @@ void main() {
     await tester.pumpAndSettle();
 
     performRotorAction(tester, 'Apple, 25 grams of carbs, logged 8:30 AM',
-        'Save to Food list');
+        'Save');
     await tester.pump(const Duration(milliseconds: 400));
 
     final saved =
@@ -221,7 +221,7 @@ void main() {
     // that path is on the device checklist instead.
     openDetails(tester, 'Apple, 25 grams of carbs, logged 8:30 AM');
     await tester.pumpAndSettle();
-    expect(find.text('Save to Food list'), findsOneWidget);
+    expect(find.text('Save'), findsOneWidget);
 
     await tester.tap(find.text('Delete'));
     await tester.pumpAndSettle();
@@ -245,12 +245,13 @@ void main() {
     // that path is on the device checklist instead.
     openDetails(tester, 'Apple, 25 grams of carbs, logged 8:30 AM');
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Save to Food list'));
+    await tester.tap(find.text('Save'));
     await tester.pumpAndSettle();
 
     final saved =
         (await SharedPreferences.getInstance()).getString('saved_foods');
     expect(saved, contains('Apple'));
+    expect(find.text('Apple saved'), findsOneWidget);
     handle.dispose();
     await tester.pump(const Duration(seconds: 4));
   });
