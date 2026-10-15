@@ -49,11 +49,17 @@ keeps its original source.
   so it wraps with the line at large text sizes.
 - **Label text:** `USDA`, `Web` or `Manual`, at 10 pt, weight 600, with letter spacing 0.3 and
   rounded corners (radius 4).
-- **Colors:** the background is the color at 15% opacity, and the text is the color itself. The
-  same pairs are used in dark mode.
-  - USDA: `AppColors.sage`.
-  - Web: `AppColors.honey`.
-  - Manual: `colorScheme.onSurfaceVariant`.
+- **Colors:** each pill is tinted from one base color.
+  - **Base colors:**
+    - USDA: `AppColors.sage`.
+    - Web: `AppColors.honey`.
+    - Manual: `colorScheme.onSurfaceVariant`.
+  - **Background:** the base color at 15% opacity.
+  - **Text:** the base color darkened in light mode (`Color.lerp(base, Colors.black, 0.45)`) and
+    lightened in dark mode (`Color.lerp(base, Colors.white, 0.35)`). Sage and honey as they are
+    fall below a 4.5:1 contrast ratio at 10 pt.
+  - **Contrast requirement:** at least 4.5:1 against the pill's background over the card. A unit
+    test checks this using the relative-luminance formula.
 - **Accessibility:** the row's VoiceOver label gains the source after the carbs. The pill itself
   has no separate VoiceOver node, because the row already excludes its children. For example:
   - "Pho, 41.2 grams of carbs, from USDA, 1 cup, logged 12:05 PM"
@@ -115,6 +121,8 @@ Unit tests:
   - Each details prefix decides when there is no serving.
   - Unknown details or no details give `null`.
 - `lookupProgressMessage`: each threshold, both sides of 5, 12 and 20 s.
+- The tag text colors meet 4.5:1 against the tinted pill background on the card color, in light and
+  dark mode.
 - `foodRowLabel`: with and without a source.
 
 Widget tests:
