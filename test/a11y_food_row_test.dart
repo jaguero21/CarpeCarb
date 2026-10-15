@@ -185,7 +185,7 @@ void main() {
     handle.dispose();
   });
 
-  testWidgets('the Add to Saved rotor action saves the food to the Food list',
+  testWidgets('the Add to Saved rotor action saves the food to Saved',
       (WidgetTester tester) async {
     stubChannels();
     seedTwoFoods();
@@ -231,7 +231,7 @@ void main() {
     await tester.pump(const Duration(seconds: 4));
   });
 
-  testWidgets('the details dialog can save a food to the Food list',
+  testWidgets('the details dialog can save a food to Saved',
       (WidgetTester tester) async {
     stubChannels();
     seedTwoFoods();

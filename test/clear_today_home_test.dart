@@ -257,8 +257,8 @@ void main() {
     await state.applyLookupResultForTest(
         LookupResult(items: [FoodItem(name: 'Apple', carbs: 25)]));
     await tester.pumpAndSettle();
-    final cleared = state.foodItems.length; // just the apple
-    expect(cleared, 1);
+    final afterLookup = state.foodItems.length; // just the apple
+    expect(afterLookup, 1);
 
     // The lookup's own snackbar may have replaced the cleared one; Undo is
     // driven directly here so the test is about what Undo restores.

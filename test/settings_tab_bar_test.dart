@@ -1,10 +1,13 @@
 import 'package:carb_tracker/config/app_colors.dart';
+import 'package:carb_tracker/main.dart';
 import 'package:carb_tracker/widgets/settings_tab_bar.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import 'helpers/contrast.dart';
+import 'helpers/home_harness.dart';
 
 const List<SettingsTab> _tabs = [
   (icon: Icons.bookmark_border, label: 'Saved'),
@@ -53,7 +56,7 @@ void main() {
   });
 
   // The 44 pt minimum height of each tab, found by its constraint: the tabs'
-  // own content is already about 48 pt tall at normal text size, so a height
+  // own content is already taller than 44 pt at normal text size, so a height
   // check there can't tell whether the minimum is still set.
   Finder minHeightBoxes() => find.descendant(
         of: find.byType(SettingsTabBar),
@@ -70,7 +73,7 @@ void main() {
       for (final box in boxes) {
         expect(box.constraints.minHeight, 44, reason: 'text scale $scale');
       }
-      // At half-size text the content alone is about 40 pt, so reaching 44
+      // At half-size text the content alone is under 44 pt, so reaching 44
       // takes the minimum.
       for (var i = 0; i < _tabs.length; i++) {
         expect(tester.getSize(minHeightBoxes().at(i)).height,
@@ -116,5 +119,37 @@ void main() {
     expect(paragraph.size.height, oneLine.height);
     expect(tester.getSize(find.text('Features')).height,
         tester.getSize(find.text('Goals')).height);
+  });
+
+  testWidgets('Settings opens on Saved, and each tab shows its own page by name',
+      (tester) async {
+    stubHomeChannels();
+    SharedPreferences.setMockInitialValues(todayPrefs(const []));
+    await tester.pumpWidget(const CarbTrackerApp());
+    await tester.pumpAndSettle();
+    tester
+        .state<CarbTrackerHomeState>(find.byType(CarbTrackerHome))
+        .switchToSettingsForTest();
+    await tester.pumpAndSettle();
+
+    const savedText = 'No saved foods yet';
+    expect(find.text(savedText), findsOneWidget);
+
+    // A text only that tab shows. History is the non-iOS page off-device.
+    const pages = {
+      'History': 'History requires HealthKit',
+      'Goals': 'Daily Carb Goal',
+      'Features': 'BASIC FEATURES',
+    };
+    for (final MapEntry(key: tab, value: text) in pages.entries) {
+      await tester.tap(find.descendant(
+          of: find.byType(SettingsTabBar), matching: find.text(tab)));
+      await tester.pumpAndSettle();
+      expect(find.text(text), findsOneWidget, reason: tab);
+      expect(find.text(savedText), findsNothing, reason: tab);
+      for (final other in pages.values.where((t) => t != text)) {
+        expect(find.text(other), findsNothing, reason: '$other on $tab');
+      }
+    }
   });
 }
