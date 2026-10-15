@@ -40,6 +40,57 @@ void main() {
         FoodSource.web);
   });
 
+  group('USDA details match only the server\'s exact format', () {
+    FoodSource? sourceOf(String details) =>
+        foodSourceOf(FoodItem(name: 'x', carbs: 1, details: details));
+
+    // functions/src/usda.js DATA_TYPES.
+    for (final dataType in [
+      'Survey (FNDDS)',
+      'SR Legacy',
+      'Foundation',
+      'Branded',
+    ]) {
+      test('$dataType is USDA', () {
+        expect(sourceOf('USDA FoodData Central ($dataType): Apples, raw, 1 medium.'),
+            FoodSource.usda);
+      });
+    }
+
+    for (final details in [
+      'USDA FoodData Central: Apples, raw, 1 medium.',
+      'USDA FoodData Central (Experimental): Apples, raw, 1 medium.',
+      'USDA FoodData Central (SR Legacy) Apples, raw, 1 medium.',
+      'USDA FoodData Central',
+      'USDA, 1 medium apple',
+      'USDA slice',
+    ]) {
+      test('"$details" has no known source', () {
+        expect(sourceOf(details), isNull);
+      });
+    }
+
+    test('a web serving is web even when the details say USDA', () {
+      expect(
+          foodSourceOf(FoodItem(
+              name: 'x',
+              carbs: 1,
+              serving: web(),
+              details: 'USDA FoodData Central (Branded): Apples, raw, 1 medium.')),
+          FoodSource.web);
+    });
+
+    test('a manual entry is manual even when the details say USDA', () {
+      expect(
+          foodSourceOf(FoodItem(
+              name: 'x',
+              carbs: 1,
+              isManualEntry: true,
+              details: 'USDA FoodData Central (Branded): Apples, raw, 1 medium.')),
+          FoodSource.manual);
+    });
+  });
+
   test('anything else has no known source', () {
     expect(foodSourceOf(FoodItem(name: 'x', carbs: 1)), isNull);
     expect(foodSourceOf(FoodItem(name: 'x', carbs: 1, details: 'Per Chipotle, 1 bowl.')),

@@ -23,7 +23,7 @@ String spokenNumber(double value) {
 
 /// One food in today's list, as a sentence rather than separate stops:
 /// "Apple, 25 grams of carbs, from USDA, logged 8:30 AM". [source] is the
-/// spoken form of where the number came from ([FoodSource.spoken]).
+/// spoken form of where the number came from (`FoodSource.spoken`).
 String foodRowLabel({
   required String name,
   required double carbs,

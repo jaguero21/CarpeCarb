@@ -21,6 +21,14 @@ enum FoodSource {
       };
 }
 
+/// The exact opening of a USDA result's details: `usdaItem` in
+/// functions/src/lookup.js writes "USDA FoodData Central (<dataType>): ", with
+/// dataType from DATA_TYPES in functions/src/usda.js. Anything looser would
+/// tag a number that didn't come from the USDA calculation, because an AI
+/// answer or an older saved food can also begin "USDA FoodData Central".
+final _usdaDetails = RegExp(
+    r'^USDA FoodData Central \((?:Survey \(FNDDS\)|SR Legacy|Foundation|Branded)\): ');
+
 /// The food's source, or null when it can't be told (foods looked up before
 /// the USDA chain existed). Never guessed.
 FoodSource? foodSourceOf(FoodItem item) {
@@ -32,8 +40,8 @@ FoodSource? foodSourceOf(FoodItem item) {
       return FoodSource.web;
   }
   final details = item.details ?? '';
-  // The prefixes the lookup server writes (functions/src/lookup.js).
-  if (details.startsWith('USDA FoodData Central')) return FoodSource.usda;
+  if (_usdaDetails.hasMatch(details)) return FoodSource.usda;
+  // A fixed label the server adds (functions/src/lookup.js), never model text.
   if (details.startsWith('Web source, not USDA.')) return FoodSource.web;
   return null;
 }
