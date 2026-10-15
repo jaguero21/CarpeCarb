@@ -35,67 +35,68 @@ class TimeMealRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
+    // At large text sizes the dropdown keeps its width and would squeeze the
+    // time off the row, so the two stack instead.
+    final stacked = MediaQuery.textScalerOf(context).scale(10) / 10 > 1.3;
+    final timeButton = Semantics(
+      button: true,
+      label: timeRowLabel(formatTime(time)),
+      hint: 'Double tap to change',
+      onTap: onPickTime,
+      excludeSemantics: true,
+      child: InkWell(
+        onTap: onPickTime,
+        borderRadius: BorderRadius.circular(8),
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(minHeight: 44),
+          child: Row(
+            children: [
+              Icon(Icons.schedule, size: 18, color: colorScheme.onSurface),
+              const SizedBox(width: 6),
+              Flexible(
+                child: Text(
+                  'Time · ${formatTime(time)}',
+                  style: TextStyle(fontSize: 15, color: colorScheme.onSurface),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+    final mealDropdown = Semantics(
+      label: mealDropdownLabel(meal.label),
+      child: DropdownButton<FoodCategory>(
+        value: meal,
+        isExpanded: stacked,
+        underline: const SizedBox.shrink(),
+        items: [
+          for (final category in FoodCategory.values)
+            DropdownMenuItem(
+              value: category,
+              child: _mealLabel(category, fit: stacked),
+            ),
+        ],
+        onChanged: (category) {
+          if (category != null) onMealChanged(category);
+        },
+      ),
+    );
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       mainAxisSize: MainAxisSize.min,
       children: [
-        Row(
-          children: [
-            Expanded(
-              child: Semantics(
-                button: true,
-                label: timeRowLabel(formatTime(time)),
-                hint: 'Double tap to change',
-                onTap: onPickTime,
-                excludeSemantics: true,
-                child: InkWell(
-                  onTap: onPickTime,
-                  borderRadius: BorderRadius.circular(8),
-                  child: ConstrainedBox(
-                    constraints: const BoxConstraints(minHeight: 44),
-                    child: Row(
-                      children: [
-                        Icon(Icons.schedule, size: 18, color: colorScheme.onSurface),
-                        const SizedBox(width: 6),
-                        Flexible(
-                          child: Text(
-                            'Time · ${formatTime(time)}',
-                            style: TextStyle(fontSize: 15, color: colorScheme.onSurface),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-            ),
-            const SizedBox(width: 8),
-            Semantics(
-              label: mealDropdownLabel(meal.label),
-              child: DropdownButton<FoodCategory>(
-                value: meal,
-                underline: const SizedBox.shrink(),
-                items: [
-                  for (final category in FoodCategory.values)
-                    DropdownMenuItem(
-                      value: category,
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(category.icon, size: 18, color: category.color),
-                          const SizedBox(width: 6),
-                          Text(category.label),
-                        ],
-                      ),
-                    ),
-                ],
-                onChanged: (category) {
-                  if (category != null) onMealChanged(category);
-                },
-              ),
-            ),
-          ],
-        ),
+        if (stacked) ...[
+          timeButton,
+          mealDropdown,
+        ] else
+          Row(
+            children: [
+              Expanded(child: timeButton),
+              const SizedBox(width: 8),
+              mealDropdown,
+            ],
+          ),
         if (error != null)
           Padding(
             padding: const EdgeInsets.only(top: 4),
@@ -107,6 +108,20 @@ class TimeMealRow extends StatelessWidget {
                       dark: Theme.of(context).brightness == Brightness.dark)),
             ),
           ),
+      ],
+    );
+  }
+
+  /// A meal's icon and name. With [fit], a name too long for the width ends
+  /// in an ellipsis instead of overflowing; only a bounded width allows that.
+  static Widget _mealLabel(FoodCategory category, {required bool fit}) {
+    final name = Text(category.label, overflow: TextOverflow.ellipsis);
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(category.icon, size: 18, color: category.color),
+        const SizedBox(width: 6),
+        if (fit) Flexible(child: name) else name,
       ],
     );
   }

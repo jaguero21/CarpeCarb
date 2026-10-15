@@ -78,4 +78,35 @@ void main() {
       handle.dispose();
     }
   });
+
+  testWidgets('at a large text size the row stacks and nothing overflows', (tester) async {
+    // Every meal, since the longest label (Breakfast) is the one that would
+    // not fit.
+    for (final meal in FoodCategory.values) {
+      await tester.pumpWidget(MaterialApp(
+        home: MediaQuery(
+          data: const MediaQueryData(textScaler: TextScaler.linear(2.0)),
+          child: Scaffold(
+            body: Center(
+              child: SizedBox(
+                width: 320,
+                child: AlertDialog(
+                  insetPadding: EdgeInsets.zero,
+                  content: TimeMealRow(
+                    time: DateTime(2026, 10, 14, 12, 5),
+                    meal: meal,
+                    onPickTime: () {},
+                    onMealChanged: (_) {},
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ));
+      expect(tester.takeException(), isNull, reason: meal.label);
+      expect(find.text('Time · 12:05 PM'), findsOneWidget);
+      expect(find.text(meal.label), findsOneWidget);
+    }
+  });
 }
