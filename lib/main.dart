@@ -43,6 +43,7 @@ import 'utils/day_key.dart';
 import 'utils/input_validation.dart';
 import 'utils/lookup_progress.dart';
 import 'utils/picked_time.dart';
+import 'utils/snack_bars.dart';
 import 'utils/user_facing_exception.dart';
 import 'widgets/appear_once.dart';
 import 'widgets/entry_mode_link.dart';
@@ -787,6 +788,7 @@ class CarbTrackerHomeState extends State<CarbTrackerHome>
             content: Text(errorMessage),
             backgroundColor: AppColors.terracotta.withValues(alpha: 0.9),
             duration: const Duration(seconds: 4),
+            persist: snackBarPersists(context),
             action: SnackBarAction(
               label: 'Dismiss',
               textColor: Colors.white,
@@ -1018,6 +1020,7 @@ class CarbTrackerHomeState extends State<CarbTrackerHome>
                 SnackBar(
                   content: const Text("Today's log cleared"),
                   duration: const Duration(seconds: 6),
+                  persist: snackBarPersists(context),
                   action: SnackBarAction(
                     label: 'Undo',
                     textColor: Colors.white,
@@ -1206,6 +1209,7 @@ class CarbTrackerHomeState extends State<CarbTrackerHome>
       SnackBar(
         content: Text('${removedItem.name} removed'),
         duration: const Duration(seconds: 4),
+        persist: snackBarPersists(context),
         action: SnackBarAction(
           label: 'Undo',
           textColor: Colors.white,
@@ -1483,6 +1487,7 @@ class CarbTrackerHomeState extends State<CarbTrackerHome>
             content: const Text('Health sync failed — check permissions in Settings'),
             backgroundColor: AppColors.terracotta.withValues(alpha: 0.9),
             duration: const Duration(seconds: 4),
+            persist: snackBarPersists(context),
             action: SnackBarAction(
               label: 'Settings',
               textColor: Colors.white,
@@ -1997,6 +2002,7 @@ class CarbTrackerHomeState extends State<CarbTrackerHome>
       SnackBar(
         content: Text('Logged ${item.name} · ${item.carbs.toStringAsFixed(1)} g'),
         duration: const Duration(seconds: 4),
+        persist: snackBarPersists(context),
         action: SnackBarAction(
           label: 'Undo',
           textColor: Colors.white,

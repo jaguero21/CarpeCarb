@@ -16,6 +16,7 @@ import '../services/rating_prompt.dart';
 import '../services/cloud_sync_service.dart';
 import '../services/sync_store.dart';
 import '../utils/date_format.dart';
+import '../utils/snack_bars.dart';
 import '../widgets/food_item_card.dart';
 import '../widgets/settings_tab_bar.dart';
 
@@ -245,6 +246,7 @@ class _SettingsPageState extends State<SettingsPage> {
       SnackBar(
         content: Text('${removed.name} removed'),
         duration: const Duration(seconds: 4),
+        persist: snackBarPersists(context),
         action: SnackBarAction(
           label: 'Undo',
           textColor: Colors.white,

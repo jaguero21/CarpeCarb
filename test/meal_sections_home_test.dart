@@ -95,6 +95,17 @@ void main() {
     expect(state.foodItems.any((f) => f.id == 'l1'), isTrue);
   });
 
+  testWidgets('the removed snackbar goes away on its own', (tester) async {
+    final state = await start(tester, day);
+    state.removeItemById('l1');
+    await tester.pumpAndSettle();
+    expect(find.text('Soup removed'), findsOneWidget);
+
+    await tester.pump(const Duration(seconds: 5));
+    await tester.pumpAndSettle();
+    expect(find.text('Soup removed'), findsNothing);
+  });
+
   testWidgets('the meal total lines up with the carbs of its rows', (tester) async {
     await start(tester, day);
     final rowCarbs = find.descendant(

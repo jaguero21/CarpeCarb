@@ -33,6 +33,15 @@ class _SlowHealth extends HealthKitService {
   }
 }
 
+/// Health that answers at once, so no failure snackbar joins the queue.
+class _OkHealth extends HealthKitService {
+  @override
+  Future<bool> deleteFoodItem(FoodItem item) async => true;
+
+  @override
+  Future<bool> writeFoodItem(FoodItem item) async => true;
+}
+
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
@@ -102,6 +111,36 @@ void main() {
     final lastDelete = health.calls.lastIndexWhere((c) => c.startsWith('delete'));
     expect(firstWrite, greaterThan(lastDelete));
     expect(health.calls.where((c) => c.startsWith('write')).length, 2);
+  });
+
+  testWidgets('the cleared snackbar goes away on its own', (tester) async {
+    final state = await start(tester);
+    state.healthKitService = _OkHealth();
+    await openClear(tester);
+    await tester.tap(find.text('Clear'));
+    await tester.pumpAndSettle();
+    expect(find.text("Today's log cleared"), findsOneWidget);
+
+    await tester.pump(const Duration(seconds: 7));
+    await tester.pumpAndSettle();
+    expect(find.text("Today's log cleared"), findsNothing);
+  });
+
+  testWidgets('under VoiceOver the cleared snackbar stays, so Undo can be reached',
+      (tester) async {
+    tester.platformDispatcher.accessibilityFeaturesTestValue =
+        const FakeAccessibilityFeatures(accessibleNavigation: true);
+    addTearDown(tester.platformDispatcher.clearAccessibilityFeaturesTestValue);
+    final state = await start(tester);
+    state.healthKitService = _OkHealth();
+    await openClear(tester);
+    await tester.tap(find.text('Clear'));
+    await tester.pumpAndSettle();
+
+    await tester.pump(const Duration(seconds: 7));
+    await tester.pumpAndSettle();
+    expect(find.text("Today's log cleared"), findsOneWidget);
+    expect(find.text('Undo'), findsOneWidget);
   });
 
   testWidgets('a food logged between Clear and Undo stays, and nothing doubles',
