@@ -148,6 +148,9 @@ class CarbTrackerHomeState extends State<CarbTrackerHome>
   /// The last clear, for the test hook below.
   ({List<FoodItem> cleared, String day})? _lastClear;
 
+  /// Lets VoiceOver's tap on the TODAY header's ⋯ open its menu.
+  final _todayMenuKey = GlobalKey<PopupMenuButtonState<void>>();
+
   RatingPrompt _ratingPrompt = RatingPrompt();
 
   @visibleForTesting
@@ -2673,18 +2676,27 @@ class CarbTrackerHomeState extends State<CarbTrackerHome>
                         const Spacer(),
                         // Clearing the whole day is one item in a menu, not a
                         // button next to the list, and it can be undone.
-                        PopupMenuButton<void>(
-                          tooltip: 'Today options',
-                          icon: Icon(
-                            Icons.more_horiz,
-                            color: Theme.of(context).colorScheme.onSurfaceVariant,
-                          ),
-                          itemBuilder: (context) => [
-                            PopupMenuItem<void>(
-                              onTap: _confirmClearToday,
-                              child: const Text("Clear today's log…"),
+                        // A real label for VoiceOver: the menu button only
+                        // gives it a tooltip. The tooltip stays for a long press.
+                        Semantics(
+                          button: true,
+                          label: 'Today options',
+                          excludeSemantics: true,
+                          onTap: () => _todayMenuKey.currentState?.showButtonMenu(),
+                          child: PopupMenuButton<void>(
+                            key: _todayMenuKey,
+                            tooltip: 'Today options',
+                            icon: Icon(
+                              Icons.more_horiz,
+                              color: Theme.of(context).colorScheme.onSurfaceVariant,
                             ),
-                          ],
+                            itemBuilder: (context) => [
+                              PopupMenuItem<void>(
+                                onTap: _confirmClearToday,
+                                child: const Text("Clear today's log…"),
+                              ),
+                            ],
+                          ),
                         ),
                       ],
                     ),

@@ -5,6 +5,7 @@ import 'package:carb_tracker/models/food_item.dart';
 import 'package:carb_tracker/services/health_kit_service.dart';
 import 'package:carb_tracker/services/lookup_api.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/semantics.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -123,17 +124,29 @@ void main() {
     expect(state.foodItems.length, 3);
   });
 
-  testWidgets('VoiceOver: the menu button is "Today options"', (tester) async {
+  testWidgets('VoiceOver: the menu button is "Today options", and opens the menu',
+      (tester) async {
     final handle = tester.ensureSemantics();
     try {
       await start(tester);
-      // PopupMenuButton gives its tooltip to semantics as the tooltip, not as
-      // a label (the iOS engine folds it into the label VoiceOver speaks).
-      expect(tester.getSemantics(find.byTooltip('Today options')),
-          isSemantics(
-              tooltip: 'Today options', isButton: true, hasTapAction: true));
+      final button = find.semantics.byLabel('Today options');
+      expect(button.evaluate().single,
+          isSemantics(isButton: true, hasTapAction: true));
+      // A real label, not a tooltip: both would say the name twice.
+      expect(button.evaluate().single.getSemanticsData().tooltip, isEmpty);
+
+      // VoiceOver's double tap opens the menu.
+      tester.semantics.performAction(button, SemanticsAction.tap);
+      await tester.pumpAndSettle();
+      expect(find.text("Clear today's log…"), findsOneWidget);
     } finally {
       handle.dispose();
     }
+  });
+
+  testWidgets('a long press still shows the "Today options" tooltip',
+      (tester) async {
+    await start(tester);
+    expect(find.byTooltip('Today options'), findsOneWidget);
   });
 }

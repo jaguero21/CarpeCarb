@@ -90,10 +90,14 @@ void main() {
     await tester.pumpWidget(const CarbTrackerApp());
     await tester.pumpAndSettle();
 
-    // The menu button's name arrives as its tooltip, which the iOS engine
-    // folds into the label VoiceOver speaks.
-    expect(tester.getSemantics(find.byTooltip('Today options')),
-        isSemantics(tooltip: 'Today options', isButton: true));
+    // A real label, like the nav icons below: a tooltip alone isn't one.
+    final button = find.semantics.byLabel('Today options');
+    expect(button.evaluate().single,
+        isSemantics(isButton: true, hasTapAction: true));
+    // And only once: a label beside the tooltip would say it twice.
+    expect(button.evaluate().single.getSemanticsData().tooltip, isEmpty);
+    // The long-press tooltip stays for sighted users.
+    expect(find.byTooltip('Today options'), findsOneWidget);
 
     handle.dispose();
   });
