@@ -1080,12 +1080,20 @@ class CarbTrackerHomeState extends State<CarbTrackerHome>
       _healthKitService.replaceFoodItem(old, updated).then(_reportHealthResult);
     }
     if (mounted) {
+      // "Moved to" only when it moved; a new serving with the same carbs is
+      // just "Updated".
+      final String message;
+      if (updated.carbs != old.carbs) {
+        message = 'Updated to ${updated.carbs.toStringAsFixed(1)} g';
+      } else if (updated.loggedAt != old.loggedAt || updated.category != old.category) {
+        message = 'Moved to ${updated.category.label}, ${formatTime(updated.loggedAt)}';
+      } else {
+        message = 'Updated';
+      }
       ScaffoldMessenger.of(context).hideCurrentSnackBar();
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(updated.carbs != old.carbs
-              ? 'Updated to ${updated.carbs.toStringAsFixed(1)} g'
-              : 'Moved to ${updated.category.label}, ${formatTime(updated.loggedAt)}'),
+          content: Text(message),
           duration: const Duration(seconds: 3),
         ),
       );
