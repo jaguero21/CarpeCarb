@@ -2499,9 +2499,7 @@ class CarbTrackerHomeState extends State<CarbTrackerHome>
                             textAlign: TextAlign.center,
                             style: TextStyle(
                               fontSize: 13,
-                              color: Theme.of(context)
-                                  .colorScheme
-                                  .onSurfaceVariant,
+                              color: lookupStatusColor(dark: isDark),
                             ),
                           ),
                         ),
