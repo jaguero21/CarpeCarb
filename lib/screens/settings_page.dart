@@ -17,6 +17,7 @@ import '../services/cloud_sync_service.dart';
 import '../services/sync_store.dart';
 import '../utils/date_format.dart';
 import '../widgets/food_item_card.dart';
+import '../widgets/settings_tab_bar.dart';
 
 class SettingsResult {
   final double? dailyCarbGoal;
@@ -117,7 +118,7 @@ class _SettingsPageState extends State<SettingsPage> {
     Icons.adjust,
     Icons.workspace_premium
   ];
-  static const _tabLabels = ['Favorites', 'History', 'Goals', 'Features'];
+  static const _tabLabels = ['Saved', 'History', 'Goals', 'Features'];
 
   @override
   void initState() {
@@ -600,55 +601,17 @@ class _SettingsPageState extends State<SettingsPage> {
         // Tab bar with icons
         Padding(
           padding: const EdgeInsets.fromLTRB(24, 16, 24, 0),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.start,
-            children: List.generate(_tabLabels.length, (index) {
-              final selected = _selectedTab == index;
-              return Padding(
-                padding: EdgeInsets.only(
-                    right: index < _tabLabels.length - 1 ? 12 : 0),
-                child: GestureDetector(
-                  onTap: () {
-                    _dismissKeyboard();
-                    HapticFeedback.lightImpact();
-                    setState(() => _selectedTab = index);
-                  },
-                  child: AnimatedContainer(
-                    duration: const Duration(milliseconds: 200),
-                    padding: EdgeInsets.symmetric(
-                      horizontal: selected ? 20 : 12,
-                      vertical: 10,
-                    ),
-                    decoration: BoxDecoration(
-                      color: selected ? AppColors.sage : Colors.transparent,
-                      borderRadius: BorderRadius.circular(24),
-                    ),
-                    child: Row(
-                      children: [
-                        Icon(
-                          _tabIcons[index],
-                          size: 18,
-                          color: selected
-                              ? Colors.white
-                              : colorScheme.onSurfaceVariant,
-                        ),
-                        if (selected) ...[
-                          const SizedBox(width: 6),
-                          Text(
-                            _tabLabels[index],
-                            style: const TextStyle(
-                              fontSize: 14,
-                              fontWeight: FontWeight.w500,
-                              color: Colors.white,
-                            ),
-                          ),
-                        ],
-                      ],
-                    ),
-                  ),
-                ),
-              );
-            }),
+          child: SettingsTabBar(
+            tabs: [
+              for (var i = 0; i < _tabLabels.length; i++)
+                (icon: _tabIcons[i], label: _tabLabels[i]),
+            ],
+            selected: _selectedTab,
+            onSelected: (index) {
+              _dismissKeyboard();
+              HapticFeedback.lightImpact();
+              setState(() => _selectedTab = index);
+            },
           ),
         ),
 
