@@ -42,45 +42,54 @@ class SettingsTabBar extends StatelessWidget {
                 label: tabs[i].label,
                 onTap: () => onSelected(i),
                 excludeSemantics: true,
-                child: Material(
-                  color: i == selected
-                      ? settingsTabSelectedFill()
-                      : Colors.transparent,
-                  borderRadius: BorderRadius.circular(12),
-                  child: InkWell(
+                // The fill sits outside the Material so it can fade between
+                // tabs (Material's own colour changes instantly) and the
+                // ripple still draws on top of it.
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 200),
+                  decoration: BoxDecoration(
+                    color: i == selected
+                        ? settingsTabSelectedFill()
+                        : settingsTabSelectedFill().withValues(alpha: 0),
                     borderRadius: BorderRadius.circular(12),
-                    onTap: () => onSelected(i),
-                    child: ConstrainedBox(
-                      constraints: const BoxConstraints(minHeight: 44),
-                      child: Padding(
-                        padding:
-                            const EdgeInsets.symmetric(vertical: 6, horizontal: 4),
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Icon(
-                              tabs[i].icon,
-                              size: 20,
-                              color: i == selected
-                                  ? Colors.white
-                                  : settingsTabUnselected(dark: dark),
-                            ),
-                            const SizedBox(height: 2),
-                            Text(
-                              tabs[i].label,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              textAlign: TextAlign.center,
-                              style: TextStyle(
-                                fontSize: 12,
-                                fontWeight: FontWeight.w500,
+                  ),
+                  child: Material(
+                    type: MaterialType.transparency,
+                    child: InkWell(
+                      borderRadius: BorderRadius.circular(12),
+                      onTap: () => onSelected(i),
+                      child: ConstrainedBox(
+                        constraints: const BoxConstraints(minHeight: 44),
+                        child: Padding(
+                          padding:
+                              const EdgeInsets.symmetric(vertical: 6, horizontal: 4),
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(
+                                tabs[i].icon,
+                                size: 20,
                                 color: i == selected
                                     ? Colors.white
                                     : settingsTabUnselected(dark: dark),
                               ),
-                            ),
-                          ],
+                              const SizedBox(height: 2),
+                              Text(
+                                tabs[i].label,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                textAlign: TextAlign.center,
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w500,
+                                  color: i == selected
+                                      ? Colors.white
+                                      : settingsTabUnselected(dark: dark),
+                                ),
+                              ),
+                            ],
+                          ),
                         ),
                       ),
                     ),
