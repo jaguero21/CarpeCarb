@@ -40,6 +40,7 @@ import 'utils/a11y_labels.dart';
 import 'utils/date_format.dart';
 import 'utils/day_key.dart';
 import 'utils/input_validation.dart';
+import 'utils/lookup_progress.dart';
 import 'utils/user_facing_exception.dart';
 import 'widgets/appear_once.dart';
 import 'widgets/food_item_card.dart';
@@ -123,8 +124,12 @@ class CarbTrackerHomeState extends State<CarbTrackerHome>
         .addPostFrameCallback((_) => _arrivingIds.clear());
   }
 
-  final PerplexityFirebaseService _perplexityService =
-      PerplexityFirebaseService();
+  PerplexityFirebaseService _perplexityService = PerplexityFirebaseService();
+
+  @visibleForTesting
+  set perplexityService(PerplexityFirebaseService service) =>
+      _perplexityService = service;
+
   HealthKitService _healthKitService = HealthKitService();
 
   @visibleForTesting
@@ -178,6 +183,26 @@ class CarbTrackerHomeState extends State<CarbTrackerHome>
   List<FoodItem> foodItems = [];
   double get totalCarbs => foodItems.fold(0.0, (sum, item) => sum + item.carbs);
   bool isLoading = false;
+
+  /// Seconds the current lookup has run, for the status line under the Add
+  /// Food button. Counted by a timer rather than read from the clock, so the
+  /// messages follow the same time the tests drive.
+  int _lookupSeconds = 0;
+  Timer? _lookupTicker;
+
+  void _startLookupProgress() {
+    _lookupTicker?.cancel();
+    _lookupSeconds = 0;
+    _lookupTicker = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (mounted) setState(() => _lookupSeconds++);
+    });
+  }
+
+  void _stopLookupProgress() {
+    _lookupTicker?.cancel();
+    _lookupTicker = null;
+  }
+
   bool showingDailyTotal = false;
   double? dailyCarbGoal;
   double? proteinGoal;
@@ -683,6 +708,7 @@ class CarbTrackerHomeState extends State<CarbTrackerHome>
     setState(() {
       isLoading = true;
     });
+    _startLookupProgress();
 
     try {
       final result = await _perplexityService.getMultipleCarbCounts(foodText);
@@ -724,6 +750,8 @@ class CarbTrackerHomeState extends State<CarbTrackerHome>
           ),
         );
       }
+    } finally {
+      _stopLookupProgress();
     }
   }
 
@@ -2394,13 +2422,27 @@ class CarbTrackerHomeState extends State<CarbTrackerHome>
                               ),
                             ),
                             child: isLoading
-                                ? const SizedBox(
-                                    height: 20,
-                                    width: 20,
-                                    child: CircularProgressIndicator(
-                                      strokeWidth: 2,
-                                      color: Colors.white,
-                                    ),
+                                ? const Row(
+                                    mainAxisAlignment: MainAxisAlignment.center,
+                                    children: [
+                                      SizedBox(
+                                        height: 20,
+                                        width: 20,
+                                        child: CircularProgressIndicator(
+                                          strokeWidth: 2,
+                                          color: Colors.white,
+                                        ),
+                                      ),
+                                      SizedBox(width: 10),
+                                      Text(
+                                        'Looking up…',
+                                        style: TextStyle(
+                                          fontSize: 16,
+                                          fontWeight: FontWeight.w500,
+                                          color: Colors.white,
+                                        ),
+                                      ),
+                                    ],
                                   )
                                 : Row(
                                     mainAxisAlignment: MainAxisAlignment.center,
@@ -2421,6 +2463,23 @@ class CarbTrackerHomeState extends State<CarbTrackerHome>
                           ),
                         ),
                       ),
+                      if (isLoading) ...[
+                        const SizedBox(height: 10),
+                        Semantics(
+                          liveRegion: true,
+                          child: Text(
+                            lookupProgressMessage(
+                                Duration(seconds: _lookupSeconds)),
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                              fontSize: 13,
+                              color: Theme.of(context)
+                                  .colorScheme
+                                  .onSurfaceVariant,
+                            ),
+                          ),
+                        ),
+                      ],
                     ],
                   ),
                 ),
@@ -2537,6 +2596,7 @@ class CarbTrackerHomeState extends State<CarbTrackerHome>
     _cloudSyncService.stopListening();
     _purchaseOutcomes?.cancel();
     _dayBoundaryTimer?.cancel();
+    _lookupTicker?.cancel();
     for (final cooldown in _quickLogCooldowns.values) {
       cooldown.cancel();
     }
