@@ -1,8 +1,15 @@
 import 'package:flutter/material.dart';
 
+import '../config/app_colors.dart';
 import '../models/food_item.dart';
 import '../utils/a11y_labels.dart';
 import '../utils/date_format.dart';
+
+/// The error under the row, on the dialog. Terracotta itself is too pale
+/// for 12 pt text in light mode, so it is darkened there.
+Color timeErrorColor({required bool dark}) => dark
+    ? AppColors.terracotta
+    : Color.lerp(AppColors.terracotta, Colors.black, 0.25)!;
 
 /// In a food's details: when it was eaten and which meal it counts toward.
 /// Controlled — the caller opens the time picker (so it can refuse times
@@ -94,7 +101,10 @@ class TimeMealRow extends StatelessWidget {
             padding: const EdgeInsets.only(top: 4),
             child: Text(
               error!,
-              style: TextStyle(fontSize: 12, color: colorScheme.error),
+              style: TextStyle(
+                  fontSize: 12,
+                  color: timeErrorColor(
+                      dark: Theme.of(context).brightness == Brightness.dark)),
             ),
           ),
       ],

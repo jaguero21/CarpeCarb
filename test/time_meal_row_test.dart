@@ -1,14 +1,18 @@
+import 'package:carb_tracker/config/app_theme.dart';
 import 'package:carb_tracker/models/food_item.dart';
 import 'package:carb_tracker/widgets/time_meal_row.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'helpers/contrast.dart';
+
 void main() {
   Future<(List<String>, List<FoodCategory>)> pump(WidgetTester tester,
-      {String? error}) async {
+      {String? error, ThemeData? theme}) async {
     final picks = <String>[];
     final meals = <FoodCategory>[];
     await tester.pumpWidget(MaterialApp(
+      theme: theme,
       home: Scaffold(
         body: TimeMealRow(
           time: DateTime(2026, 10, 14, 12, 5),
@@ -42,6 +46,24 @@ void main() {
   testWidgets('an error shows under the row', (tester) async {
     await pump(tester, error: 'Pick a time from today, up to now');
     expect(find.text('Pick a time from today, up to now'), findsOneWidget);
+  });
+
+  test('the error is readable on the dialog in both modes', () {
+    // The dialog is the surface colour at 92% over a dimmed page; the
+    // surface itself is what the text sits on.
+    expect(contrastRatio(timeErrorColor(dark: false), lightTheme().colorScheme.surface),
+        greaterThanOrEqualTo(4.5));
+    expect(contrastRatio(timeErrorColor(dark: true), darkTheme().colorScheme.surface),
+        greaterThanOrEqualTo(4.5));
+  });
+
+  testWidgets('the error is drawn in the readable colour', (tester) async {
+    for (final (theme, dark) in [(lightTheme(), false), (darkTheme(), true)]) {
+      await pump(tester, error: 'Pick a time from today, up to now', theme: theme);
+      await tester.pumpAndSettle(); // MaterialApp animates a theme change
+      final text = tester.widget<Text>(find.text('Pick a time from today, up to now'));
+      expect(text.style!.color, timeErrorColor(dark: dark));
+    }
   });
 
   testWidgets('VoiceOver labels', (tester) async {
