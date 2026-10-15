@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:carb_tracker/main.dart';
 import 'package:carb_tracker/models/food_item.dart';
 import 'package:carb_tracker/services/health_kit_service.dart';
@@ -262,5 +264,21 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Update'), findsNothing);
     expect(state.foodItems.single.loggedAt, now);
+  });
+
+  testWidgets('a time picked after the dialog closed is dropped quietly', (tester) async {
+    final now = DateTime.now();
+    final state = await openSoup(tester, now);
+    final pick = Completer<TimeOfDay?>();
+    state.pickTime = (_, __) => pick.future;
+    await tester.tap(find.textContaining('Time · '));
+    await tester.pump();
+    await tester.tap(find.text('Close'));
+    await tester.pumpAndSettle();
+
+    pick.complete(midnight);
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
+    expect(state.foodItems.single.loggedAt, lunchtime(now));
   });
 }

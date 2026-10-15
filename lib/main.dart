@@ -1196,6 +1196,8 @@ class CarbTrackerHomeState extends State<CarbTrackerHome>
                     onPickTime: () async {
                       final picked = await pickTime(
                           context, TimeOfDay.fromDateTime(draftTime));
+                      // The dialog may have closed while the picker was up.
+                      if (!context.mounted) return;
                       if (picked == null) return;
                       final now = DateTime.now();
                       final resolved =
@@ -1232,7 +1234,6 @@ class CarbTrackerHomeState extends State<CarbTrackerHome>
                         draftTime = next;
                         if (!mealPicked) draftMeal = FoodCategory.fromTime(next);
                       });
-                      if (!context.mounted) return;
                       SemanticsService.sendAnnouncement(View.of(context),
                           '${draftMeal.label}, ${formatTime(draftTime)}', TextDirection.ltr);
                     },
