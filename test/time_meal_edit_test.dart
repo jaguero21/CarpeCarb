@@ -1,6 +1,7 @@
 import 'package:carb_tracker/main.dart';
 import 'package:carb_tracker/models/food_item.dart';
 import 'package:carb_tracker/services/health_kit_service.dart';
+import 'package:carb_tracker/services/lookup_api.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/semantics.dart';
 import 'package:flutter/services.dart';
@@ -14,9 +15,14 @@ import 'helpers/home_harness.dart';
 class _RecordingHealth extends HealthKitService {
   final calls = <String>[];
 
+  /// Each delete's food and the millisecond its window starts in
+  /// (healthDeleteWindow), which is what decides the samples it removes.
+  final deletes = <(String, int)>[];
+
   @override
   Future<bool> deleteFoodItem(FoodItem item) async {
     calls.add('delete ${item.loggedAt.hour}:${item.loggedAt.minute}');
+    deletes.add((item.name, item.loggedAt.millisecondsSinceEpoch));
     return true;
   }
 
@@ -34,6 +40,38 @@ void main() {
   DateTime lunchtime(DateTime now) =>
       DateTime(now.year, now.month, now.day, 12, 30, 15, 250);
 
+  /// Shows today with [foods] logged. The time picker answers with [picks],
+  /// in order.
+  Future<CarbTrackerHomeState> showToday(
+      WidgetTester tester, List<Map<String, Object?>> foods,
+      {List<TimeOfDay?> picks = const []}) async {
+    stubHomeChannels();
+    SharedPreferences.setMockInitialValues(todayPrefs(foods));
+    await tester.pumpWidget(const CarbTrackerApp());
+    await tester.pumpAndSettle();
+    final state = tester.state<CarbTrackerHomeState>(find.byType(CarbTrackerHome));
+    final queue = [...picks];
+    state.pickTime = (_, __) async => queue.isEmpty ? null : queue.removeAt(0);
+    return state;
+  }
+
+  /// Opens [name]'s details the way VoiceOver does.
+  Future<void> openDetails(WidgetTester tester, String name) async {
+    final handle = tester.ensureSemantics();
+    tester.semantics.performAction(
+        find.semantics.byLabel(RegExp('^$name,')), SemanticsAction.tap);
+    await tester.pumpAndSettle();
+    handle.dispose();
+  }
+
+  /// Picks the next time from the picker, then taps Update.
+  Future<void> moveAndUpdate(WidgetTester tester) async {
+    await tester.tap(find.textContaining('Time · '));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Update'));
+    await tester.pumpAndSettle();
+  }
+
   /// Shows today with Soup in it, logged at [loggedAt] (lunchtime by
   /// default) as [category] (Lunch by default), and opens Soup's details.
   /// The time picker answers with [picks], in order.
@@ -41,8 +79,7 @@ void main() {
       {List<TimeOfDay?> picks = const [],
       DateTime? loggedAt,
       String category = 'lunch'}) async {
-    stubHomeChannels();
-    SharedPreferences.setMockInitialValues(todayPrefs([
+    final state = await showToday(tester, [
       {
         'id': 'l1',
         'name': 'Soup',
@@ -50,17 +87,8 @@ void main() {
         'category': category,
         'loggedAt': (loggedAt ?? lunchtime(now)).toIso8601String(),
       },
-    ]));
-    await tester.pumpWidget(const CarbTrackerApp());
-    await tester.pumpAndSettle();
-    final state = tester.state<CarbTrackerHomeState>(find.byType(CarbTrackerHome));
-    final queue = [...picks];
-    state.pickTime = (_, __) async => queue.isEmpty ? null : queue.removeAt(0);
-    final handle = tester.ensureSemantics();
-    tester.semantics.performAction(
-        find.semantics.byLabel(RegExp(r'^Soup,')), SemanticsAction.tap);
-    await tester.pumpAndSettle();
-    handle.dispose();
+    ], picks: picks);
+    await openDetails(tester, 'Soup');
     return state;
   }
 
@@ -149,5 +177,90 @@ void main() {
     await tester.tap(find.textContaining('Time · '));
     await tester.pumpAndSettle();
     expect(announcements, contains('Snack, 12:00 AM'));
+  });
+
+  testWidgets('two foods from one lookup moved to one minute keep their own Health samples',
+      (tester) async {
+    final now = DateTime.now();
+    if (inMidnightMinute(now)) return;
+    final state = await showToday(tester, const [], picks: [midnight, midnight]);
+    final health = _RecordingHealth();
+    state.healthKitService = health;
+    // A lookup spaces its foods 1 ms apart, so each has its own Health sample.
+    await state.applyLookupResultForTest(LookupResult(items: [
+      FoodItem(name: 'Burger', carbs: 40, loggedAt: now),
+      FoodItem(
+          name: 'Fries', carbs: 48, loggedAt: now.add(const Duration(milliseconds: 1))),
+    ]));
+    await tester.pumpAndSettle();
+
+    for (final name in ['Burger', 'Fries']) {
+      await openDetails(tester, name);
+      await moveAndUpdate(tester);
+    }
+    final burger = state.foodItems.firstWhere((f) => f.name == 'Burger');
+    final fries = state.foodItems.firstWhere((f) => f.name == 'Fries');
+    expect(burger.loggedAt.hour, 0);
+    expect(fries.loggedAt.hour, 0);
+    expect(
+        (burger.loggedAt.millisecondsSinceEpoch - fries.loggedAt.millisecondsSinceEpoch)
+            .abs(),
+        greaterThanOrEqualTo(1));
+
+    health.deletes.clear();
+    state.removeItemById(burger.id);
+    await tester.pumpAndSettle();
+    expect(health.deletes, [('Burger', burger.loggedAt.millisecondsSinceEpoch)]);
+    expect(health.deletes.single.$2, isNot(fries.loggedAt.millisecondsSinceEpoch),
+        reason: "deleting Burger must not take Fries' sample with it");
+  });
+
+  testWidgets('foods with the same seconds moved to one minute still get a millisecond each',
+      (tester) async {
+    final now = DateTime.now();
+    // Both foods must be today: now and a minute before.
+    if (now.hour == 0 && now.minute < 2) return;
+    final earlier = now.subtract(const Duration(minutes: 1));
+    final state = await showToday(tester, [
+      {'id': 'a', 'name': 'Tea', 'carbs': 5.0, 'category': 'snack',
+       'loggedAt': now.toIso8601String()},
+      {'id': 'b', 'name': 'Toast', 'carbs': 15.0, 'category': 'snack',
+       'loggedAt': earlier.toIso8601String()},
+    ], picks: [midnight, midnight]);
+    for (final name in ['Tea', 'Toast']) {
+      await openDetails(tester, name);
+      await moveAndUpdate(tester);
+    }
+    final tea = state.foodItems.firstWhere((f) => f.name == 'Tea');
+    final toast = state.foodItems.firstWhere((f) => f.name == 'Toast');
+    expect(tea.loggedAt.minute, 0);
+    expect(toast.loggedAt.minute, 0);
+    expect(toast.loggedAt.millisecondsSinceEpoch,
+        tea.loggedAt.millisecondsSinceEpoch + 1,
+        reason: 'Toast lands in Tea\'s millisecond, so Update moves it on by one');
+  });
+
+  testWidgets('picking the food\'s own minute changes nothing, even after another pick',
+      (tester) async {
+    final now = DateTime.now();
+    if (inMidnightMinute(now)) return;
+    final own = TimeOfDay.fromDateTime(now);
+    final state = await openSoup(tester, now,
+        loggedAt: now,
+        category: FoodCategory.fromTime(now).name,
+        picks: [own, midnight, own]);
+    await tester.tap(find.textContaining('Time · '));
+    await tester.pumpAndSettle();
+    expect(find.text('Update'), findsNothing);
+
+    await tester.tap(find.textContaining('Time · '));
+    await tester.pumpAndSettle();
+    expect(find.text('Update'), findsOneWidget);
+
+    // Back to the minute it was logged in: its exact time, so no Update.
+    await tester.tap(find.textContaining('Time · '));
+    await tester.pumpAndSettle();
+    expect(find.text('Update'), findsNothing);
+    expect(state.foodItems.single.loggedAt, now);
   });
 }

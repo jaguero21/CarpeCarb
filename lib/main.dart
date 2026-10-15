@@ -1197,24 +1197,40 @@ class CarbTrackerHomeState extends State<CarbTrackerHome>
                       final picked = await pickTime(
                           context, TimeOfDay.fromDateTime(draftTime));
                       if (picked == null) return;
-                      final resolved = resolvePickedTime(picked,
-                          now: DateTime.now(), resetHour: resetHour);
+                      final now = DateTime.now();
+                      final resolved =
+                          resolvePickedTime(picked, now: now, resetHour: resetHour);
                       if (resolved == null) {
                         setDialogState(
                             () => timeError = 'Pick a time from today, up to now');
                         return;
                       }
-                      // The same minute as now shown changes nothing (the
-                      // logged time also has seconds).
-                      if (formatTime(resolved) == formatTime(draftTime) &&
-                          dayKey(resolved, resetHour) == dayKey(draftTime, resetHour)) {
+                      // The picker gives a whole minute, but Apple Health tells
+                      // foods apart by the millisecond each starts in
+                      // (healthDeleteWindow). The food keeps its own seconds,
+                      // so two foods moved to one minute stay apart, and its
+                      // own minute gives back its exact time.
+                      final logged = item.loggedAt;
+                      final DateTime next;
+                      if (resolved.hour == logged.hour &&
+                          resolved.minute == logged.minute &&
+                          dayKey(resolved, resetHour) == dayKey(logged, resetHour)) {
+                        next = logged;
+                      } else {
+                        final kept = resolved.add(Duration(
+                            seconds: logged.second,
+                            milliseconds: logged.millisecond,
+                            microseconds: logged.microsecond));
+                        next = kept.isAfter(now) ? now : kept;
+                      }
+                      if (next == draftTime) {
                         setDialogState(() => timeError = null);
                         return;
                       }
                       setDialogState(() {
                         timeError = null;
-                        draftTime = resolved;
-                        if (!mealPicked) draftMeal = FoodCategory.fromTime(resolved);
+                        draftTime = next;
+                        if (!mealPicked) draftMeal = FoodCategory.fromTime(next);
                       });
                       if (!context.mounted) return;
                       SemanticsService.sendAnnouncement(View.of(context),
@@ -1275,12 +1291,17 @@ class CarbTrackerHomeState extends State<CarbTrackerHome>
                 TextButton(
                   onPressed: () {
                     Navigator.pop(context);
-                    // Stamped now, not when the dialog last drew.
+                    // Stamped now, not when the dialog last drew. The time
+                    // also gets a millisecond no other food starts in, or a
+                    // Health delete for one would take both.
                     _updateFoodItem(
                       item,
                       item.edited(
                         serving: servingChanged ? draft : null,
-                        loggedAt: draftTime,
+                        loggedAt: uniqueMillisecond(draftTime, [
+                          for (final other in foodItems)
+                            if (other.id != item.id) other.loggedAt,
+                        ]),
                         category: draftMeal,
                         now: DateTime.now().toUtc(),
                       ),

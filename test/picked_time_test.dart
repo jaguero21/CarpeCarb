@@ -42,4 +42,28 @@ void main() {
       DateTime(2026, 10, 14, 13, 5),
     );
   });
+
+  group('uniqueMillisecond', () {
+    final time = DateTime(2026, 10, 14, 0, 0, 15, 250, 7);
+
+    test('a free millisecond stays as it is', () {
+      expect(uniqueMillisecond(time, [DateTime(2026, 10, 14, 0, 0, 15, 251)]), time);
+    });
+
+    test('a taken millisecond moves on by one', () {
+      // Same millisecond, different microsecond: still the same Health window.
+      expect(uniqueMillisecond(time, [DateTime(2026, 10, 14, 0, 0, 15, 250)]),
+          time.add(const Duration(milliseconds: 1)));
+    });
+
+    test('two taken in a row move it on by two', () {
+      expect(
+        uniqueMillisecond(time, [
+          DateTime(2026, 10, 14, 0, 0, 15, 251),
+          DateTime(2026, 10, 14, 0, 0, 15, 250),
+        ]),
+        time.add(const Duration(milliseconds: 2)),
+      );
+    });
+  });
 }

@@ -17,3 +17,16 @@ DateTime? resolvePickedTime(TimeOfDay picked,
   }
   return candidate.isBefore(dayStart(now, resetHour)) ? null : candidate;
 }
+
+/// [time], moved forward a millisecond at a time while any of [taken] starts
+/// in the same millisecond. Apple Health tells this app's foods apart by the
+/// millisecond each starts in (healthDeleteWindow), so deleting a food that
+/// shared one would delete both.
+DateTime uniqueMillisecond(DateTime time, Iterable<DateTime> taken) {
+  final used = {for (final t in taken) t.millisecondsSinceEpoch};
+  var result = time;
+  while (used.contains(result.millisecondsSinceEpoch)) {
+    result = result.add(const Duration(milliseconds: 1));
+  }
+  return result;
+}
