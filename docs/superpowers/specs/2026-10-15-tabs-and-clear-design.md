@@ -67,7 +67,7 @@ time the listing is refreshed.
 - **Confirm dialog:**
   - Title: **"Clear today's log?"**
   - Body: **"All N foods will be removed from today and from Apple Health."** With one food it
-    reads "The 1 food will be removed…".
+    reads **"This food will be removed from today and from Apple Health."**
   - Buttons: Cancel, and **Clear**, styled in terracotta as today.
 - **Clear** runs the existing `_resetTotal`:
   - It clears the list, sets delete markers for iCloud, updates the widget, and removes the foods
@@ -81,7 +81,10 @@ time the listing is refreshed.
   - Restored rows animate in.
   - For each restored id it calls `_syncStore.recordItemRestored(id)` (so iCloud brings them back
     on the other device), then saves once.
-  - It updates the widget and writes each restored food back to Apple Health.
+  - It updates the widget and writes each restored food back to Apple Health. Before writing, it
+    waits for the clear's Health deletes to finish (`_resetTotal` keeps them as one future).
+    A restored sample uses the same millisecond window as the deleted one, so a delete that
+    finished after the write would remove it again.
 - **Code:**
   - `restoreCleared(List<FoodItem> current, List<FoodItem> cleared) → List<FoodItem>` is a pure
     function in `lib/models/clear_today.dart`. It returns the foods to add back: those in
@@ -127,7 +130,9 @@ Widget tests:
   - **Clear** empties Today and shows the snackbar.
   - **Undo** restores the foods, with Health writes recorded by a fake Health service.
   - A food logged between Clear and Undo stays, and isn't duplicated.
-  - Undo after a day change does nothing.
+  - Undo after a day change does nothing. This is tested on the pure `undoApplies` check, since there is no clock seam.
+  - Undo writes to Health only after the clear's deletes finish (a fake Health service that
+    holds its deletes).
 
 Device check before release:
 - Tabs at the largest text size and in dark mode.
