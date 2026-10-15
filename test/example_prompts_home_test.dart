@@ -67,4 +67,22 @@ void main() {
     expect(find.text('Look it up instead'), findsNothing); // back in lookup mode
     expect(lookup.calls, 0);
   });
+
+  testWidgets('an example tapped during a lookup leaves the field alone', (tester) async {
+    final state = await start(tester);
+    final lookup = _CountingLookup();
+    state.perplexityService = lookup;
+    final foodField = find.byWidgetPredicate(
+        (w) => w is TextField && w.decoration?.hintText == 'What did you eat?');
+
+    await tester.enterText(foodField, 'pad thai');
+    await tester.tap(find.text('Add Food'));
+    await tester.pump();
+    expect(lookup.calls, 1); // running, and never answers
+
+    await tester.tap(find.text('1 cup cooked white rice'));
+    await tester.pump();
+    expect(tester.widget<TextField>(foodField).controller!.text, 'pad thai');
+    expect(lookup.calls, 1);
+  });
 }

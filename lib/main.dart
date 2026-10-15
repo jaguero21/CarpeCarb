@@ -1575,6 +1575,9 @@ class CarbTrackerHomeState extends State<CarbTrackerHome>
   /// A first-run example: fill the food field with it and leave the lookup
   /// to the user.
   void _useExample(String text) {
+    // During a lookup, its result clears the field anyway; the example would
+    // only vanish, and could look like it was what got looked up.
+    if (isLoading) return;
     setState(() {
       _isManualEntryMode = false;
       _carbController.clear();
