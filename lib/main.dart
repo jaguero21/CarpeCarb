@@ -27,6 +27,7 @@ import 'services/sync_merge.dart';
 import 'services/sync_payload.dart';
 import 'services/sync_store.dart';
 import 'models/food_item.dart';
+import 'models/food_source.dart';
 import 'models/meal_sections.dart';
 import 'models/quick_log.dart';
 import 'models/server_quota.dart';
@@ -39,6 +40,7 @@ import 'utils/a11y_labels.dart';
 import 'utils/date_format.dart';
 import 'utils/day_key.dart';
 import 'utils/input_validation.dart';
+import 'utils/lookup_progress.dart';
 import 'utils/user_facing_exception.dart';
 import 'widgets/appear_once.dart';
 import 'widgets/food_item_card.dart';
@@ -122,8 +124,12 @@ class CarbTrackerHomeState extends State<CarbTrackerHome>
         .addPostFrameCallback((_) => _arrivingIds.clear());
   }
 
-  final PerplexityFirebaseService _perplexityService =
-      PerplexityFirebaseService();
+  PerplexityFirebaseService _perplexityService = PerplexityFirebaseService();
+
+  @visibleForTesting
+  set perplexityService(PerplexityFirebaseService service) =>
+      _perplexityService = service;
+
   HealthKitService _healthKitService = HealthKitService();
 
   @visibleForTesting
@@ -177,6 +183,35 @@ class CarbTrackerHomeState extends State<CarbTrackerHome>
   List<FoodItem> foodItems = [];
   double get totalCarbs => foodItems.fold(0.0, (sum, item) => sum + item.carbs);
   bool isLoading = false;
+
+  /// Seconds the current lookup has run, for the status line under the Add
+  /// Food button. Counted by a timer rather than read from the clock, so the
+  /// messages follow the same time the tests drive.
+  int _lookupSeconds = 0;
+  Timer? _lookupTicker;
+
+  void _startLookupProgress() {
+    _lookupTicker?.cancel();
+    _lookupSeconds = 0;
+    // timer.tick, not a count of callbacks: a periodic Timer skips the ticks
+    // it missed after backgrounding or jank without calling back, but tick
+    // still counts the real seconds that passed.
+    _lookupTicker = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (mounted) setState(() => _lookupSeconds = timer.tick);
+    });
+  }
+
+  void _stopLookupProgress() {
+    _lookupTicker?.cancel();
+    _lookupTicker = null;
+  }
+
+  /// Whether the lookup status line is still being ticked. Exposed so a test
+  /// can check the timer stops: time passing can't show it, because the status
+  /// line is hidden once the lookup ends.
+  @visibleForTesting
+  bool get lookupTickerActive => _lookupTicker?.isActive ?? false;
+
   bool showingDailyTotal = false;
   double? dailyCarbGoal;
   double? proteinGoal;
@@ -653,6 +688,11 @@ class CarbTrackerHomeState extends State<CarbTrackerHome>
   }
 
   Future<void> _addFood() async {
+    // Return in the food field and the keyboard toolbar reach this without the
+    // Add button, which is the only thing that checks a lookup is running. A
+    // duplicate lookup would log the same carbs twice.
+    if (isLoading) return;
+
     final foodText = _foodController.text.trim();
 
     // Validate input
@@ -682,6 +722,8 @@ class CarbTrackerHomeState extends State<CarbTrackerHome>
     setState(() {
       isLoading = true;
     });
+    _startLookupProgress();
+    final ticker = _lookupTicker;
 
     try {
       final result = await _perplexityService.getMultipleCarbCounts(foodText);
@@ -695,12 +737,14 @@ class CarbTrackerHomeState extends State<CarbTrackerHome>
       await _premiumService.applyServerQuota(ServerQuota(
           premium: false, used: e.used ?? limit, limit: limit, dayKey: e.dayKey));
       if (!mounted) return;
+      _stopLookupProgress();
       setState(() {
         isLoading = false;
       });
       _showLookupLimitDialog();
     } catch (e) {
       if (!mounted) return;
+      _stopLookupProgress();
       setState(() {
         isLoading = false;
       });
@@ -723,6 +767,12 @@ class CarbTrackerHomeState extends State<CarbTrackerHome>
           ),
         );
       }
+    } finally {
+      // The result and error paths stop the ticker as soon as they know, but
+      // this lookup can end after the user has started another (the button is
+      // free again while the result is still being saved). Stop only this
+      // lookup's own ticker.
+      if (identical(_lookupTicker, ticker)) _stopLookupProgress();
     }
   }
 
@@ -731,6 +781,7 @@ class CarbTrackerHomeState extends State<CarbTrackerHome>
   Future<void> _applyLookupResult(LookupResult result) async {
     final items = result.items;
 
+    _stopLookupProgress();
     setState(() {
       isLoading = false;
       showingDailyTotal = false;
@@ -1625,6 +1676,7 @@ class CarbTrackerHomeState extends State<CarbTrackerHome>
     final serving = item.serving?.rowLabel();
     final spokenServingLabel = item.serving == null ? null : spokenServing(item.serving!);
     final time = formatTime(item.loggedAt);
+    final source = foodSourceOf(item);
     return Semantics(
       // One stop that reads like a sentence. Without this the name, the time
       // and the number are three separate stops, and the number has no unit.
@@ -1632,6 +1684,7 @@ class CarbTrackerHomeState extends State<CarbTrackerHome>
         name: item.name,
         carbs: item.carbs,
         time: time,
+        source: source?.spoken,
         serving: spokenServingLabel,
       ),
       hint: 'Double tap for details',
@@ -1655,6 +1708,7 @@ class CarbTrackerHomeState extends State<CarbTrackerHome>
         subtitle: serving == null ? time : '$time · $serving',
         carbs: item.carbs,
         category: item.category,
+        source: source,
         onLongPress: () => _showFoodDetails(item),
       ),
     );
@@ -2390,13 +2444,31 @@ class CarbTrackerHomeState extends State<CarbTrackerHome>
                               ),
                             ),
                             child: isLoading
-                                ? const SizedBox(
-                                    height: 20,
-                                    width: 20,
-                                    child: CircularProgressIndicator(
-                                      strokeWidth: 2,
-                                      color: Colors.white,
-                                    ),
+                                ? const Row(
+                                    mainAxisAlignment: MainAxisAlignment.center,
+                                    children: [
+                                      SizedBox(
+                                        height: 20,
+                                        width: 20,
+                                        child: CircularProgressIndicator(
+                                          strokeWidth: 2,
+                                          color: Colors.white,
+                                        ),
+                                      ),
+                                      SizedBox(width: 10),
+                                      Flexible(
+                                        child: Text(
+                                          'Looking up…',
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                          style: TextStyle(
+                                            fontSize: 16,
+                                            fontWeight: FontWeight.w500,
+                                            color: Colors.white,
+                                          ),
+                                        ),
+                                      ),
+                                    ],
                                   )
                                 : Row(
                                     mainAxisAlignment: MainAxisAlignment.center,
@@ -2417,6 +2489,21 @@ class CarbTrackerHomeState extends State<CarbTrackerHome>
                           ),
                         ),
                       ),
+                      if (isLoading) ...[
+                        const SizedBox(height: 10),
+                        Semantics(
+                          liveRegion: true,
+                          child: Text(
+                            lookupProgressMessage(
+                                Duration(seconds: _lookupSeconds)),
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                              fontSize: 13,
+                              color: lookupStatusColor(dark: isDark),
+                            ),
+                          ),
+                        ),
+                      ],
                     ],
                   ),
                 ),
@@ -2533,6 +2620,7 @@ class CarbTrackerHomeState extends State<CarbTrackerHome>
     _cloudSyncService.stopListening();
     _purchaseOutcomes?.cancel();
     _dayBoundaryTimer?.cancel();
+    _lookupTicker?.cancel();
     for (final cooldown in _quickLogCooldowns.values) {
       cooldown.cancel();
     }

@@ -114,4 +114,24 @@ void main() {
           'Logged Banana, 27.5 grams of carbs');
     });
   });
+
+  group('food row source', () {
+    test('the source comes after the carbs and before the serving', () {
+      expect(
+        foodRowLabel(
+            name: 'Pho', carbs: 41.2, time: '12:05 PM', serving: '1 cup, 245 grams',
+            source: 'from USDA'),
+        'Pho, 41.2 grams of carbs, from USDA, 1 cup, 245 grams, logged 12:05 PM',
+      );
+      expect(
+        foodRowLabel(name: 'Latte', carbs: 14, time: '8:10 AM', source: 'from the web'),
+        'Latte, 14 grams of carbs, from the web, logged 8:10 AM',
+      );
+    });
+
+    test('no source leaves the label as it was', () {
+      expect(foodRowLabel(name: 'Apple', carbs: 25, time: '8:30 AM'),
+          'Apple, 25 grams of carbs, logged 8:30 AM');
+    });
+  });
 }

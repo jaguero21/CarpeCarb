@@ -21,17 +21,23 @@ String spokenNumber(double value) {
       : rounded.toStringAsFixed(1);
 }
 
-/// One food in today's list, as a sentence rather than three separate stops:
-/// "Apple, 25 grams of carbs, logged 8:30 AM".
+/// One food in today's list, as a sentence rather than separate stops:
+/// "Apple, 25 grams of carbs, from USDA, logged 8:30 AM". [source] is the
+/// spoken form of where the number came from (`FoodSource.spoken`).
 String foodRowLabel({
   required String name,
   required double carbs,
   required String time,
   String? serving,
+  String? source,
 }) =>
-    serving == null
-        ? '$name, ${spokenGrams(carbs)} of carbs, logged $time'
-        : '$name, ${spokenGrams(carbs)} of carbs, $serving, logged $time';
+    [
+      name,
+      '${spokenGrams(carbs)} of carbs',
+      if (source != null) source,
+      if (serving != null) serving,
+      'logged $time',
+    ].join(', ');
 
 /// The servings stepper's value: "1 serving", "2.5 servings".
 String servingsValue(double count) =>
