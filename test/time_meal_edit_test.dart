@@ -134,6 +134,19 @@ void main() {
     expect(state.foodItems.single.category.name, 'dinner');
   });
 
+  testWidgets('a meal picked by hand in an earlier edit stays when the time changes',
+      (tester) async {
+    final now = DateTime.now();
+    if (inMidnightMinute(now)) return;
+    // Logged at lunchtime but filed under Dinner: someone picked that meal.
+    final state =
+        await openSoup(tester, now, category: 'dinner', picks: [midnight]);
+    await moveAndUpdate(tester);
+    final soup = state.foodItems.single;
+    expect(soup.loggedAt.hour, 0);
+    expect(soup.category.name, 'dinner');
+  });
+
   testWidgets('a time outside today is refused inside the dialog', (tester) async {
     final now = DateTime.now();
     // At 23:59 itself this pick is valid; skip in that one minute.

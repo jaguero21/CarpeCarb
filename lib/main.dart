@@ -1152,9 +1152,10 @@ class CarbTrackerHomeState extends State<CarbTrackerHome>
     ServingInfo? draft = item.serving;
     DateTime draftTime = item.loggedAt;
     FoodCategory draftMeal = item.category;
-    // Set once the meal is picked by hand in this edit; until then the meal
-    // follows the time.
-    var mealPicked = false;
+    // Once the meal is picked by hand, it no longer follows the time. Every
+    // way a food is logged sets its meal from its time, so a meal that doesn't
+    // match was picked by hand already, in an earlier edit or as Drink.
+    var mealPicked = item.category != FoodCategory.fromTime(item.loggedAt);
     String? timeError;
     await showDialog<void>(
       context: context,
