@@ -45,6 +45,7 @@ import 'utils/picked_time.dart';
 import 'utils/user_facing_exception.dart';
 import 'widgets/appear_once.dart';
 import 'widgets/entry_mode_link.dart';
+import 'widgets/example_prompts.dart';
 import 'widgets/food_item_card.dart';
 import 'widgets/meal_section_header.dart';
 import 'widgets/quick_log_chips.dart';
@@ -164,6 +165,10 @@ class CarbTrackerHomeState extends State<CarbTrackerHome>
 
   List<QuickLogChip> _quickChips = const [];
 
+  /// Whether the quick-add row has loaded at least once. The examples wait
+  /// for it, so someone with saved foods never sees them flash at launch.
+  bool _quickLogLoaded = false;
+
   @visibleForTesting
   List<QuickLogChip> get quickChips => _quickChips;
 
@@ -174,9 +179,13 @@ class CarbTrackerHomeState extends State<CarbTrackerHome>
       final saved = parseFoodItems(prefs.getString(StorageKeys.savedFoods));
       final recent = await _recentFoods.load(DateTime.now());
       if (!mounted) return;
-      setState(() => _quickChips = quickLogChips(saved: saved, recent: recent));
+      setState(() {
+        _quickChips = quickLogChips(saved: saved, recent: recent);
+        _quickLogLoaded = true;
+      });
     } catch (e) {
       if (kDebugMode) debugPrint('Loading quick-add foods failed: $e');
+      if (mounted) setState(() => _quickLogLoaded = true);
     }
   }
 
@@ -1520,6 +1529,18 @@ class CarbTrackerHomeState extends State<CarbTrackerHome>
     }
   }
 
+  /// A first-run example: fill the food field with it and leave the lookup
+  /// to the user.
+  void _useExample(String text) {
+    setState(() {
+      _isManualEntryMode = false;
+      _carbController.clear();
+      _foodController.text = text;
+      _foodController.selection = TextSelection.collapsed(offset: text.length);
+    });
+    _foodFocusNode.requestFocus();
+  }
+
   Widget _homeKeyboardToolbarButton({
     required String label,
     required VoidCallback onPressed,
@@ -2570,21 +2591,24 @@ class CarbTrackerHomeState extends State<CarbTrackerHome>
 
                 // Food List
                 foodItems.isEmpty
-                    ? Center(
-                        child: Padding(
-                          padding: const EdgeInsets.symmetric(vertical: 32.0),
-                          child: Text(
-                            'Type a food name above to look up its carbs.',
-                            textAlign: TextAlign.center,
-                            style: TextStyle(
-                              color: Theme.of(context)
-                                  .colorScheme
-                                  .onSurfaceVariant,
-                              fontSize: 14,
+                    ? (_quickLogLoaded && _quickChips.isEmpty
+                        ? ExamplePrompts(onPick: _useExample)
+                        : Center(
+                            child: Padding(
+                              padding:
+                                  const EdgeInsets.symmetric(vertical: 32.0),
+                              child: Text(
+                                'Type a food name above to look up its carbs.',
+                                textAlign: TextAlign.center,
+                                style: TextStyle(
+                                  color: Theme.of(context)
+                                      .colorScheme
+                                      .onSurfaceVariant,
+                                  fontSize: 14,
+                                ),
+                              ),
                             ),
-                          ),
-                        ),
-                      )
+                          ))
                     : AnimatedSize(
                         duration: const Duration(milliseconds: 300),
                         alignment: Alignment.topCenter,
