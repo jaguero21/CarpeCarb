@@ -210,7 +210,7 @@ void main() {
 
     await tester.pumpWidget(const CarbTrackerApp());
     await tester.pumpAndSettle();
-    expect(find.text('Favorites'), findsNothing);
+    expect(find.text('Saved'), findsNothing);
 
     final finder = find.semantics.byLabel('Apple');
     final id = finder
@@ -224,9 +224,9 @@ void main() {
         args: id);
     await tester.pumpAndSettle();
 
-    // The Settings page, open on its first tab. Only the selected tab
-    // renders its label, so this is the page's own text.
-    expect(find.text('Favorites'), findsOneWidget);
+    // The Settings page is showing: its tab names are only on screen when the
+    // page is.
+    expect(find.text('Saved'), findsOneWidget);
 
     handle.dispose();
   });

@@ -154,6 +154,26 @@ class FoodItem {
   FoodItem withServing(ServingInfo next, {required DateTime now}) =>
       edited(serving: next, now: now);
 
+  /// The same food under a newly generated id, every other field unchanged.
+  /// Undo puts back a copy like this: the old id's delete marker may already
+  /// be on the other device, and markers merge as a union, so the old id
+  /// would be deleted again on the next merge.
+  FoodItem withNewId() => FoodItem(
+        name: name,
+        carbs: carbs,
+        protein: protein,
+        fat: fat,
+        fiber: fiber,
+        calories: calories,
+        details: details,
+        citations: citations,
+        isManualEntry: isManualEntry,
+        serving: serving,
+        updatedAt: updatedAt,
+        loggedAt: loggedAt,
+        category: category,
+      );
+
   Map<String, dynamic> toJson() {
     return {
       'id': id,

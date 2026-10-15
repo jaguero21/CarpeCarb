@@ -172,10 +172,10 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(state.totalCarbs, 52.0);
-      expect(find.text('Reset'), findsOneWidget);
+      expect(find.byTooltip('Today options'), findsOneWidget);
 
-      // Invoke reset directly — the Reset button can be off-screen in the
-      // default test surface (800×600) when the header row overflows.
+      // Invoke the clear directly — the menu's confirm dialog is covered in
+      // clear_today_home_test.dart.
       state.resetTotalForTest();
       await tester.pumpAndSettle();
 

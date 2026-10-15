@@ -297,19 +297,19 @@ void main() {
     handle.dispose();
   });
 
-  testWidgets('Save to Food list is hidden while a serving change is pending',
+  testWidgets('Add to Saved is hidden while a serving change is pending',
       (tester) async {
     stubChannels();
     seedPho();
     final handle = await openRow(tester, 'pho');
 
-    expect(find.text('Save to Food list'), findsOneWidget);
+    expect(find.text('Add to Saved'), findsOneWidget);
     await tester.tap(find.byTooltip('More servings'));
     await tester.pumpAndSettle();
-    expect(find.text('Save to Food list'), findsNothing);
+    expect(find.text('Add to Saved'), findsNothing);
     await tester.tap(find.byTooltip('Fewer servings'));
     await tester.pumpAndSettle();
-    expect(find.text('Save to Food list'), findsOneWidget);
+    expect(find.text('Add to Saved'), findsOneWidget);
     handle.dispose();
   });
 
@@ -324,7 +324,7 @@ void main() {
       'disclaimer_accepted': true,
     });
     final handle = await openRow(tester, 'Apple');
-    expect(find.text('Save to Food list'), findsOneWidget,
+    expect(find.text('Add to Saved'), findsOneWidget,
         reason: 'the dialog is open');
     expect(find.byTooltip('More servings'), findsNothing);
     handle.dispose();

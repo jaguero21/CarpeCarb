@@ -224,7 +224,7 @@ void main() {
     expect(chipName('Pho'), findsOneWidget);
   });
 
-  testWidgets('saving a food to the Food list moves its chip to the saved group',
+  testWidgets('saving a food to Saved moves its chip to the saved group',
       (tester) async {
     // The default 800x600 screen puts the new row under the bottom bar.
     tester.view.physicalSize = const Size(2400, 3600); // 800x1200 at 3x

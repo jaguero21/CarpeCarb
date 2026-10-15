@@ -1,9 +1,13 @@
+import 'dart:convert';
+
+import 'package:carb_tracker/config/storage_keys.dart';
 import 'package:carb_tracker/main.dart';
 import 'package:carb_tracker/widgets/food_item_card.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'helpers/held_health.dart';
 import 'helpers/home_harness.dart';
 
 void main() {
@@ -92,7 +96,90 @@ void main() {
     await tester.tap(find.text('Undo'));
     await tester.pumpAndSettle();
     expect(find.text('52.0 g'), findsOneWidget);
-    expect(state.foodItems.any((f) => f.id == 'l1'), isTrue);
+    expect(state.foodItems.any((f) => f.name == 'Soup'), isTrue);
+  });
+
+  testWidgets('Undo puts back a fresh copy; the old id stays deleted for iCloud',
+      (tester) async {
+    final state = await start(tester, day);
+    final soup = state.foodItems.firstWhere((f) => f.id == 'l1');
+    state.removeItemById('l1');
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Undo'));
+    await tester.pumpAndSettle();
+
+    // The other device may already have merged the delete, which would
+    // delete the old id again; a new id syncs as a new food.
+    final copy = state.foodItems.singleWhere((f) => f.name == 'Soup');
+    expect(copy.id, isNot('l1'));
+    expect(copy.toJson()..remove('id'), soup.toJson()..remove('id'));
+    // Back where it was in the list.
+    expect(state.foodItems.map((f) => f.name), ['Toast', 'Soup', 'Roll']);
+    final prefs = await SharedPreferences.getInstance();
+    expect(jsonDecode(prefs.getString(StorageKeys.foodItemsDeleted)!),
+        contains('l1'));
+  });
+
+  testWidgets('Undo writes the food back to Health only once its delete finished',
+      (tester) async {
+    final state = await start(tester, day);
+    final health = HeldHealth();
+    state.healthKitService = health;
+    state.removeItemById('l1');
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Undo'));
+    await tester.pumpAndSettle();
+    // The copy shares the deleted sample's millisecond, so a delete that
+    // finished after the write would take it out of Health again.
+    expect(health.writes, isEmpty);
+
+    health.finishDelete('Soup');
+    await tester.pumpAndSettle();
+    expect(health.calls, ['delete Soup', 'write Soup']);
+  });
+
+  testWidgets('Undo writes nothing to Health if the delete failed', (tester) async {
+    final state = await start(tester, day);
+    final health = HeldHealth();
+    state.healthKitService = health;
+    state.removeItemById('l1');
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Undo'));
+    await tester.pumpAndSettle();
+
+    // The original sample is still there; a write would double it.
+    health.finishDelete('Soup', ok: false);
+    await tester.pumpAndSettle();
+    expect(health.writes, isEmpty);
+    expect(state.foodItems.any((f) => f.name == 'Soup'), isTrue);
+  });
+
+  testWidgets('Undo writes nothing to Health for a copy deleted again meanwhile',
+      (tester) async {
+    final state = await start(tester, day);
+    final health = HeldHealth();
+    state.healthKitService = health;
+    state.removeItemById('l1');
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Undo'));
+    await tester.pumpAndSettle();
+    state.removeItemById(state.foodItems.singleWhere((f) => f.name == 'Soup').id);
+    await tester.pumpAndSettle();
+
+    health.finishDelete('Soup');
+    await tester.pumpAndSettle();
+    expect(health.writes, isEmpty);
+  });
+
+  testWidgets('the removed snackbar goes away on its own', (tester) async {
+    final state = await start(tester, day);
+    state.removeItemById('l1');
+    await tester.pumpAndSettle();
+    expect(find.text('Soup removed'), findsOneWidget);
+
+    await tester.pump(const Duration(seconds: 5));
+    await tester.pumpAndSettle();
+    expect(find.text('Soup removed'), findsNothing);
   });
 
   testWidgets('the meal total lines up with the carbs of its rows', (tester) async {

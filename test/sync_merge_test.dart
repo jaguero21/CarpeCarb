@@ -1,3 +1,4 @@
+import 'package:carb_tracker/models/clear_today.dart';
 import 'package:carb_tracker/models/food_item.dart';
 import 'package:carb_tracker/services/sync_merge.dart';
 import 'package:carb_tracker/services/sync_store.dart' show migratedSettingsStamp;
@@ -95,6 +96,22 @@ void main() {
       );
 
       expect(merged.items, isEmpty);
+    });
+
+    test('foods an Undo put back survive a cloud copy that has their delete', () {
+      // The other device merged the clear before this device's Undo. Its
+      // markers for the old ids merge back as a union, so Undo's copies have
+      // to be new ids to stay.
+      final cleared = [item('a', 'Apple'), item('b', 'Bagel', at: DateTime(2026, 9, 20, 9))];
+      final back = restoreCleared(const [], cleared).map((f) => f.withNewId()).toList();
+      final here = state(items: back, deleted: {'a', 'b'});
+      final there = state(deleted: {'a', 'b'});
+
+      for (final merged in [merge(here, there), merge(there, here)]) {
+        expect(merged.items.map((i) => i.name), ['Bagel', 'Apple']);
+        expect(merged.items.map((i) => i.id), isNot(contains(anyOf('a', 'b'))));
+        expect(merged.deletedItemIds, {'a', 'b'});
+      }
     });
 
     test('a cloud payload from another day is ignored, items and deletes alike', () {
