@@ -1170,6 +1170,7 @@ class CarbTrackerHomeState extends State<CarbTrackerHome>
           final changed = servingChanged ||
               draftTime != item.loggedAt ||
               draftMeal != item.category;
+          // For display only; Update builds the copy it saves.
           final shown = changed
               ? item.edited(
                   serving: servingChanged ? draft : null,
@@ -1274,7 +1275,16 @@ class CarbTrackerHomeState extends State<CarbTrackerHome>
                 TextButton(
                   onPressed: () {
                     Navigator.pop(context);
-                    _updateFoodItem(item, shown);
+                    // Stamped now, not when the dialog last drew.
+                    _updateFoodItem(
+                      item,
+                      item.edited(
+                        serving: servingChanged ? draft : null,
+                        loggedAt: draftTime,
+                        category: draftMeal,
+                        now: DateTime.now().toUtc(),
+                      ),
+                    );
                   },
                   child: const Text('Update'),
                 ),

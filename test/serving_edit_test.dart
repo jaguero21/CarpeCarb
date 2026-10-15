@@ -175,6 +175,25 @@ void main() {
     handle.dispose();
   });
 
+  testWidgets('the edit is stamped when Update is tapped, not when the dialog last drew',
+      (tester) async {
+    stubChannels();
+    seedPho();
+    final handle = await openRow(tester, 'pho');
+
+    await tester.tap(find.byTooltip('More servings'));
+    await tester.pumpAndSettle();
+    // Real time passes between the dialog's last build and the tap.
+    await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 5)));
+    final beforeTap = DateTime.now().toUtc();
+    await tester.tap(find.text('Update'));
+    await tester.pumpAndSettle();
+
+    final state = tester.state<CarbTrackerHomeState>(find.byType(CarbTrackerHome));
+    expect(state.foodItems.single.updatedAt!.isBefore(beforeTap), isFalse);
+    handle.dispose();
+  });
+
   testWidgets('Update does not overwrite a copy that changed meanwhile', (tester) async {
     stubChannels();
     seedPho();
