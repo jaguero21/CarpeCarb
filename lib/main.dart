@@ -27,6 +27,7 @@ import 'services/sync_merge.dart';
 import 'services/sync_payload.dart';
 import 'services/sync_store.dart';
 import 'models/food_item.dart';
+import 'models/food_source.dart';
 import 'models/meal_sections.dart';
 import 'models/quick_log.dart';
 import 'models/server_quota.dart';
@@ -1625,6 +1626,7 @@ class CarbTrackerHomeState extends State<CarbTrackerHome>
     final serving = item.serving?.rowLabel();
     final spokenServingLabel = item.serving == null ? null : spokenServing(item.serving!);
     final time = formatTime(item.loggedAt);
+    final source = foodSourceOf(item);
     return Semantics(
       // One stop that reads like a sentence. Without this the name, the time
       // and the number are three separate stops, and the number has no unit.
@@ -1632,6 +1634,7 @@ class CarbTrackerHomeState extends State<CarbTrackerHome>
         name: item.name,
         carbs: item.carbs,
         time: time,
+        source: source?.spoken,
         serving: spokenServingLabel,
       ),
       hint: 'Double tap for details',
@@ -1655,6 +1658,7 @@ class CarbTrackerHomeState extends State<CarbTrackerHome>
         subtitle: serving == null ? time : '$time · $serving',
         carbs: item.carbs,
         category: item.category,
+        source: source,
         onLongPress: () => _showFoodDetails(item),
       ),
     );

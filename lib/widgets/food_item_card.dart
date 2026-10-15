@@ -1,12 +1,15 @@
 import 'package:flutter/material.dart';
 import '../config/app_colors.dart';
 import '../models/food_item.dart';
+import '../models/food_source.dart';
+import 'source_tag.dart';
 
 class FoodItemCard extends StatelessWidget {
   final String name;
   final String subtitle;
   final double carbs;
   final FoodCategory? category;
+  final FoodSource? source;
   final VoidCallback? onTap;
   final VoidCallback? onLongPress;
   final bool showMacros;
@@ -21,6 +24,7 @@ class FoodItemCard extends StatelessWidget {
     required this.subtitle,
     required this.carbs,
     this.category,
+    this.source,
     this.onTap,
     this.onLongPress,
     this.showMacros = false,
@@ -94,8 +98,17 @@ class FoodItemCard extends StatelessWidget {
                     overflow: TextOverflow.ellipsis,
                   ),
                   const SizedBox(height: 2),
-                  Text(
-                    subtitle,
+                  Text.rich(
+                    TextSpan(children: [
+                      if (source != null) ...[
+                        WidgetSpan(
+                          alignment: PlaceholderAlignment.middle,
+                          child: SourceTag(source!),
+                        ),
+                        const TextSpan(text: ' '),
+                      ],
+                      TextSpan(text: subtitle),
+                    ]),
                     style: TextStyle(
                       fontSize: 12,
                       color: Theme.of(context).colorScheme.onSurfaceVariant,
