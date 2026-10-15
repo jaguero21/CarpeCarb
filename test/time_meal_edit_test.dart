@@ -161,9 +161,8 @@ void main() {
     expect(health.calls, ['delete 12:30', 'write 0:0']);
   });
 
-  testWidgets('VoiceOver hears the new meal and time', (tester) async {
-    final now = DateTime.now();
-    if (inMidnightMinute(now)) return;
+  /// What VoiceOver is asked to announce from here on.
+  List<String> captureAnnouncements(WidgetTester tester) {
     final announcements = <String>[];
     tester.binding.defaultBinaryMessenger.setMockDecodedMessageHandler<dynamic>(
         SystemChannels.accessibility, (message) async {
@@ -175,10 +174,28 @@ void main() {
     });
     addTearDown(() => tester.binding.defaultBinaryMessenger
         .setMockDecodedMessageHandler<dynamic>(SystemChannels.accessibility, null));
+    return announcements;
+  }
+
+  testWidgets('VoiceOver hears the new meal and time', (tester) async {
+    final now = DateTime.now();
+    if (inMidnightMinute(now)) return;
+    final announcements = captureAnnouncements(tester);
     await openSoup(tester, now, picks: [midnight]);
     await tester.tap(find.textContaining('Time · '));
     await tester.pumpAndSettle();
     expect(announcements, contains('Snack, 12:00 AM'));
+  });
+
+  testWidgets('VoiceOver hears a refused time', (tester) async {
+    final now = DateTime.now();
+    // At 23:59 itself this pick is valid; skip in that one minute.
+    if (now.hour == 23 && now.minute == 59) return;
+    final announcements = captureAnnouncements(tester);
+    await openSoup(tester, now, picks: [const TimeOfDay(hour: 23, minute: 59)]);
+    await tester.tap(find.textContaining('Time · '));
+    await tester.pumpAndSettle();
+    expect(announcements, contains('Pick a time from today, up to now'));
   });
 
   testWidgets('two foods from one lookup moved to one minute keep their own Health samples',

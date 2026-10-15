@@ -1203,8 +1203,10 @@ class CarbTrackerHomeState extends State<CarbTrackerHome>
                       final resolved =
                           resolvePickedTime(picked, now: now, resetHour: resetHour);
                       if (resolved == null) {
-                        setDialogState(
-                            () => timeError = 'Pick a time from today, up to now');
+                        const refused = 'Pick a time from today, up to now';
+                        setDialogState(() => timeError = refused);
+                        SemanticsService.sendAnnouncement(
+                            View.of(context), refused, TextDirection.ltr);
                         return;
                       }
                       // The picker gives a whole minute, but Apple Health tells
