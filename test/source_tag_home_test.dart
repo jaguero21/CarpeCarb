@@ -1,5 +1,6 @@
 import 'package:carb_tracker/main.dart';
 import 'package:carb_tracker/widgets/food_item_card.dart';
+import 'package:carb_tracker/widgets/source_tag.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -43,6 +44,7 @@ void main() {
     expect(inRow('USDA'), findsOneWidget);
     expect(inRow('Web'), findsOneWidget);
     expect(inRow('Manual'), findsOneWidget);
+    expect(find.byType(SourceTag), findsNWidgets(3));
   });
 
   testWidgets('VoiceOver reads the source in the row label', (tester) async {

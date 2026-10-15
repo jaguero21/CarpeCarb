@@ -103,7 +103,9 @@ class FoodItemCard extends StatelessWidget {
                       if (source != null) ...[
                         WidgetSpan(
                           alignment: PlaceholderAlignment.middle,
-                          child: SourceTag(source!),
+                          // WidgetSpan already scales its child with the text; do not scale twice.
+                          child: MediaQuery.withNoTextScaling(
+                              child: SourceTag(source!)),
                         ),
                         const TextSpan(text: ' '),
                       ],
