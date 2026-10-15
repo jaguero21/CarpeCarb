@@ -11,6 +11,7 @@ import 'package:flutter/semantics.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'helpers/held_health.dart';
 import 'helpers/home_harness.dart';
 
 /// Records Health calls in order. Deletes finish only when [releaseDeletes]
@@ -113,6 +114,76 @@ void main() {
     final lastDelete = health.calls.lastIndexWhere((c) => c.startsWith('delete'));
     expect(firstWrite, greaterThan(lastDelete));
     expect(health.calls.where((c) => c.startsWith('write')).length, 2);
+  });
+
+  testWidgets('Undo writes back to Health only the foods whose delete worked',
+      (tester) async {
+    final state = await start(tester);
+    final health = HeldHealth();
+    state.healthKitService = health;
+    await openClear(tester);
+    await tester.tap(find.text('Clear'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Undo'));
+    await tester.pumpAndSettle();
+
+    // Soup's sample is still in Health, so writing it again would double it.
+    health.finishDelete('Soup', ok: false);
+    health.finishDelete('Roll');
+    await tester.pumpAndSettle();
+    expect(state.foodItems.map((f) => f.name).toSet(), {'Soup', 'Roll'});
+    expect(health.writes, ['Roll']);
+  });
+
+  testWidgets('a restored food deleted before the deletes finish is not written',
+      (tester) async {
+    final state = await start(tester);
+    final health = HeldHealth();
+    state.healthKitService = health;
+    await openClear(tester);
+    await tester.tap(find.text('Clear'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Undo'));
+    await tester.pumpAndSettle();
+
+    state.removeItemById(state.foodItems.singleWhere((f) => f.name == 'Soup').id);
+    await tester.pumpAndSettle();
+    health.finishDelete('Soup');
+    health.finishDelete('Roll');
+    await tester.pumpAndSettle();
+    expect(health.writes, ['Roll']);
+  });
+
+  testWidgets("a second Clear: the first Undo writes nothing, the second's waits on its own deletes",
+      (tester) async {
+    final state = await start(tester);
+    final health = HeldHealth();
+    state.healthKitService = health;
+    await openClear(tester);
+    await tester.tap(find.text('Clear'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Undo'));
+    await tester.pumpAndSettle();
+
+    // Cleared again while the first Undo still waits on the first deletes.
+    await openClear(tester);
+    await tester.tap(find.text('Clear'));
+    await tester.pumpAndSettle();
+    health.finishDelete('Soup');
+    health.finishDelete('Roll');
+    await tester.pumpAndSettle();
+    expect(health.writes, isEmpty,
+        reason: "the first Undo's foods aren't listed any more");
+
+    await tester.tap(find.text('Undo'));
+    await tester.pumpAndSettle();
+    expect(health.writes, isEmpty,
+        reason: "the second Clear's deletes haven't finished");
+    health.finishDelete('Soup');
+    health.finishDelete('Roll');
+    await tester.pumpAndSettle();
+    expect(health.writes, unorderedEquals(['Soup', 'Roll']));
+    expect(state.foodItems, hasLength(2));
   });
 
   testWidgets('Undo puts back fresh copies; the old ids stay deleted for iCloud',

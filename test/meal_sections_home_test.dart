@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'helpers/held_health.dart';
 import 'helpers/home_harness.dart';
 
 void main() {
@@ -117,6 +118,57 @@ void main() {
     final prefs = await SharedPreferences.getInstance();
     expect(jsonDecode(prefs.getString(StorageKeys.foodItemsDeleted)!),
         contains('l1'));
+  });
+
+  testWidgets('Undo writes the food back to Health only once its delete finished',
+      (tester) async {
+    final state = await start(tester, day);
+    final health = HeldHealth();
+    state.healthKitService = health;
+    state.removeItemById('l1');
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Undo'));
+    await tester.pumpAndSettle();
+    // The copy shares the deleted sample's millisecond, so a delete that
+    // finished after the write would take it out of Health again.
+    expect(health.writes, isEmpty);
+
+    health.finishDelete('Soup');
+    await tester.pumpAndSettle();
+    expect(health.calls, ['delete Soup', 'write Soup']);
+  });
+
+  testWidgets('Undo writes nothing to Health if the delete failed', (tester) async {
+    final state = await start(tester, day);
+    final health = HeldHealth();
+    state.healthKitService = health;
+    state.removeItemById('l1');
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Undo'));
+    await tester.pumpAndSettle();
+
+    // The original sample is still there; a write would double it.
+    health.finishDelete('Soup', ok: false);
+    await tester.pumpAndSettle();
+    expect(health.writes, isEmpty);
+    expect(state.foodItems.any((f) => f.name == 'Soup'), isTrue);
+  });
+
+  testWidgets('Undo writes nothing to Health for a copy deleted again meanwhile',
+      (tester) async {
+    final state = await start(tester, day);
+    final health = HeldHealth();
+    state.healthKitService = health;
+    state.removeItemById('l1');
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Undo'));
+    await tester.pumpAndSettle();
+    state.removeItemById(state.foodItems.singleWhere((f) => f.name == 'Soup').id);
+    await tester.pumpAndSettle();
+
+    health.finishDelete('Soup');
+    await tester.pumpAndSettle();
+    expect(health.writes, isEmpty);
   });
 
   testWidgets('the removed snackbar goes away on its own', (tester) async {
