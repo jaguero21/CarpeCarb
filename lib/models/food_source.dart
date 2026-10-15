@@ -22,7 +22,7 @@ enum FoodSource {
 }
 
 /// The exact opening of a USDA result's details: `usdaItem` in
-/// functions/src/lookup.js writes "USDA FoodData Central (<dataType>): ", with
+/// functions/src/lookup.js writes `USDA FoodData Central (<dataType>): `, with
 /// dataType from DATA_TYPES in functions/src/usda.js. Anything looser would
 /// tag a number that didn't come from the USDA calculation, because an AI
 /// answer or an older saved food can also begin "USDA FoodData Central".
