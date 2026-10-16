@@ -10,6 +10,10 @@
 #      python3 compose.py <raw-dir> backgrounds/phone.png phone ../../screenshots
 #      python3 compose.py <raw-dir> backgrounds/ipad.png  ipad  ../../screenshots
 #    (needs Pillow; the headlines are in compose.py's HEADLINES).
+# 3. The iOS 27 product page header and search results images, from the
+#    iPhone captures:
+#      python3 creative.py <raw-dir> backgrounds/header.png backgrounds/search.png \
+#        ../../screenshots/creative
 set -u
 UDID=$1; OUT=$2; mkdir -p "$OUT"
 REPO=$(git -C "$(dirname "$0")" rev-parse --show-toplevel)
