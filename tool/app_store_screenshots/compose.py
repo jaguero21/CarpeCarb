@@ -23,7 +23,10 @@ FONT = '/System/Library/Fonts/SFNS.ttf'
 
 # Layout as fractions of the canvas, measured from the 1.0.3 set.
 LAYOUT = {
-    'phone': dict(sizes={'iphone': (1320, 2868), 'iphone-6.5': (1284, 2778)},
+    # 'iphone-6.3' is the required iPhone size (Dynamic Island, medium display);
+    # the others fill the optional large-display slots.
+    'phone': dict(sizes={'iphone-6.3': (1206, 2622), 'iphone': (1320, 2868),
+                         'iphone-6.5': (1284, 2778)},
                   font=0.086, top=0.066, gap=1.18, frame_x=0.108, frame_top=0.182,
                   bezel=0.0175, radius=0.115, max_text=0.90),
     'ipad': dict(sizes={'ipad': (2064, 2752), 'ipad-12.9-2ndgen': (2048, 2732)},
