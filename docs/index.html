@@ -3,7 +3,9 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>CarpeCarb — Smart Carb Tracking for iOS</title>
+  <title>CarpeCarb — Carb Tracker for iPhone and iPad</title>
+  <meta name="description" content="Type what you ate in plain words and CarpeCarb finds the carbs, protein, fat, fiber and calories. Free, with no account and no ads." />
+  <meta name="apple-itunes-app" content="app-id=6759311106" />
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -56,6 +58,19 @@
       border-radius: 999px;
       margin: 4px;
     }
+
+    .store-button {
+      display: inline-block;
+      background: #4D6B47;
+      color: #fff;
+      font-size: 16px;
+      font-weight: 600;
+      padding: 12px 28px;
+      border-radius: 999px;
+      margin-bottom: 20px;
+    }
+
+    .store-button:hover { text-decoration: none; background: #3F5A3A; }
 
     .badge-outline {
       display: inline-block;
@@ -246,11 +261,13 @@
 <div class="hero">
   <img src="./app_icon.png" alt="CarpeCarb app icon" class="hero-logo" />
   <h1>CarpeCarb</h1>
-  <p>AI-powered carb tracking built for iPhone — no accounts, no clutter, just results.</p>
+  <p>Stop guessing. Start knowing. Type what you ate in plain words and CarpeCarb finds the carbs, with no account and no ads.</p>
+  <a class="store-button" href="https://apps.apple.com/us/app/carpecarb/id6759311106">View on the App Store</a>
   <div>
     <span class="badge">Free to Download</span>
-    <span class="badge-outline">4 Free Lookups/Day</span>
-    <span class="badge-outline">iOS 26+</span>
+    <span class="badge-outline">4 Free Lookups a Day</span>
+    <span class="badge-outline">iPhone and iPad</span>
+    <span class="badge-outline">iOS 26 or later</span>
   </div>
 </div>
 
@@ -262,27 +279,27 @@
     <div class="step-grid">
       <div class="step-card">
         <div class="step-num">Step 1</div>
-        <div class="step-title">Type any food</div>
-        <div class="step-desc">Describe what you ate — brand names, meals, ingredients, anything.</div>
+        <div class="step-title">Type what you ate</div>
+        <div class="step-desc">In plain words, like "two slices of sourdough" or "a turkey sandwich on wheat". Brand and restaurant foods work too.</div>
       </div>
       <div class="step-card">
         <div class="step-num">Step 2</div>
-        <div class="step-title">We look it up</div>
-        <div class="step-desc">Our secure server checks USDA FoodData Central for brand and chain foods, and Perplexity AI for everything else.</div>
+        <div class="step-title">CarpeCarb looks it up</div>
+        <div class="step-desc">Brand and chain foods are matched in USDA FoodData Central first. Everything else is checked against the web and USDA survey data.</div>
       </div>
       <div class="step-card">
         <div class="step-num">Step 3</div>
-        <div class="step-title">Results appear instantly</div>
-        <div class="step-desc">Carbs, protein, fat, fiber, and calories are added to your daily log with sources cited.</div>
+        <div class="step-title">It joins your day</div>
+        <div class="step-desc">Carbs, protein, fat, fiber, and calories go into today's log under the right meal, labelled USDA, Web, or Manual.</div>
       </div>
       <div class="step-card">
         <div class="step-num">Step 4</div>
         <div class="step-title">Track your day</div>
-        <div class="step-desc">Watch your progress bar fill toward your daily carb goal. Resets automatically each morning.</div>
+        <div class="step-desc">Watch the progress bar fill toward your daily carb goal, with a total for each meal. Your day resets at the hour you choose.</div>
       </div>
     </div>
     <div class="highlight">
-      Your API key is never stored on your device. All AI lookups go through our Firebase Cloud Function — your queries are not stored or associated with your identity.
+      No guesses: if CarpeCarb can't find a reliable carb count, it says so and asks you to enter it from the label. It never fills in a made-up 0 g.
     </div>
   </section>
 
@@ -291,30 +308,30 @@
     <h2><span class="icon">🆓</span> Everything Is Free</h2>
     <p>Every feature in CarpeCarb is available to all users — no paywall, no locked screens.</p>
     <ul>
-      <li><strong>AI nutrition lookup</strong> — type any food and get carbs instantly (4 lookups/day free)</li>
-      <li><strong>Manual entry</strong> — enter food name and carb count directly, no AI needed</li>
-      <li><strong>Daily carb goal</strong> — set your target and track progress with a progress bar</li>
-      <li><strong>Food log</strong> — see everything you've eaten today with a tap to expand details</li>
-      <li><strong>Macro tracking</strong> — set goals and track protein, fat, fiber, and calories</li>
-      <li><strong>Apple Health Sync</strong> — automatically writes nutrition data to Apple Health</li>
-      <li><strong>iCloud Sync</strong> — keep your log, favorites, and goals in sync across all your devices</li>
-      <li><strong>Favorites</strong> — save frequently eaten foods for one-tap logging</li>
-      <li><strong>History</strong> — review past days and spot patterns</li>
-      <li><strong>Siri shortcuts</strong> — log food or check carbs hands-free</li>
-      <li><strong>Home Screen widget</strong> — see your daily total without opening the app</li>
-      <li><strong>Dark mode</strong> — full light and dark theme support</li>
+      <li><strong>Nutrition lookup</strong> — type any food and get carbs, protein, fat, fiber, and calories (4 lookups a day free)</li>
+      <li><strong>Source labels</strong> — every food shows whether its numbers came from USDA, the web, or you</li>
+      <li><strong>Your day by meal</strong> — breakfast, lunch, dinner, and snacks, each with its own carb total</li>
+      <li><strong>Saved and recent foods</strong> — they sit right under the food field; tap one to log it again, no lookup needed</li>
+      <li><strong>Change a food after logging</strong> — pick a different serving, number of servings, time, or meal, and your totals update</li>
+      <li><strong>Enter carbs yourself</strong> — type a food and its carb count whenever you'd rather</li>
+      <li><strong>Daily goals</strong> — a carb goal with a progress bar, plus optional goals for protein, fat, fiber, and calories</li>
+      <li><strong>Clear the day with Undo</strong> — from the ⋯ menu, with a confirmation first</li>
+      <li><strong>History</strong> — your last 30 days from Apple Health</li>
+      <li><strong>Apple Health and iCloud</strong> — writes nutrition to Apple Health, and keeps your log in step between iPhone and iPad</li>
+      <li><strong>Siri and a Home Screen widget</strong> — log food or check today's total without opening the app</li>
+      <li><strong>Accessibility and themes</strong> — full VoiceOver support, large text, and light and dark themes</li>
     </ul>
   </section>
 
   <!-- Subscription -->
   <section>
     <h2><span class="icon">⭐</span> Subscribe for Unlimited Lookups</h2>
-    <p>CarpeCarb runs on Perplexity AI and Firebase — real servers with real ongoing costs. Your subscription keeps the service running.</p>
+    <p>Every lookup runs on real servers with real ongoing costs. A subscription removes the daily limit and keeps the service running.</p>
     <div class="feature-grid" style="margin-top: 16px;">
       <div class="feature-card">
         <div class="feature-icon">♾️</div>
         <div>
-          <div class="feature-title">Unlimited AI Lookups</div>
+          <div class="feature-title">Unlimited Lookups</div>
           <div class="feature-desc">No daily cap — look up as many foods as you need, every day.</div>
         </div>
       </div>
@@ -322,12 +339,12 @@
         <div class="feature-icon">🛠️</div>
         <div>
           <div class="feature-title">Keep CarpeCarb Running</div>
-          <div class="feature-desc">Funds the AI service and infrastructure behind every carb search.</div>
+          <div class="feature-desc">Funds the servers behind every lookup.</div>
         </div>
       </div>
     </div>
     <div class="highlight">
-      <strong>$2.99/month</strong> or <strong>$29.99/year</strong> — billed through the App Store. Cancel anytime via <strong>Settings → Apple ID → Subscriptions</strong>. Subscription automatically renews unless canceled at least 24 hours before the end of the current period.
+      <strong>$2.99/month</strong> or <strong>$29.99/year</strong> — payment is charged to your Apple Account. Cancel anytime in <strong>Settings → [your name] → Subscriptions</strong>. Subscriptions renew automatically unless canceled at least 24 hours before the end of the current period.
     </div>
   </section>
 
@@ -336,10 +353,11 @@
     <h2><span class="icon">🔒</span> Privacy &amp; Security</h2>
     <ul>
       <li><strong>No account required</strong> — CarpeCarb uses anonymous authentication. We never know who you are.</li>
-      <li><strong>No ads, no data selling</strong> — your food log stays on your device.</li>
-      <li><strong>HealthKit data stays yours</strong> — we never read or transmit your Apple Health data to our servers.</li>
-      <li><strong>Secure API proxy</strong> — our Perplexity AI and USDA keys live in Google Cloud Secret Manager, never in the app binary.</li>
-      <li><strong>Rate limited</strong> — all Cloud Functions enforce per-user rate limits via Firestore to prevent abuse.</li>
+      <li><strong>No ads, no data selling</strong> — your food log stays on your device and in your own iCloud.</li>
+      <li><strong>Apple Health data stays yours</strong> — it is never sent to our servers.</li>
+      <li><strong>Lookups stay anonymous</strong> — they go through our own server, tied only to an anonymous ID, and we don't keep your searches.</li>
+      <li><strong>Keys stay on the server</strong> — the keys for our lookup services live in Google Cloud Secret Manager, never in the app.</li>
+      <li><strong>Rate limited</strong> — every request is checked against a per-user limit to prevent abuse.</li>
     </ul>
     <p style="margin-top:12px;">Read our full <a href="./privacy-policy.html">Privacy Policy</a> for details.</p>
   </section>
@@ -348,10 +366,11 @@
   <section>
     <h2><span class="icon">🍎</span> Built for the Apple Ecosystem</h2>
     <ul>
-      <li><strong>Siri App Intents</strong> — "Hey Siri, log a banana in CarpeCarb" or "How many carbs today?"</li>
-      <li><strong>Home Screen widget</strong> — glanceable daily total and last food logged</li>
-      <li><strong>Apple Health</strong> — writes full nutrition data (carbs, protein, fat, fiber, calories) for all users</li>
-      <li><strong>Shortcuts app</strong> — automate your logging with custom shortcuts</li>
+      <li><strong>Siri</strong> — say "Log food in CarpeCarb" and tell Siri what you ate, or ask "How many carbs today in CarpeCarb"</li>
+      <li><strong>Home Screen widget</strong> — today's total and the last food you logged, at a glance</li>
+      <li><strong>Apple Health</strong> — writes carbs, protein, fat, fiber, and calories for every food, and keeps them right when you edit or undo</li>
+      <li><strong>iCloud</strong> — today's log, saved foods, and goals stay in sync between your iPhone and iPad</li>
+      <li><strong>Shortcuts app</strong> — build your own logging shortcuts</li>
     </ul>
   </section>
 
@@ -360,12 +379,13 @@
     <h2><span class="icon">✉️</span> Support</h2>
     <p>Have a question, found a bug, or want to request a feature? We'd love to hear from you.</p>
     <p><a href="./contact.html">Contact us</a> — we aim to respond within 5 business days.</p>
-    <p>For subscription or billing issues, manage your subscription directly in <strong>Settings → Apple ID → Subscriptions</strong>.</p>
+    <p>For subscription or billing issues, manage your subscription directly in <strong>Settings → [your name] → Subscriptions</strong>.</p>
   </section>
 
 </main>
 
 <footer>
+  <p>CarpeCarb is for tracking and awareness. It doesn't give medical advice. Its numbers are estimates, so check the label when it matters.</p>
   <p>© 2026 CarpeCarb. All rights reserved.</p>
   <div class="links">
     <a href="./privacy-policy.html">Privacy Policy</a>
