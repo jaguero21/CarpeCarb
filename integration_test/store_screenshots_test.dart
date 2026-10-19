@@ -44,8 +44,8 @@ List<FoodItem> _sampleDay() {
     count: 1,
   );
   final bowl = bowlServing.nutrients();
-  final yogurt = const Nutrients(
-      carbs: 24, protein: 17, fat: 4, fiber: 2, calories: 196);
+  final yogurt =
+      const Nutrients(carbs: 24, protein: 17, fat: 4, fiber: 2, calories: 196);
   return [
     FoodItem(
       name: 'Chicken burrito bowl',
@@ -107,42 +107,50 @@ List<FoodItem> _sampleDay() {
   ];
 }
 
+/// Each with a fixed meal, so its icon doesn't depend on the hour of capture.
 List<FoodItem> _savedFoods() => [
       FoodItem(
           name: 'Banana',
           carbs: 27,
           details: 'USDA FoodData Central (Survey (FNDDS)): Banana, raw, '
-              '1 medium (118 g).'),
+              '1 medium (118 g).',
+          category: FoodCategory.snack),
       FoodItem(
           name: 'Oatmeal',
           carbs: 27,
           details: 'USDA FoodData Central (Survey (FNDDS)): Oatmeal, cooked, '
-              '1 cup (234 g).'),
+              '1 cup (234 g).',
+          category: FoodCategory.breakfast),
       FoodItem(
           name: 'Greek yogurt with berries',
           carbs: 24,
           details: 'Web source, not USDA. One 170 g cup with half a cup of '
-              'mixed berries.'),
+              'mixed berries.',
+          category: FoodCategory.breakfast),
       FoodItem(
           name: 'Apple',
           carbs: 25,
           details: 'USDA FoodData Central (Survey (FNDDS)): Apple, raw, '
-              '1 medium (182 g).'),
+              '1 medium (182 g).',
+          category: FoodCategory.snack),
       FoodItem(
           name: 'Brown rice',
           carbs: 45,
           details: 'USDA FoodData Central (Survey (FNDDS)): Rice, brown, '
-              'cooked, 1 cup (195 g).'),
+              'cooked, 1 cup (195 g).',
+          category: FoodCategory.dinner),
       FoodItem(
           name: 'Whole wheat toast',
           carbs: 24,
           details: 'USDA FoodData Central (Survey (FNDDS)): Bread, whole '
-              'wheat, toasted, 2 slices (56 g).'),
+              'wheat, toasted, 2 slices (56 g).',
+          category: FoodCategory.breakfast),
       FoodItem(
           name: 'Orange juice',
           carbs: 26,
           details: 'USDA FoodData Central (Survey (FNDDS)): Orange juice, '
-              '1 cup (249 g).'),
+              '1 cup (249 g).',
+          category: FoodCategory.drink),
     ];
 
 void main() {
@@ -172,7 +180,9 @@ void main() {
     messenger.setMockMethodCallHandler(const MethodChannel('home_widget'),
         (call) async {
       final m = call.method;
-      return m.startsWith('save') || m.startsWith('update') || m.startsWith('set')
+      return m.startsWith('save') ||
+              m.startsWith('update') ||
+              m.startsWith('set')
           ? true
           : null;
     });
@@ -214,7 +224,8 @@ void main() {
     FocusManager.instance.primaryFocus?.unfocus();
     // The top card shows today's total, as in the 1.0.3 screenshots, not the
     // latest food.
-    final home = tester.state<CarbTrackerHomeState>(find.byType(CarbTrackerHome));
+    final home =
+        tester.state<CarbTrackerHomeState>(find.byType(CarbTrackerHome));
     // ignore: invalid_use_of_protected_member
     home.setState(() => home.showingDailyTotal = true);
     await tester.pump(const Duration(seconds: 1));
@@ -260,6 +271,14 @@ void main() {
 
     await tester.tap(find.text('Features'));
     await tester.pump(const Duration(seconds: 1));
+    // Scroll to the free features, Apple Health and iCloud among them: the
+    // subscription card at the top shows a price, which store and social
+    // images leave out.
+    final basic = find.text('BASIC FEATURES');
+    await tester.drag(
+        find.ancestor(of: basic, matching: find.byType(Scrollable)).first,
+        const Offset(0, -1000));
+    await tester.pump(const Duration(seconds: 2));
     await shot('6_features');
   }, timeout: const Timeout(Duration(minutes: 15)));
 }

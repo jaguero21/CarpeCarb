@@ -26,7 +26,7 @@ TMP=""; captured=()
 while kill -0 $PID 2>/dev/null; do
   [[ -z $TMP ]] && TMP=$(grep -o 'SHOT_TMP:.*' "$LOG" | head -1 | cut -d: -f2-)
   for n in $(grep -o 'SHOT_READY:[A-Za-z0-9_]*' "$LOG" | cut -d: -f2); do
-    if [[ -z ${captured[(r)$n]} ]]; then
+    if [[ -z ${captured[(r)$n]:-} ]]; then
       sleep 0.5
       xcrun simctl io "$UDID" screenshot --type=png "$OUT/$n.png" >/dev/null 2>&1
       touch "$TMP/shot_$n.go"; captured+=($n); echo "captured $n"
@@ -34,5 +34,5 @@ while kill -0 $PID 2>/dev/null; do
   done
   sleep 0.5
 done
-wait $PID; status=$?
-tail -3 "$LOG"; exit $status
+wait $PID; rc=$?
+tail -3 "$LOG"; exit $rc
