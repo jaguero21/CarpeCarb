@@ -137,7 +137,7 @@ void main() {
       expect(limitError.used, 4);
       expect(limitError.limit, 4);
       expect(limitError.dayKey, '2026-09-18');
-      expect(limitError.message, "You've used all 4 free AI lookups for today.");
+      expect(limitError.message, "You've used all 4 free lookups for today.");
     });
 
     test('per-minute 429 keeps the rate-limit message', () {
