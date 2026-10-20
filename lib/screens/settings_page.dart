@@ -1463,7 +1463,7 @@ class _SettingsPageState extends State<SettingsPage> {
                 ),
                 const SizedBox(height: 8),
                 Text(
-                  'Your subscription funds the AI service that powers every carb lookup — and unlocks unlimited daily lookups.',
+                  'Your subscription funds the service that powers every carb lookup — and unlocks unlimited daily lookups.',
                   style: TextStyle(
                     fontSize: 14,
                     color: colorScheme.onSurfaceVariant,
@@ -1472,7 +1472,7 @@ class _SettingsPageState extends State<SettingsPage> {
                 ),
                 const SizedBox(height: 14),
                 Text(
-                  '✓  Unlimited AI carb lookups (free plan: ${PremiumService.freeDailyLookupLimit}/day)\n✓  Keep CarpeCarb running',
+                  '✓  Unlimited carb lookups (free plan: ${PremiumService.freeDailyLookupLimit}/day)\n✓  Keep CarpeCarb running',
                   style: TextStyle(
                     fontSize: 14,
                     color: colorScheme.onSurface,
@@ -1746,7 +1746,7 @@ class _SettingsPageState extends State<SettingsPage> {
                     ),
                     const SizedBox(height: 6),
                     Text(
-                      'AI lookups today: $lookupsToday / $limit',
+                      'Lookups today: $lookupsToday / $limit',
                       style: TextStyle(
                         fontSize: 13,
                         color: lookupsToday >= limit
@@ -1816,7 +1816,7 @@ class _SettingsPageState extends State<SettingsPage> {
         const SizedBox(height: 10),
         _buildPremiumIncludedItem(
           icon: Icons.bolt,
-          title: 'Unlimited AI Lookups',
+          title: 'Unlimited Lookups',
           description: 'No daily limit — look up as many foods as you need',
           isDark: isDark,
         ),

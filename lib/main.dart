@@ -961,7 +961,7 @@ class CarbTrackerHomeState extends State<CarbTrackerHome>
           ],
         ),
         content: Text(
-          "You've used all ${_premiumService.dailyLookupLimit} free AI lookups for today.\n\n"
+          "You've used all ${_premiumService.dailyLookupLimit} free lookups for today.\n\n"
           "Subscribe to CarpeCarb for unlimited lookups every day. "
           "Manual entry is always available for free.",
           style: TextStyle(

@@ -19,8 +19,8 @@ class UserFacingException implements Exception {
 class DailyLimitReachedException extends UserFacingException {
   DailyLimitReachedException({this.used, this.limit, this.dayKey})
       : super(limit == null
-            ? "You've used today's free AI lookups."
-            : "You've used all $limit free AI lookups for today.");
+            ? "You've used today's free lookups."
+            : "You've used all $limit free lookups for today.");
 
   final int? used;
   final int? limit;
